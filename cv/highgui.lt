@@ -1,0 +1,67 @@
+-- nm --defined-only -gDC libopencv_highgui.so
+var ffi = require('ffi')
+
+ffi.cdef(`
+/*
+cvAddText
+cvConvertImage
+cvCreateButton
+cvCreateCameraCapture
+cvCreateFileCapture
+cvCreateTrackbar
+cvCreateTrackbar2
+cvCreateVideoWriter
+*/
+IplImage* cvDecodeImage(const CvMat* _buf, int iscolor);
+CvMat* cvDecodeImageM(const CvMat* _buf, int iscolor);
+/*
+cvDestroyAllWindows
+cvDestroyWindow
+cvDisplayOverlay
+cvDisplayStatusBar
+*/
+CvMat* cvEncodeImage(const char* ext, const CvArr* arr, const int* _params);
+/*
+cvGetCaptureDomain
+cvGetCaptureProperty
+cvGetTrackbarPos
+cvGetWindowHandle
+cvGetWindowName
+cvGetWindowProperty
+cvGrabFrame
+cvHaveImageReader
+cvHaveImageWriter
+cvInitSystem
+*/
+// imgcodecs/loadsave.cpp 
+IplImage* cvLoadImage(const char* filename, int iscolor);  // CV_DEFAULT(CV_LOAD_IMAGE_COLOR) 
+CvMat* cvLoadImageM(const char* filename, int iscolor); // CV_DEFAULT(CV_LOAD_IMAGE_COLOR));
+/*
+cvMoveWindow
+cvNamedWindow
+cvQueryFrame
+cvReleaseCapture
+cvReleaseVideoWriter
+cvResizeWindow
+cvRetrieveFrame
+*/
+int cvSaveImage(const char* filename, const CvArr* image, const int* params);
+/*
+cvSaveWindowParameters
+cvSetCaptureProperty
+cvSetMouseCallback
+cvSetOpenGlContext
+cvSetOpenGlDrawCallback
+cvSetTrackbarPos
+cvSetWindowProperty
+cvShowImage
+cvStartLoop
+cvStartWindowThread
+cvStopLoop
+cvUpdateWindow
+cvWaitKey
+cvWriteFrame
+*/
+`)
+
+return ffi.load('opencv_highgui')

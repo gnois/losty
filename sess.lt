@@ -1,0 +1,73 @@
+-- Stolen from https://github.com/bungle/lua-resty-session
+var json = require('cjson.safe')
+var aes = require('resty.aes')
+var rnd = require('resty.random')
+var str = require('losty.str')
+
+var base64enc = ngx.encode_base64
+var base64dec = ngx.decode_base64
+var hmac = ngx.hmac_sha1
+
+--``
+var generate_key = \req ->
+	var addr = req.headers["CF-Connecting-IP"] or req.headers["Fastly-Client-IP"] or req.headers["Incap-Client-IP"] or req.headers["X-Real-IP"]
+	if not addr
+		addr = req.remote_addr
+	return table.concat({ req.agent, req.scheme, addr })
+var key = generate_key(req)
+``
+
+-- size, mode, hash, rounds can be nil
+return \secret, key -> --, size, mode, hash, rounds)
+	if not secret or not key
+		error("secret and key is required for session", 2)
+
+	var encrypt = \value ->
+		-- AES salt length MUST BE MULTIPLE OF 8! else nginx gives INTERMITTENT Error 
+		-- ignoring stale global SSL error (SSL: error:06065064:digital envelope routines:EVP_DecryptFinal_ex:bad decrypt) 
+		var salt = rnd.bytes(8)
+		var d, err = json.encode(value)
+		if d
+			var k = hmac(secret, salt)
+			var h = hmac(k, table.concat({salt, d, key}))
+			var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
+			d = a.encrypt(@, d)
+			var x = { base64enc(salt), base64enc(d), base64enc(h) }
+			return table.concat(x, '|')
+		return d, err
+
+
+	var decrypt = \s ->
+		var x = str.split(s, '|')
+		var salt = base64dec(x[1])
+		var d = base64dec(x[2])
+		var h = base64dec(x[3])
+		if salt and d and h
+			var k = hmac(secret, salt)
+			var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
+			d = a.decrypt(@, d)
+			if d
+				if hmac(k, table.concat({salt, d, key})) == h
+					return json.decode(d)
+
+
+	-- vs LocalStorage http://stackoverflow.com/questions/3220660/local-storage-vs-cookies
+	--  Cookies are primarily for reading server-side, LocalStorage can only be read client-side
+	-- Stormpath recommends that you store your JWT in httpOnly cookies for web applications (vs localStorage)
+	-- https://stormpath.com/blog/where-to-store-your-jwts-cookies-vs-html5-web-storage
+	var K = {}
+	
+	K.create = \res, expiry ->
+		-- cookie removed after 24 hrs by default
+		expiry = expiry or 24*3600
+		return res.cookies.create('sess', expiry, true, nil, '/', encrypt)
+
+	K.read = \req ->
+		return req.cookies.parse('sess', decrypt)
+
+	-- does not need secret and key, but how to export?
+	K.delete = \res ->
+		res.cookies.delete('sess', true, nil, '/')
+
+	return K
+

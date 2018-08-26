@@ -1,0 +1,575 @@
+-- All enums and types come here
+--  analogous to C without namespace
+var ffi = require('ffi')
+
+ffi.cdef(`
+typedef unsigned char uchar;
+typedef signed char schar;
+
+/*
+ * array-like data structures
+ * into functions where the particular
+ * array type is recognized at runtime:
+ */
+typedef void CvArr;
+
+typedef union Cv32suf
+{
+    int i;
+    unsigned u;
+    float f;
+}
+Cv32suf;
+
+typedef union Cv64suf
+{
+    int64_t i;
+    uint64_t u;
+    double f;
+}
+Cv64suf;
+
+typedef int CVStatus;
+
+enum {
+ CV_StsOk=                       0,  /* everithing is ok                */
+ CV_StsBackTrace=               -1,  /* pseudo error for back trace     */
+ CV_StsError=                   -2,  /* unknown /unspecified error      */
+ CV_StsInternal=                -3,  /* internal error (bad state)      */
+ CV_StsNoMem=                   -4,  /* insufficient memory             */
+ CV_StsBadArg=                  -5,  /* function arg/param is bad       */
+ CV_StsBadFunc=                 -6,  /* unsupported function            */
+ CV_StsNoConv=                  -7,  /* iter. didn't converge           */
+ CV_StsAutoTrace=               -8,  /* tracing                         */
+ CV_HeaderIsNull=               -9,  /* image header is NULL            */
+ CV_BadImageSize=              -10, /* image size is invalid           */
+ CV_BadOffset=                 -11, /* offset is invalid               */
+ CV_BadDataPtr=                -12, /**/
+ CV_BadStep=                   -13, /**/
+ CV_BadModelOrChSeq=           -14, /**/
+ CV_BadNumChannels=            -15, /**/
+ CV_BadNumChannel1U=           -16, /**/
+ CV_BadDepth=                  -17, /**/
+ CV_BadAlphaChannel=           -18, /**/
+ CV_BadOrder=                  -19, /**/
+ CV_BadOrigin=                 -20, /**/
+ CV_BadAlign=                  -21, /**/
+ CV_BadCallBack=               -22, /**/
+ CV_BadTileSize=               -23, /**/
+ CV_BadCOI=                    -24, /**/
+ CV_BadROISize=                -25, /**/
+ CV_MaskIsTiled=               -26, /**/
+ CV_StsNullPtr=                -27, /* null pointer */
+ CV_StsVecLengthErr=           -28, /* incorrect vector length */
+ CV_StsFilterStructContentErr= -29, /* incorr. filter structure content */
+ CV_StsKernelStructContentErr= -30, /* incorr. transform kernel content */
+ CV_StsFilterOffsetErr=        -31, /* incorrect filter offset value */
+ CV_StsBadSize=                -201, /* the input/output structure size is incorrect  */
+ CV_StsDivByZero=              -202, /* division by zero */
+ CV_StsInplaceNotSupported=    -203, /* in-place operation is not supported */
+ CV_StsObjectNotFound=         -204, /* request can't be completed */
+ CV_StsUnmatchedFormats=       -205, /* formats of input/output arrays differ */
+ CV_StsBadFlag=                -206, /* flag is wrong or not supported */
+ CV_StsBadPoint=               -207, /* bad CvPoint */
+ CV_StsBadMask=                -208, /* bad format of mask (neither 8uC1 nor 8sC1)*/
+ CV_StsUnmatchedSizes=         -209, /* sizes of input/output structures do not match */
+ CV_StsUnsupportedFormat=      -210, /* the data format/type is not supported by the function*/
+ CV_StsOutOfRange=             -211, /* some of parameters are out of range */
+ CV_StsParseError=             -212, /* invalid syntax/structure of the parsed file */
+ CV_StsNotImplemented=         -213, /* the requested function/feature is not implemented */
+ CV_StsBadMemBlock=            -214, /* an allocated block has been corrupted */
+ CV_StsAssert=                 -215, /* assertion failed */
+ CV_GpuNotSupported=           -216,
+ CV_GpuApiCallError=           -217,
+ CV_OpenGlNotSupported=        -218,
+ CV_OpenGlApiCallError=        -219,
+ CV_OpenCLDoubleNotSupported=  -220,
+ CV_OpenCLInitError=           -221,
+ CV_OpenCLNoAMDBlasFft=        -222
+};
+
+
+/****************************************************************************************\
+*                                  Image type (IplImage)                                 *
+\****************************************************************************************/
+typedef struct _IplTileInfo 
+{
+
+}
+IplTileInfo;
+
+typedef struct _IplROI
+{
+    int  coi; /* 0 - no COI (all channels are selected), 1 - 0th channel is selected ...*/
+    int  xOffset;
+    int  yOffset;
+    int  width;
+    int  height;
+} 
+IplROI;
+
+typedef struct _IplImage
+{
+    int  nSize;             /* sizeof(IplImage) */
+    int  ID;                /* version (=0)*/
+    int  nChannels;         /* Most of OpenCV functions support 1,2,3 or 4 channels */
+    int  alphaChannel;      /* Ignored by OpenCV */
+    int  depth;             /* Pixel depth in bits: IPL_DEPTH_8U, IPL_DEPTH_8S, IPL_DEPTH_16S,
+                               IPL_DEPTH_32S, IPL_DEPTH_32F and IPL_DEPTH_64F are supported.  */
+    char colorModel[4];     /* Ignored by OpenCV */
+    char channelSeq[4];     /* ditto */
+    int  dataOrder;         /* 0 - interleaved color channels, 1 - separate color channels.
+                               cvCreateImage can only create interleaved images */
+    int  origin;            /* 0 - top-left origin,
+                               1 - bottom-left origin (Windows bitmaps style).  */
+    int  align;             /* Alignment of image rows (4 or 8).
+                               OpenCV ignores it and uses widthStep instead.    */
+    int  width;             /* Image width in pixels.                           */
+    int  height;            /* Image height in pixels.                          */
+    struct _IplROI *roi;    /* Image ROI. If NULL, the whole image is selected. */
+    struct _IplImage *maskROI;      /* Must be NULL. */
+    void  *imageId;                 /* "           " */
+    struct _IplTileInfo *tileInfo;  /* "           " */
+    int  imageSize;         /* Image data size in bytes
+                               (==image->height*image->widthStep
+                               in case of interleaved data)*/
+    char *imageData;        /* Pointer to aligned image data.         */
+    int  widthStep;         /* Size of aligned image row in bytes.    */
+    int  BorderMode[4];     /* Ignored by OpenCV.                     */
+    int  BorderConst[4];    /* Ditto.                                 */
+    char *imageDataOrigin;  /* Pointer to very origin of image data
+                               (not necessarily aligned) -
+                               needed for correct deallocation */
+} 
+IplImage;
+
+typedef struct _IplConvKernel
+{
+    int  nCols;
+    int  nRows;
+    int  anchorX;
+    int  anchorY;
+    int *values;
+    int  nShiftR;
+}
+IplConvKernel;
+
+typedef struct _IplConvKernelFP
+{
+    int  nCols;
+    int  nRows;
+    int  anchorX;
+    int  anchorY;
+    float *values;
+}
+IplConvKernelFP;
+
+enum {
+ IPL_IMAGE_HEADER = 1,
+ IPL_IMAGE_DATA = 2,
+ IPL_IMAGE_ROI = 4
+};
+
+/* extra border mode */
+enum {
+ IPL_BORDER_REFLECT_101 = 4,
+ IPL_BORDER_TRANSPARENT = 5
+};
+
+
+/*************************************** CvRect *****************************************/
+
+typedef struct CvRect
+{
+    int x;
+    int y;
+    int width;
+    int height;
+}
+CvRect;
+
+
+/*********************************** CvTermCriteria *************************************/
+
+enum {
+ CV_TERMCRIT_ITER   = 1,
+ CV_TERMCRIT_NUMBER = CV_TERMCRIT_ITER,
+ CV_TERMCRIT_EPS    = 2
+};
+
+typedef struct CvTermCriteria
+{
+    int    type;  /* may be combination of
+                     CV_TERMCRIT_ITER
+                     CV_TERMCRIT_EPS */
+    int    max_iter;
+    double epsilon;
+}
+CvTermCriteria;
+
+/*
+CV_INLINE  CvTermCriteria  cvTermCriteria( int type, int max_iter, double epsilon )
+{
+    CvTermCriteria t;
+
+    t.type = type;
+    t.max_iter = max_iter;
+    t.epsilon = (float)epsilon;
+
+    return t;
+}
+*/
+
+/******************************* CvPoint and variants ***********************************/
+
+typedef struct CvPoint
+{
+    int x;
+    int y;
+}
+CvPoint;
+
+typedef struct CvPoint2D32f
+{
+    float x;
+    float y;
+}
+CvPoint2D32f;
+
+
+typedef struct CvPoint3D32f
+{
+    float x;
+    float y;
+    float z;
+}
+CvPoint3D32f;
+
+
+typedef struct CvPoint2D64f
+{
+    double x;
+    double y;
+}
+CvPoint2D64f;
+
+typedef struct CvPoint3D64f
+{
+    double x;
+    double y;
+    double z;
+}
+CvPoint3D64f;
+
+
+/******************************** CvSize's & CvBox **************************************/
+
+typedef struct CvSize
+{
+    int width;
+    int height;
+}
+CvSize;
+
+typedef struct CvSize2D32f
+{
+    float width;
+    float height;
+}
+CvSize2D32f;
+
+
+typedef struct CvBox2D
+{
+    CvPoint2D32f center;  /* Center of the box.                          */
+    CvSize2D32f  size;    /* Box width and length.                       */
+    float angle;          /* Angle between the horizontal axis           */
+                          /* and the first side (i.e. length) in degrees */
+}
+CvBox2D;
+
+
+/* Line iterator state: */
+typedef struct CvLineIterator
+{
+    /* Pointer to the current point: */
+    uchar* ptr;
+
+    /* Bresenham algorithm state: */
+    int  err;
+    int  plus_delta;
+    int  minus_delta;
+    int  plus_step;
+    int  minus_step;
+}
+CvLineIterator;
+
+
+/************************************* CvSlice ******************************************/
+
+typedef struct CvSlice
+{
+    int  start_index, end_index;
+}
+CvSlice;
+
+
+/************************************* CvScalar *****************************************/
+
+typedef struct CvScalar
+{
+    double val[4];
+}
+CvScalar;
+
+
+/****************************************************************************************\
+*                                   Dynamic Data structures                              *
+\****************************************************************************************/
+
+/******************************** Memory storage ****************************************/
+
+typedef struct _CvMemBlock
+{
+    struct _CvMemBlock*  prev;
+    struct _CvMemBlock*  next;
+}
+CvMemBlock;
+
+typedef struct _CvMemStorage
+{
+    int signature;
+    CvMemBlock* bottom;           /* First allocated block.                   */
+    CvMemBlock* top;              /* Current memory block - top of the stack. */
+    struct _CvMemStorage* parent; /* We get new blocks from parent as needed. */
+    int block_size;               /* Block size.                              */
+    int free_space;               /* Remaining free space in current block.   */
+}
+CvMemStorage;
+
+typedef struct CvMemStoragePos
+{
+    CvMemBlock* top;
+    int free_space;
+}
+CvMemStoragePos;
+
+
+/*********************************** Sequence *******************************************/
+
+typedef struct _CvSeqBlock
+{
+    struct _CvSeqBlock*  prev; /* Previous sequence block.                   */
+    struct _CvSeqBlock*  next; /* Next sequence block.                       */
+    int start_index;          /* Index of the first element in the block +  */
+                              /* sequence->first->start_index.              */
+    int    count;             /* Number of elements in the block.           */
+    schar* data;              /* Pointer to the first element of the block. */
+}
+CvSeqBlock;
+
+
+/*
+   Read/Write sequence.
+   Elements can be dynamically inserted to or deleted from the sequence.
+*/
+typedef struct _CvSeq
+{
+    int       flags;             /* Miscellaneous flags.     */
+    int       header_size;       /* Size of sequence header. */
+    struct    _CvSeq* h_prev; /* Previous sequence.       */
+    struct    _CvSeq* h_next; /* Next sequence.           */
+    struct    _CvSeq* v_prev; /* 2nd previous sequence.   */
+    struct    _CvSeq* v_next;  /* 2nd next sequence.       */
+
+    int       total;          /* Total number of elements.            */
+    int       elem_size;      /* Size of sequence element in bytes.   */
+    schar*    block_max;      /* Maximal bound of the last block.     */
+    schar*    ptr;            /* Current write pointer.               */
+    int       delta_elems;    /* Grow seq this many at a time.        */
+    CvMemStorage* storage;    /* Where the seq is stored.             */
+    CvSeqBlock* free_blocks;  /* Free blocks list.                    */
+    CvSeqBlock* first;        /* Pointer to the first sequence block. */
+}
+CvSeq;
+
+
+/****************************************************************************************\
+*                                  Matrix type (CvMat)                                   *
+\****************************************************************************************/
+typedef struct CvMat
+{
+    int type;
+    int step;
+
+    /* for internal use only */
+    int* refcount;
+    int hdr_refcount;
+
+    union
+    {
+        uchar* ptr;
+        short* s;
+        int* i;
+        float* fl;
+        double* db;
+    } data;
+
+    union
+    {
+        int rows;
+        int height;
+    };
+
+    union
+    {
+        int cols;
+        int width;
+    };
+
+}
+CvMat;
+
+
+/****************************************************************************************\
+*                       Multi-dimensional dense array (CvMatND)                          *
+\****************************************************************************************/
+
+static const int CV_MAX_DIM   = 32;
+static const int CV_MAX_DIM_HEAP = 1024;
+
+typedef struct CvMatND
+{
+    int type;
+    int dims;
+
+    int* refcount;
+    int hdr_refcount;
+
+    union
+    {
+        uchar* ptr;
+        float* fl;
+        double* db;
+        int* i;
+        short* s;
+    } data;
+
+    struct
+    {
+        int size;
+        int step;
+    }
+    dim[CV_MAX_DIM];
+}
+CvMatND;
+
+
+/****************************************************************************************\
+*                      Multi-dimensional sparse array (CvSparseMat)                      *
+\****************************************************************************************/
+
+struct CvSet;
+
+typedef struct CvSparseMat
+{
+    int type;
+    int dims;
+    int* refcount;
+    int hdr_refcount;
+
+    struct CvSet* heap;
+    void** hashtable;
+    int hashsize;
+    int valoffset;
+    int idxoffset;
+    int size[CV_MAX_DIM];
+}
+CvSparseMat;
+
+
+/**************** iteration through a sparse array *****************/
+
+typedef struct CvSparseNode
+{
+    unsigned hashval;
+    struct CvSparseNode* next;
+}
+CvSparseNode;
+
+typedef struct CvSparseMatIterator
+{
+    CvSparseMat* mat;
+    CvSparseNode* node;
+    int curidx;
+}
+CvSparseMatIterator;
+
+
+
+/************  /imgcodecs/include/opencv2/imgcodecs/imgcodecs_c.h  *****/
+
+enum
+{
+/* 8bit, color or not */
+    CV_LOAD_IMAGE_UNCHANGED  =-1,
+/* 8bit, gray */
+    CV_LOAD_IMAGE_GRAYSCALE  =0,
+/* ?, color */
+    CV_LOAD_IMAGE_COLOR      =1,
+/* any depth, ? */
+    CV_LOAD_IMAGE_ANYDEPTH   =2,
+/* ?, any color */
+    CV_LOAD_IMAGE_ANYCOLOR   =4
+};
+
+/* load image from file
+  iscolor can be a combination of above flags where CV_LOAD_IMAGE_UNCHANGED
+  overrides the other flags
+  using CV_LOAD_IMAGE_ANYCOLOR alone is equivalent to CV_LOAD_IMAGE_UNCHANGED
+  unless CV_LOAD_IMAGE_ANYDEPTH is specified images are converted to 8bit
+*/
+
+/* save image to file */
+enum
+{
+    CV_IMWRITE_JPEG_QUALITY =1,
+    CV_IMWRITE_JPEG_PROGRESSIVE =2,
+    CV_IMWRITE_JPEG_OPTIMIZE =3,
+    CV_IMWRITE_JPEG_RST_INTERVAL =4,
+    CV_IMWRITE_JPEG_LUMA_QUALITY =5,
+    CV_IMWRITE_JPEG_CHROMA_QUALITY =6,
+    CV_IMWRITE_PNG_COMPRESSION =16,
+    CV_IMWRITE_PNG_STRATEGY =17,
+    CV_IMWRITE_PNG_BILEVEL =18,
+    CV_IMWRITE_PNG_STRATEGY_DEFAULT =0,
+    CV_IMWRITE_PNG_STRATEGY_FILTERED =1,
+    CV_IMWRITE_PNG_STRATEGY_HUFFMAN_ONLY =2,
+    CV_IMWRITE_PNG_STRATEGY_RLE =3,
+    CV_IMWRITE_PNG_STRATEGY_FIXED =4,
+    CV_IMWRITE_PXM_BINARY =32,
+    CV_IMWRITE_WEBP_QUALITY =64
+};
+
+/* convert one image to another with optional vertical flip */
+enum
+{
+    CV_CVTIMG_FLIP      =1,
+    CV_CVTIMG_SWAP_RB   =2
+};
+
+/** Sub-pixel interpolation methods */
+enum
+{
+    CV_INTER_NN        =0,
+    CV_INTER_LINEAR    =1,
+    CV_INTER_CUBIC     =2,
+    CV_INTER_AREA      =3,
+    CV_INTER_LANCZOS4  =4
+};
+
+
+`)
+
+
+return ffi.C

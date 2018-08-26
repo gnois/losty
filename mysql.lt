@@ -1,0 +1,50 @@
+var mysql = require('resty.mysql')
+var sql = require('losty.sql')
+
+return \database, user, password, host, port, pool ->
+	
+	var db = mysql.new()
+  
+	var interpolate = \query, ... ->
+		var args = {...}
+		var i = 0
+		return (string.gsub(query, "%?", ->
+			i = i + 1
+			if not args[i]
+				return "NULL"
+			return ngx.quote_sql_str(args[i])
+		))
+
+	var run = \str, ... ->
+		-- nil arguments are valid
+		if select("#", ...) > 0
+			str = interpolate(str, ...)
+		var res, err, errcode, sqlstate = db.query(@, str)
+		--print(str)	-- comment in production
+		-- result is true on success if no query result, nil if failed
+		-- err can be count
+		if res == nil and err
+			ngx.log(ngx.ERR, err)
+		return res, err, errcode, sqlstate
+
+	var keepalive = \timeout ->
+		db.set_keepalive(@, timeout)
+	
+	var K = sql(db, run, keepalive)
+	
+	K.connect = ->
+		assert(db.connect(@, {database = database, user = user, password = password, host = host, port = port, pool = pool}))
+		--db.query(@, "SET TIME ZONE 'UTC';")
+
+	K.close = ->
+		db.close(@)
+
+	K.send = \str ->
+		return db.send_query(@, str)
+		
+	K.read = ->
+		return db.read_result(@)
+		
+	
+	return K
+

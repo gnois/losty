@@ -1,0 +1,99 @@
+	
+var dump = \value ->
+	var seen = {}
+	var dmp
+	dmp = \val, depth ->
+		if not depth
+			depth = 0
+		var t = type(val)
+		if t == "string"
+			return '"' .. val .. '"'
+		else if t == "table"
+			if seen[val]
+				return "recursive(" .. tostring(val) .. ")...\n"
+			
+			seen[val] = true
+			depth = depth + 1
+			var lines
+			do
+				var accum = { }
+				var len = 1
+				for k, v in pairs(val)
+					accum[len] = string.rep(" ", depth * 4) .. "[" .. tostring(k) .. "] = " .. dmp(v, depth)
+					len = len + 1
+				lines = accum
+			
+			seen[val] = false
+			return "{\n" .. table.concat(lines) .. string.rep(" ", (depth - 1) * 4) .. "\n}\n"
+		else
+			return tostring(val) .. "\n"
+	return dmp(value)
+
+
+var K = {}
+
+K.dump = dump
+
+K.show = \value ->
+	print(dump(value))
+	
+K.add = \tb, k, v ->
+	var old = tb[k]
+	if nil == old
+		tb[k] = v
+	else
+		if "table" == type(old)
+			old[#old + 1] = v
+			tb[k] = old
+		else
+			tb[k] = { old, v }
+
+
+K.find = \arr, v ->
+	for i, k in ipairs(arr)
+		if k == v
+			return i
+
+K.stack = ->
+	var t = {}
+	return {
+		push = \x ->
+			t[#t + 1] = x
+		
+		, pop = ->
+			if #t > 0
+				var x = t[#t]
+				t[#t] = nil
+				return x
+	}
+
+var merge
+merge = \t1, t2 ->
+	for k, v in pairs(t2)
+		if (type(v) == "table") and (type(t1[k] or false) == "table")
+			merge(t1[k], t2[k])
+		else
+			t1[k] = v
+	return t1
+
+K.merge = merge
+
+
+K.concats = \... ->
+	var tb = {}
+	var n = 1
+	for i = 1, select('#', ...)
+		var t = select(i, ...)
+		for j = 1, #t
+			tb[n] = t[j]
+			n = n + 1
+	return tb
+
+K.reverse_inplace = \arr ->
+	var i, j = 1, #arr
+	while i < j
+		arr[i], arr[j] = arr[j], arr[i]
+		i = i + 1
+		j = j - 1
+
+return K

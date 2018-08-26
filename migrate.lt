@@ -1,0 +1,97 @@
+var to = require('losty.to')
+var str = require('losty.str')
+var model = require('losty.model')
+var c = require('losty.exec')
+
+var usage = ->
+	io.stderr.write(@, ```
+Usage: 
+	.../resty/bin/resty -I ../ migrate.lua [-e] m1 [m2.sql] [m3.lua]
+	
+	Migrate files m1.lua [, m2.sql, m3.lua] in order.
+	Filename can specify SQL file or Lua file. Filename without extension is treated as a Lua file.
+	
+	SQL scripts in each file are represented as an array of strings, which is iterated and sent to database.
+	Hence a Lua file should return an array of sql scripts.
+	A SQL file can have scripts delimited with `---` as array separator, or else is sent to database as a whole.
+	
+	Optional switches:
+		-e   Error out if any file is empty, default is to continue to next file.
+```)
+
+
+return \db ->
+	var run = true
+	var e
+	var filenames = {}
+	var k = 1
+	while arg[k]
+		var a = arg[k]
+		if string.sub(a, 1, 1) == '-'
+			if string.sub(a, 2, 2) == 'e'
+				e = true
+			else
+				run = false
+		else
+			table.insert(filenames, a)
+		k = k + 1
+
+	if #filenames < 1
+		run = false
+
+	if run
+		for f = 1, #filenames
+			var scripts  -- array of sql scripts
+			var n = 1
+			var fname = filenames[f]
+			
+			if str.ends(fname, '.sql')
+				var file, err = io.open(fname, "r")
+				if not file
+					error(err)
+				
+				var nested = 0
+				var lines, l, i = {}, 1, 1
+				scripts = {}
+				for line in file.lines(@)
+					i = i + 1
+					for comment in string.gmatch(line, "/%*")
+						nested = nested + 1
+					for comment in string.gmatch(line, "%*/")
+						nested = nested - 1
+						--if nested < 0
+						--	error("Unmatched */ at line " .. i)
+					
+					-- separator in effect only when not in comment
+					if nested == 0 and str.starts(line, "---") and #lines > 0
+						scripts[n] = table.concat(lines, "\n")
+						n = n + 1
+						lines = {}
+						l = 1
+					else
+						lines[l] = line
+						l = l + 1
+				
+				--if nested > 0
+				--	error("Unterminated /*")
+				-- last chunk
+				if #lines > 0
+					scripts[n] = table.concat(lines, "\n")
+				file.close(@)
+			else
+				var file = string.gsub(to.trimmed(fname), '.lua$', '')
+				scripts = require(file)
+			
+			if #scripts > 0
+				if not model.migrate(db, scripts)
+					error(c.red .. " Error in " .. fname .. c.reset)
+			else
+				var fn = print
+				if e
+					fn = error
+				fn(fname .. " is empty.")
+			
+				
+		print(c.green, "Migration successful.", c.reset)
+	else
+		usage()

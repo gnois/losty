@@ -1,0 +1,40 @@
+-- http://blog.ircmaxell.com/2013/02/preventing-csrf-attacks.html
+var sign = require('losty.sign')
+var enc = require('losty.enc')
+var rnd = require('losty.rand')
+
+return \secret ->
+	var sg = sign(secret)
+
+	var K = {}
+	
+	var generate = \expiry ->
+		var key = rnd.least(4)
+		expiry = expiry or -1
+		if expiry ~= -1
+			expiry = ngx.time() + expiry
+		var token = sg.sign(key, expiry)
+		return key, token
+
+	var ok = \key, token ->
+		if key and token
+			var expiry, err = sg.unsign(key, token)
+			if expiry and (expiry == -1 or expiry > ngx.time())
+				return true
+			return false, "This page may be outdated. Please refresh your browser."
+		return false, "Request is forbidden"
+
+	K.generate = generate
+	K.ok = ok
+	
+	K.write = \res, expiry ->
+		-- cookie removed on browser close
+		var csrf = res.cookies.create('csrf', 0, false, nil, '/', enc.encode)
+		csrf.key, csrf.token = generate(expiry)
+	
+	K.read = \req ->
+		var csrf = req.cookies.parse('csrf', enc.decode)
+		return ok(csrf.key, csrf.token)
+
+	return K
+

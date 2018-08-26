@@ -1,0 +1,334 @@
+var tbl = require('losty.tbl')
+var set = require('losty.set')
+var concat = table.concat
+var yield = coroutine.yield
+var create = coroutine.create
+var resume = coroutine.resume
+var gmatch = string.gmatch
+var gsub = string.gsub
+--
+-- _G.table and _G.select are masked by html tag of the same name
+--   select has no replacement
+--   Use concat, insert and remove without qualifying table
+--
+var normal_tags = set(
+	'a'
+	, 'abbr'
+	, 'address'
+	, 'article'
+	, 'aside'
+	, 'audio'
+	, 'b'
+	, 'bdi'
+	, 'bdo'
+	, 'blockquote'
+	, 'body'
+	, 'button'
+	, 'canvas'
+	, 'caption'
+	, 'cite'
+	, 'code'
+	, 'colgroup'
+	, 'data'
+	, 'datagrid'
+	, 'datalist'
+	, 'dd'
+	, 'del'
+	, 'details'
+	, 'dfn'
+	, 'div'
+	, 'dl'
+	, 'dt'
+	, 'em'
+	, 'eventsource'
+	, 'fieldset'
+	, 'figcaption'
+	, 'figure'
+	, 'footer'
+	, 'form'
+	, 'h1'
+	, 'h2'
+	, 'h3'
+	, 'h4'
+	, 'h5'
+	, 'h6'
+	, 'head'
+	, 'header'
+	, 'hgroup'
+	, 'html'
+	, 'i'
+	, 'iframe'
+	, 'ins'
+	, 'kbd'
+	, 'label'
+	, 'legend'
+	, 'li'
+	, 'main'
+	, 'mark'
+	, 'map'
+	, 'menu'
+	, 'meter'
+	, 'nav'
+	, 'noscript'
+	, 'object'
+	, 'ol'
+	, 'optgroup'
+	, 'option'
+	, 'output'
+	, 'p'
+	, 'pre'
+	, 'progress'
+	, 'q'
+	, 'ruby'
+	, 'rp'
+	, 'rt'
+	, 's'
+	, 'samp'
+	, 'script'
+	, 'section'
+	, 'select'
+	, 'small'
+	, 'span'
+	, 'strong'
+	, 'style'
+	, 'sub'
+	, 'summary'
+	, 'details'
+	, 'sup'
+	, 'table'
+	, 'tbody'
+	, 'td'
+	, 'textarea'
+	, 'tfoot'
+	, 'th'
+	, 'thead'
+	, 'time'
+	, 'title'
+	, 'tr'
+	, 'u'
+	, 'ul'
+	, 'var'
+	, 'video'
+)
+
+var void_tags = set(
+	'area'
+	, 'base'
+	, 'br'
+	, 'col'
+	, 'command'
+	, 'embed'
+	, 'hr'
+	, 'img'
+	, 'input'
+	, 'keygen'
+	, 'link'
+	, 'meta'
+	, 'param'
+	, 'source'
+	, 'track'
+	, 'wbr'
+)
+
+var parse = \s ->
+	var r = create( ->
+		var acc, n = {}, 1
+		for c in gmatch(s, '.')
+			if c == '.' or c == '#' or c == '['
+				-- dont yield if still in bracket
+				if acc[1] == '['
+					acc[n] = c --insert(acc, c)
+					n = n + 1
+				else
+					if acc[1]
+						yield(acc)
+					acc = {c}
+					n = 2
+			else --if c ~= ' '  -- meta description needs the space
+				acc[n] = c --insert(acc, c)
+				n = n + 1
+				if c == ']'
+					--if #acc > 2
+					if n > 3 
+						yield(acc)
+					acc = {}
+					n = 1
+		if acc[1]
+			yield(acc)
+	)
+	return ->
+		var code, res = resume(r)
+		return res
+
+-- void tag
+var void = \tag, attrs ->
+	var cell = {tag = tag, attrs = {}}
+	var classes, n = {}, 1
+	if attrs
+		var kind = type(attrs)
+		if 'string' == kind
+			for v in parse(attrs)
+				if v[1] == '#'
+					cell.attrs.id = concat(v, '', 2)
+				else if v[1] == '.'
+					classes[n] = concat(v, '', 2) --insert(classes, concat(v, '', 2))
+					n = n + 1
+				else if v[1] == '['
+					var i = tbl.find(v, '=')
+					var key, val
+					if i
+						key = concat(v, '', 2, i-1)
+						val = concat(v, '', i+1, #v-1)
+						val = gsub(val, "['\"](%w+)['\"]", '%1')
+					else
+						key = concat(v, '', 2, #v-1)
+						val = true
+					cell.attrs[key] = val
+				else
+					var msg = tag .. "('" .. concat(v) .. "'"
+					error(msg .. " attribute must start with `.` or `#` or `[`")
+
+		else if 'table' == kind
+			for key, val in pairs(attrs)
+				if key == 'class'
+					if val ~= nil and val ~= ''
+						classes[n] = val --insert(classes, val)
+						n = n + 1
+				else 
+					cell.attrs[key] = val
+		else
+			var msg = tag .. '(' .. kind
+			error(msg .. " attribute must be a table or a string")
+		
+	if classes[1]
+		cell.attrs['class'] = concat(classes, ' ')
+
+	return cell
+	
+-- normal tag
+var normal = \tag, attrs, ... ->
+	var args
+	if attrs
+		-- ignore at the first nil, instead of var n = select('#', ...)
+		args = {...}
+		-- the length of a table t is only defined if the table has no holes, else is incorrect
+		var n = #args
+		-- if we have only attrs, but it is a string or is an array and have a tag property, consider it as children
+		if n == 0
+			var kind = type(attrs)
+			if 'string' == kind or 'table' == kind and attrs[1] or attrs.tag
+				args = attrs
+				attrs = nil
+		else if n == 1 
+			if 'table' == type(args[n]) and args[n][1]
+				-- flatten
+				args = args[n]
+
+	var cell = void(tag, attrs)
+	cell.children = args
+	return cell
+
+
+var html5 = \node ->
+	var o, n = { "<!DOCTYPE html>" }, 2
+
+	var convert
+	convert = \cell ->
+		if cell and cell.tag
+			o[n] = '<' .. cell.tag --insert(o, '<' .. cell.tag)
+			n = n + 1
+			for k, v in pairs(cell.attrs)
+				o[n] = ' ' .. k --insert(o, ' ' .. k)
+				n = n + 1
+				if not ('boolean' == type(v))
+					o[n] = '="' .. v .. '"' --insert(o, '="' .. v .. '"')
+					n = n + 1
+			o[n] = '>' --insert(o, '>')
+			n = n + 1
+			var child = cell.children
+			if child
+				if 'table' == type(child)
+					for _, c in ipairs(child)
+						if 'table' == type(c)
+							convert(c)
+						else
+							o[n] = tostring(c) --insert(o, tostring(c))
+							n = n + 1
+				else
+					o[n] = tostring(child) --insert(o, tostring(child))
+					n = n + 1
+			
+			if not void_tags.has(cell.tag)
+				o[n] = '</' .. cell.tag .. '>' --insert(o, '</' .. cell.tag .. '>')
+				n = n + 1
+			
+	convert(node)
+	return concat(o)
+
+
+return \func, args, strict ->
+	var env = {
+		concat = table.concat
+		, insert = table.insert
+		, remove = table.remove
+	}
+	env = setmetatable(env, { 
+		__index = \t, name ->
+			--print(name)
+			if void_tags.has(name)
+				return \attrs ->
+					return void(name, attrs)
+			if normal_tags.has(name)
+				return \attrs, ... ->
+					return normal(name, attrs, ...)
+			if strict
+				error("Unrecognized html5 tag " .. name)
+			return _G[name]
+	})
+	func = setfenv(func, env)
+	-- not using pcall(), let it throw if error
+	var res = func(args)
+	--print(tbl.dump(res)) 
+	return html5(res)
+
+
+--```
+var test = ->
+	var m = v.m
+	assert(m("div").tag == "div")
+	assert(m(".foo").tag == "div")
+	assert(m(".foo").attrs.class == "foo")
+	assert(m("[title=bar]").tag == "div")
+	assert(m("[title=bar]").attrs.title == "bar")
+	assert(m("[title='bar']").attrs.title == "bar")
+	assert(m("[title=\"bar\"]").attrs.title == "bar")
+	assert(m("div", "test").children[1] == "test")
+	assert(m("div", "test", "test2").children[2] == "test2")
+	assert(m("div", {"test"}).children[1] == "test")
+	assert(m("div", {title = "bar"}, "test").attrs.title == "bar")
+	assert(m("div", {title = "bar"}, "test").children[1] == "test")
+	assert(m("div", {title = "bar"}, {"test"}).children[1] == "test")
+	assert(m("div", {title = "bar"}, {m("div")}).children[1].tag == "div")
+	assert(m("div", {title = "bar"}, m("div")).children[1].tag == "div")
+	assert(m("div", {title = "bar"}, "test0", "test1", "test2", "test3").children[4] == "test3")
+	assert(m("div", {title = "bar"}, m("div"), m("i"), m("span")).children[3].tag == "span")
+	assert(#m("div", {"a", "b"}).children == 2)
+	assert(m("div", {m("div")}).children[1].tag == "div")
+	assert(m("div", m("div")).children[1].tag == "div")
+	assert(m("div", {}).tag == "div")
+	assert(m("div", {{foo = "bar"}}))
+	assert(m("svg", {m("g")}))
+	assert(m("svg", {m("a[href='http://google.com']")}))
+	assert(m(".foo", {class = "bar"}).attrs.class == "foo bar")
+	assert(m(".foo", {class = ""}).attrs.class == "foo")
+	assert(m("div", {class = ""}).attrs["class"] == nil)
+	assert(#m("div", {1, 2, 3}, 4).children == 2)
+	assert(#m("div", {1, 2, 3}, 4).children[1] == 3)
+	assert(m("div", {1, 2, 3}, 4).children[2] == 4)
+	assert(#m("div", {1, 2, 3}).children == 3)
+	assert(#m("div", {1, 2, 3}, {4, 5, 6, 7}).children == 2)
+	assert(#m("div", {1, 2, 3}, {4, 5, 6, 7}).children[1] == 3)
+	assert(#m("div", {1, 2, 3}, {4, 5, 6, 7}).children[2] == 4)
+	assert(#m("div", {1}, {2}, {3}).children == 3)
+	assert(m(".ho", { ( -> if true return m("div") else return m("span"))() }).children[1].tag == 'div')
+--```

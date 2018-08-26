@@ -1,0 +1,90 @@
+
+return \db, run, keepalive ->
+	var began = false
+
+	var K = {
+		run = run
+	}
+	
+	-- https://github.com/openresty/lua-nginx-module#lua_socket_connect_timeout
+	-- default 60s each for connect, send and read
+	-- but unit here is in ms
+	K.settimeouts = \connect, send, read ->
+		db.settimeouts(@, connect, send, read)
+
+	-- timeout = 0 means wont timeout in the pool
+	K.disconnect = \timeout ->
+		if began
+			db.query(@, 'ROLLBACK;')
+			began = false
+		keepalive(timeout)
+
+	K.begin = ->
+		assert(not began, "Already inside a transaction")
+		if db.query(@, 'BEGIN;')
+			began = true
+			return true
+		return false
+
+	K.commit = ->
+		assert(began, "Cannot COMMIT without transaction")
+		if db.query(@, 'COMMIT;')
+			began = false
+			return true
+		return false
+		
+	K.rollback = ->
+		assert(began, "Cannot ROLLBACK without transaction")
+		if db.query(@, 'ROLLBACK;')
+			began = false
+			return true
+		return false
+
+	-- for stored proc that insert/update/delete or select that returns 1 row
+	K.call = \proc, ... ->
+		var e, err = run("SELECT * FROM " .. proc, ...)
+		if e
+			return e[1], err
+
+	-- for stored proc that return multiple rows
+	K.exec = \proc, ... ->
+		var e, err = run("SELECT * FROM " .. proc, ...)
+		return e, err
+
+	-- for select that returns 1 row
+	K.one = \sql, ... ->
+		var e, err = run("SELECT " .. sql, ...)
+		if e
+			return e[1], err
+
+	-- select that returns multiple rows
+	-- caller to test for e[1]
+	K.select = \sql, ... ->
+		var e, err = run("SELECT " .. sql, ...)
+		return e, err
+
+	K.insert = \sql, ... ->
+		var e, err = run("INSERT INTO " .. sql, ...)
+		if e
+			return e[1], err
+		return nil, err
+		
+	K.update = \sql, ... ->
+		var e, err = run("UPDATE " .. sql, ...)
+		if e
+			return e[1], err
+		return nil, err
+
+	K.delete = \sql, ... ->
+		var e, err = run("DELETE FROM " .. sql, ...)
+		if e
+			return e[1], err
+		return nil, err
+
+	K.placeholders = \... ->
+		var places = {}
+		for i, _ in ipairs({...})
+			places[i] = ", ?"
+		return table.concat(places)
+
+	return K

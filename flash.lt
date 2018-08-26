@@ -1,0 +1,41 @@
+-- same as Rails flash, except is only read or written by browser
+-- vs `session` which is encrypted and only readable by server
+
+var enc = require('losty.enc')
+var tbl = require('losty.tbl')
+
+-- also different from tbl.add, which set old = v if v is single item
+var push = \tb, k, v ->
+	var old = tb[k]
+	if nil == old
+		old = { v }
+	else -- sometimes the browser return expired cookies?
+		if not tbl.find(old, v)
+			old[#old + 1] = v
+	tb[k] = old
+
+return \req, res ->
+
+	-- removed on browser close, or manually by javascript
+	var new = res.cookies['flash']
+	if not new
+		new = res.cookies.create('flash', 0, false, nil, '/', enc.encode)
+		var old = req.cookies.parse('flash', enc.decode)
+		if old
+			-- copy old to new, so that flashes is accumulated until read
+			for k, v in pairs(old)
+				new[k] = v
+
+	var K = {}
+	
+	K.set = \key, val ->
+		new[key] = val
+	
+	for _, meth in pairs({'pass', 'fail', 'info'})
+		K[meth] = \str ->
+			if not new.note
+				new.note = {}
+			push(new.note, meth, str)
+	
+	return K
+

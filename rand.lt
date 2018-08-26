@@ -1,0 +1,19 @@
+var rnd = require('resty.random')
+var str = require('resty.string')
+var base64enc = ngx.encode_base64
+var hmac = ngx.hmac_sha1
+
+var K = {}
+
+-- generate symmetric key
+K.key = \secret, key ->
+	return base64enc(hmac(secret, key))
+
+
+-- generate a random binary of `length` converted to hex
+-- the returned string is longer than `length`
+K.least = \length ->
+	var key = rnd.bytes(length)
+	return str.to_hex(key)
+
+return K

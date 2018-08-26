@@ -1,0 +1,345 @@
+﻿-- -nm --defined-only -gDC libopencv_core.so
+var ffi = require('ffi')
+
+ffi.cdef(`
+//  /usr/local/include/opencv2/core/core_c.h 
+/*
+cvAbsDiff
+cvAbsDiffS
+cvAdd
+cvAddS
+cvAddWeighted
+cvAlloc
+cvAnd
+cvAndS
+cvAttrValue
+cvAvg
+cvAvgSdv
+cvBackProjectPCA
+cvCalcCovarMatrix
+cvCalcPCA
+cvCartToPolar
+cvCbrt
+cvChangeSeqBlock
+cvCheckArr
+cvCheckHardwareSupport
+cvCheckTermCriteria
+cvCircle
+cvClearGraph
+cvClearMemStorage
+cvClearND
+cvClearSeq
+cvClearSet
+cvClipLine
+cvClone
+cvCloneGraph
+*/
+IplImage* cvCloneImage(const IplImage* image);
+CvMat* cvCloneMat(const CvMat* mat);
+/*
+cvCloneMatND
+cvCloneSparseMat
+cvCmp
+cvCmpS
+cvColorToScalar
+cvCompleteSymm
+*/
+void cvConvertScale(const CvArr* src, CvArr* dst, double scale, double); // CV_DEFAULT(1), double shift CV_DEFAULT(0));
+void cvConvertScaleAbs(const CvArr* src, CvArr* dst, double scale, double); // CV_DEFAULT(1), double shift CV_DEFAULT(0));
+void cvCopy(const CvArr* src, CvArr* dst, const CvArr* mask); // CV_DEFAULT(NULL));
+/*
+cvCountNonZero
+cvCreateChildMemStorage
+void cvCreateData(CvArr* arr);
+cvCreateGraph
+cvCreateGraphScanner
+*/
+IplImage* cvCreateImage(CvSize size, int depth, int channels);
+IplImage* cvCreateImageHeader(CvSize size, int depth, int channels);
+CvMat* cvCreateMat(int rows, int cols, int type);
+CvMat* cvCreateMatHeader(int rows, int cols, int type);
+/*
+cvCreateMatND
+cvCreateMatNDHeader
+cvCreateMemStorage
+cvCreateSeq
+cvCreateSeqBlock
+cvCreateSet
+cvCreateSparseMat
+cvCrossProduct
+cvCvtSeqToArray
+cvDCT
+cvDFT
+cvDet
+cvDiv
+cvDotProduct
+cvDrawContours
+cvEigenVV
+cvEllipse
+cvEllipse2Poly
+cvEndWriteSeq
+cvEndWriteStruct
+cvError
+cvErrorFromIppStatus
+*/
+/* Retrieves textual description of the error given its code */
+const char* cvErrorStr(int status);
+/*
+cvExp
+cvFastArctan
+cvFillConvexPoly
+cvFillPoly
+cvFindGraphEdge
+cvFindGraphEdgeByPtr
+cvFindType
+cvFirstType
+cvFlip
+cvFlushSeqWriter
+cvFree_
+cvGEMM
+cvGet1D
+cvGet2D
+cvGet3D
+*/
+CvMat* cvGetCols(const CvArr* arr, CvMat* submat, int start_col, int end_col);
+CvMat* cvGetDiag(const CvArr* arr, CvMat* submat, int diag); // CV_DEFAULT(0));
+int cvGetDimSize(const CvArr* arr, int index);
+int cvGetDims(const CvArr* arr, int* sizes); // CV_DEFAULT(NULL));
+//cvGetElemType
+/* Retrieves detailed information about the last error occured */
+int cvGetErrInfo(const char** errcode_desc, const char** description, const char** filename, int* line);
+
+//cvGetErrMode
+int cvGetErrStatus(void);
+/*
+cvGetFileNode
+cvGetFileNodeByName
+cvGetFileNodeName
+cvGetHashedKey
+*/
+IplImage* cvGetImage(const CvArr* arr, IplImage* image_header);
+int cvGetImageCOI(const IplImage* image);
+CvRect cvGetImageROI(const IplImage* image);
+CvMat* cvGetMat(const CvArr* arr, CvMat* header, int* coi, int); // CV_DEFAULT(NULL), int allowND CV_DEFAULT(0));
+/*
+cvGetModuleInfo
+cvGetND
+cvGetNumThreads
+cvGetOptimalDFTSize
+*/
+void cvGetRawData(const CvArr* arr, uchar** data, int* step, CvSize* roi_size); // CV_DEFAULT(NULL));
+/*
+cvGetReal1D
+cvGetReal2D
+cvGetReal3D
+cvGetRealND
+cvGetRootFileNode
+*/
+CvMat* cvGetRows(const CvArr* arr, CvMat* submat, int start_row, int end_row, int delta_row); // CV_DEFAULT(1));
+
+/*
+cvGetRows
+cvGetSeqElem
+cvGetSeqReaderPos
+*/
+CvSize cvGetSize(const CvArr* arr);
+/*
+cvGetSubRect
+cvGetTextSize
+cvGetThreadNum
+cvGetTickCount
+cvGetTickFrequency
+cvGraphAddEdge
+cvGraphAddEdgeByPtr
+cvGraphAddVtx
+cvGraphRemoveEdge
+cvGraphRemoveEdgeByPtr
+cvGraphRemoveVtx
+cvGraphRemoveVtxByPtr
+cvGraphVtxDegree
+cvGraphVtxDegreeByPtr
+cvGuiBoxReport
+cvInRange
+cvInRangeS
+cvInitFont
+*/
+IplImage* cvInitImageHeader(IplImage* image, CvSize size, int depth, int channels, int origin, int align);
+//cvInitLineIterator
+CvMat* cvInitMatHeader(CvMat* mat, int rows, int cols, int type, void* data, int); // CV_DEFAULT(NULL), int step CV_DEFAULT(CV_AUTOSTEP));
+/*
+cvInitMatNDHeader
+cvInitNArrayIterator
+cvInitSparseMatIterator
+cvInitTreeNodeIterator
+cvInsertNodeIntoTree
+cvInvert
+cvKMeans2
+cvLUT
+cvLine
+cvLoad
+cvLog
+cvMahalanobis
+cvMakeSeqHeaderForArray
+cvMax
+cvMaxS
+cvMemStorageAlloc
+cvMemStorageAllocString
+*/
+void cvMerge(const CvArr* src0, const CvArr* src1, const CvArr* src2, const CvArr* src3, CvArr* dst);
+/*
+cvMin
+cvMinMaxLoc
+cvMinS
+*/
+void cvMixChannels(const CvArr** src, int src_count, CvArr** dst, int dst_count, const int* from_to, int pair_count);
+/*
+cvMul
+cvMulSpectrums
+cvMulTransposed
+cvNextGraphItem
+cvNextNArraySlice
+cvNextTreeNode
+cvNorm
+cvNormalize
+cvNot
+cvNulDevReport
+cvOpenFileStorage
+cvOr
+cvOrS
+cvPerspectiveTransform
+cvPolarToCart
+cvPolyLine
+cvPow
+cvPrevTreeNode
+cvProjectPCA
+cvPtr1D
+cvPtr2D
+cvPtr3D
+cvPtrND
+cvPutText
+cvRandArr
+cvRandShuffle
+cvRange
+cvRawDataToScalar
+cvRead
+cvReadRawData
+cvReadRawDataSlice
+cvRectangle
+cvRectangleR
+cvRedirectError
+cvReduce
+cvRegisterModule
+cvRegisterType
+cvRelease
+*/
+void cvReleaseData(CvArr* arr);
+/*
+cvReleaseFileStorage
+cvReleaseGraphScanner
+*/
+void cvReleaseImage(IplImage** image);
+void cvReleaseImageHeader(IplImage** image);
+void cvReleaseMat(CvMat** mat);
+/*
+cvReleaseMatND
+cvReleaseMemStorage
+cvReleaseSparseMat
+cvRemoveNodeFromTree
+cvRepeat
+*/
+void cvResetImageROI(IplImage* image);
+CvMat* cvReshape(const CvArr* arr, CvMat* header, int new_cn, int new_rows); // CV_DEFAULT(0));
+/*
+cvReshapeMatND
+cvRestoreMemStoragePos
+cvSVBkSb
+cvSVD
+cvSave
+cvSaveMemStoragePos
+cvScalarToRawData
+cvScaleAdd
+cvSeqElemIdx
+cvSeqInsert
+cvSeqInsertSlice
+cvSeqInvert
+cvSeqPartition
+cvSeqPop
+cvSeqPopFront
+cvSeqPopMulti
+cvSeqPush
+cvSeqPushFront
+cvSeqPushMulti
+cvSeqRemove
+cvSeqRemoveSlice
+cvSeqSearch
+cvSeqSlice
+cvSeqSort
+*/
+void cvSet(CvArr* arr, CvScalar value, const CvArr* mask); // CV_DEFAULT(NULL));
+/*
+cvSet1D
+cvSet2D
+cvSet3D
+cvSetAdd
+*/
+void cvSetData(CvArr* arr, void* data, int step);
+/*
+cvSetErrMode
+cvSetErrStatus
+cvSetIPLAllocators
+cvSetIdentity
+*/
+void cvSetImageCOI(IplImage* image, int coi);
+void cvSetImageROI(IplImage* image, CvRect rect);
+/*
+cvSetMemoryManager
+cvSetND
+cvSetNumThreads
+cvSetReal1D
+cvSetReal2D
+cvSetReal3D
+cvSetRealND
+cvSetRemove
+cvSetSeqBlockSize
+cvSetSeqReaderPos
+*/
+void cvSetZero(CvArr* arr);
+/*
+cvSliceLength
+cvSolve
+cvSolveCubic
+cvSolvePoly
+cvSort
+*/
+void cvSplit(const CvArr* src, CvArr* dst0, CvArr* dst1, CvArr* dst2, CvArr* dst3);
+/*
+cvStartAppendToSeq
+cvStartNextStream
+cvStartReadRawData
+cvStartReadSeq
+cvStartWriteSeq
+cvStartWriteStruct
+cvStdErrReport
+cvSub
+cvSubRS
+cvSum
+cvTrace
+cvTransform
+cvTranspose
+cvTreeToNodeSeq
+cvTypeOf
+cvUnregisterType
+cvUseOptimized
+cvWrite
+cvWriteComment
+cvWriteFileNode
+cvWriteInt
+cvWriteRawData
+cvWriteReal
+cvWriteString
+cvXor
+cvXorS
+*/
+`)
+
+return ffi.load('opencv_core')

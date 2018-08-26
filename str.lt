@@ -1,0 +1,65 @@
+
+var K = {}
+
+-- iterate every character in str
+K.each = \str ->
+	var p, n = 1, #str
+	return ->
+		if p <= n
+			var c = string.sub(str, p, p)
+			p = p + 1
+			return p - 1, c
+
+-- Returns true if the string has a match for the plain specified pattern
+K.contains = \str, part ->
+	return string.find(str, part, 1, true) ~= nil
+
+K.starts = \str, part ->
+	return string.sub(str, 1, string.len(part)) == part
+
+K.ends = \str, part ->
+	return part == '' or string.sub(str, -string.len(part)) == part
+
+-- Returns an array of strings, each of which is a substring of s
+-- formed by splitting on boundaries formed by `pattern`.
+K.split = \str, pattern, plain ->
+	var arr = {}
+	if pattern and #pattern > 0
+		var pos = 1
+		for st, sp in -> return string.find(str, pattern, pos, plain)
+			table.insert(arr, string.sub(str, pos, st-1))
+			pos = sp + 1
+		table.insert(arr, string.sub(str, pos))
+	return arr
+
+-- Same as split but returns iterator instead
+K.gsplit = \str, pattern, plain ->
+	var pos
+	var st, sp = 0, 0
+	return ->
+		if sp
+			pos = sp + 1
+			st, sp = string.find(str, pattern, pos, plain)
+			if st
+				return string.sub(str, pos, st-1)
+			return string.sub(str, pos)
+	
+-- Find the last instance of a pattern in a string.
+K.findlast = \str, pattern, plain ->
+	var curr = 0
+	do
+		var nxt = string.find(str, pattern, curr + 1, plain)
+		if nxt 
+			curr = nxt 
+	until not nxt
+	if (curr > 0)
+		return curr
+
+-- Returns the number of lines of text contained by the string.
+K.lines = \str ->
+	var trailing, n = string.gsub(str, '.-\n', '')
+	if #trailing > 0
+		n = n + 1
+	return n
+
+return K

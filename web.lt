@@ -1,0 +1,95 @@
+var json = require('cjson.safe')
+var request = require('losty.req')
+var response = require('losty.res')
+var status = require('losty.status')
+var choose = require('losty.accept')
+var router = require('losty.router')
+var dispatch = require('losty.dispatch')
+
+-- run once, for later math.random
+math.randomseed(ngx.time())
+
+var HTML = "text/html"
+var JSON = "application/json"
+
+-- each web instance has a different router 
+return ->
+
+	var rtr = router()
+	
+	var route = \root ->
+		var r = {}
+		for _, method in pairs({'get', 'post', 'put', 'delete', 'patch', 'options'}) -- 'trace', 'connect'
+			r[method] = \path, f, ... ->
+				if string.sub(path, 1, 1) ~= '/'
+					error("routed path " .. path .. " should start with '/'")
+				if root
+					path = root .. path
+				rtr.set(string.upper(method), path, f, ...)
+		return r
+
+
+	var must_no_body = \req, code ->
+		return req.method == 'HEAD' or code == 204 or code == 205 or code == 304
+
+
+	-- errors is a table { [status >= 400] = "<html> error message markup </html>" }
+	var run = \errors ->
+		var req = request()
+		var resp = response()
+		var res = resp.create()
+		var method = req.method
+		-- so that we don't need to register HEAD path
+		if method == 'HEAD'
+			method = 'GET'
+		var handlers, params = rtr.match(method, req.uri)
+		if handlers
+			req.params = params
+			var ok, trace = xpcall( ->
+				dispatch(handlers, req, res)
+			, \err ->
+				return debug.traceback(err, 2)
+			)
+			
+			if ok
+				-- check mistakes
+				if not res.status
+					error("Response status is missing", 2)
+				-- status < 200 or >= 300 can have no content, so no content-type needed
+				if res.status >= 200 and res.status < 300 or res.body and #res.body > 0
+					if not must_no_body(req, res.status) and not res.headers['Content-Type']
+						error("Content-Type header is missing", 2)
+			else
+				res.status = 500
+				ngx.log(ngx.ERR, trace)
+		else
+			res.status = 404
+
+		-- for status 400 above without body, we try to 
+		-- 1. use the error[status] html if any text/html is requested
+		-- 2. provide default response if json is requested or if no html is given
+		if not res.body and res.status >= 400
+			if req.method ~= 'HEAD'
+				var pref = choose(req.headers["Accept"], {HTML, JSON})
+				var ctype = tostring(pref[1])
+				if ctype == HTML
+					res.body = errors[res.status]
+				else
+					res.body = json.encode({ fail = status(res.status) })
+				
+				if not res.body or #res.body < 1
+					ctype = "text/plain"
+					res.body = status(res.status)
+				res.headers['Content-Type'] = ctype
+
+		resp.send_headers(req.secure)
+		if not must_no_body(req, res.status)
+			resp.send_body()
+		resp.eof()
+
+
+	return {
+		route = route
+		, run = run
+	}
+	

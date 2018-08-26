@@ -1,0 +1,23 @@
+var json = require('cjson.safe')
+
+var K = {}
+
+-- func can be crypt(key).encrypt
+K.encode = \obj, func ->
+	var str, err = json.encode(obj)
+	if str
+		if func
+			str = func(str)
+		return ngx.encode_base64(str)
+	return str, err
+
+-- func can be crypt(key).decrypt
+K.decode = \str, func ->
+	str = ngx.decode_base64(str)
+	if func
+		str = func(str)
+	return json.decode(str)
+
+
+
+return K

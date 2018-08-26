@@ -1,0 +1,47 @@
+var K = {}
+
+-- return true if all valid, else false with accumulated errors
+-- checker function return nil to skip further checking
+K.is = \... ->
+	var funs = {...}
+	
+	return \val ->
+		var pass = true
+		var errs = {}
+		for _, fn in ipairs(funs)
+			var ok, msg = fn(val)
+			if ok
+				table.insert(errs, true)
+			else
+				pass = false
+				table.insert(errs, msg)
+				if ok == nil
+					return false, errs
+		return pass, errs
+
+
+-- arg is the name of the said argument
+K.message = \arg, errs ->
+	var msgs = {}
+	for _, v in ipairs(errs)
+		if true ~= v
+			table.insert(msgs, v)
+	
+	return arg .. ' should ' .. table.concat(msgs, ' and ')
+		
+
+-- return converted val or nil with msg on first error, since we cannot convert further
+K.to = \... ->
+	var funs = {...}
+	
+	return \val ->
+		var v = val
+		var err
+		for _, fn in ipairs(funs)
+			v, err = fn(v)
+			if v == nil
+				break
+		return v, err
+
+		
+return K

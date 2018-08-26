@@ -1,0 +1,63 @@
+-- https://raw.githubusercontent.com/garious/flake/master/luau/xpexec.lua
+
+var K = {}
+--
+-- Note that shell syntax such as ">", "|", "&" or ";", should not be
+-- escaped using these quoting functions.
+
+-- Quote a command argument for UNIX-like environments.
+--
+K.quote = \arg ->
+	if arg and string.match(arg, "[!\"#%$&'%(%)%*;<>%?%[\\%]`{|}~%s]")
+		arg = "'" .. string.gsub(arg, "[']", "'\\''") .. "'"
+	return arg
+
+
+K.exec = \cmd ->
+	assert(#cmd > 0)
+	-- Openresty 1.11.2 had -DLUAJIT_ENABLE_LUA52COMPAT, https://openresty.org/en/changelog-1011002.html 
+	-- os.execute returns extended error code
+	-- true, exit, code
+	var _, __, code = os.execute(cmd)
+	-- success is always 0, see man page for command
+	if code == 0
+		return true
+	return false, cmd .. " failed, exit code: " .. tostring(code)
+
+
+var colors = {
+	reset = 0
+	, clear = 0
+	, bright = 1
+	, dim = 2
+	, underscore = 4
+	, blink = 5
+	, reverse = 7
+	, hidden = 8
+
+	-- foreground
+	, black = 30
+	, red = 31
+	, green = 32
+	, yellow = 33
+	, blue = 34
+	, magenta = 35
+	, cyan = 36
+	, white = 37
+
+	-- background
+	, onblack = 40
+	, onred = 41
+	, ongreen = 42
+	, onyellow = 43
+	, onblue = 44
+	, onmagenta = 45
+	, oncyan = 46
+	, onwhite = 47
+}
+
+for c, v in pairs(colors)
+	K[c] = "\27[" .. tostring(v) .. "m"
+
+
+return K

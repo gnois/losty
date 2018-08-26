@@ -1,0 +1,178 @@
+var bit = require('bit')
+var ffi = require('ffi')
+
+var read_uid = ->
+	-- uid is   xxx=hexstring_of_len32, where hexstring is a hex encoding of four *little-endian* four-byte integers underneath
+	var str = ngx.var.uid_set or ngx.var.uid_got
+	if str
+		-- find the first =
+		var ind = string.find(str, '=')
+		if ind > 0
+			return string.sub(str, ind+1)
+	return ''
+
+-- convert an int32 into a 4-byte lua string
+var binary = \v ->
+	var int32 = ffi.typeof("int32_t")
+	var int32slot = ffi.typeof("int32_t[1]")
+	return ffi.string(int32slot(bit.bswap(v)), ffi.sizeof(int32))
+
+-- https://blog.swiftype.com/2014/02/24/webserveruid-easy-unique-browser-ids-for-rails-better-analytics/
+-- https://github.com/swiftype/web_server_uid/blob/master/lib/web_server_uid.rb
+-- returns 16 bytes of binary string
+var read_uid_binary = ->
+	var uid = read_uid()
+	-- split into four int32
+	var a = tonumber(string.sub(uid, 1, 8), 16)
+	var b = tonumber(string.sub(uid, 9, 16), 16)
+	var c = tonumber(string.sub(uid, 17, 24), 16)
+	var d = tonumber(string.sub(uid, 25, 32), 16)
+	-- i dunno why need to bswap twice: here and in binary()
+	a = bit.bswap(a)
+	b = bit.bswap(b)
+	c = bit.bswap(c)
+	d = bit.bswap(d)
+
+	--``
+	var printx = \x ->
+		print("0x"..bit.tohex(x))
+	
+	--printx(a)
+	--printx(b)
+	--printx(c)
+	--printx(d)
+	``
+	
+	var buff = {}
+	buff[1] = binary(a)
+	buff[2] = binary(b)
+	buff[3] = binary(c)
+	buff[4] = binary(d)
+	var bytes16 = table.concat(buff, '')
+	--for i = 1, string.len(bytes16)
+	--	print(string.byte(bytes16, i), '  0x' , string.format("%x", string.byte(bytes16, i)))
+	return bytes16
+
+
+-- Build request
+----------------
+--``
+var flatten = \args ->
+	var flat = {}
+	if args
+		for key, val in pairs(args) do
+			if f.is_table(val)
+				flat[key] = table.concat(val, ', ')
+			else
+				flat[key] = val
+	return flat
+``
+
+--
+-- See http://nginx.org/en/docs/http/ngx_http_core_module.html, section 'Embedded Variables'
+--
+-- stolen from Lapis
+var ngx_basic = {
+	socket = -> return ngx.req.socket()
+	, headers = -> return ngx.req.get_headers()
+	, method = -> return ngx.req.get_method() or ngx.var.request_method
+	, at = -> return ngx.req.start_time()
+	, version = -> return ngx.req.http_version()
+	, args = -> return ngx.req.get_uri_args() --flatten(ngx.req.get_uri_args())
+	, scheme = -> return ngx.var.scheme or 'http'
+	, query = -> return ngx.var.query_string
+	, host = -> return ngx.var.host or ngx.var.server_name
+	, referer = -> return ngx.var.http_referer
+	, agent = -> return ngx.var.http_user_agent
+	, url = -> return ngx.unescape_uri(ngx.var.request_uri)
+	-- without query string
+	, uri = -> return ngx.var.uri or ''
+	, full_uri = \t ->
+		return t.scheme .. '://' .. t.host .. t.uri
+	, remote_addr = \t ->
+		var ip = t.headers["X-Real-IP"] or t.headers["X-Forwarded-For"] or t.headers["X-Client-IP"] or ngx.var.remote_addr
+		return ip
+	, remote_port = -> return ngx.var.remote_port
+	-- with query string
+	, secure = \t ->
+		-- next version to parse
+		-- http://tools.ietf.org/html/rfc7239
+		-- eg: Forwarded: for=192.0.2.43,for=198.51.100.17;by=203.0.113.60;proto=http;host=example.com
+		var scheme = t.headers["X-Forwarded-Proto"] or t.scheme
+		return scheme == 'https'
+	-- browser id. requires ngx_http_userid_module with   userid on;
+	-- hex format
+	, id = read_uid
+	-- 16 bytes binary string
+	, id_binary = read_uid_binary
+	-- base64 encoded string, as seen in browser cookie
+	-- if you use `userid_mark` directive, that character replaces the first `=` padding at the end of the Base64. 
+	-- U need to replace that yourself by finding the first =, then replace your mark char.
+	, id_base64 = ->
+		var uid = read_uid_binary()
+		return ngx.encode_base64(uid)
+}
+
+var cookie = ->
+	var unescape = ngx.unescape_uri
+	var cookies = {}
+	var decoders = {}
+
+	var decode = \name, val ->
+		if val
+			val = unescape(val)
+			var dec = decoders[name]
+			assert(dec)
+			return dec(val)
+		return val
+		
+	var read = \name ->
+		var val = cookies[name]
+		if nil == val
+			var key = 'cookie_' .. name
+			var ok
+			ok, val = pcall(decode, name, ngx.var[key])
+			if ok
+				cookies[name] = val
+		return val
+
+	var K = {
+		parse = \name, decoder ->
+			if nil == decode
+				decoder = \... -> return ...
+			decoders[name] = decoder
+			return read(name)
+	}
+	
+	return setmetatable(K, {
+		__metatable = false
+		, __index = \t, name ->
+			if decoders[name]
+				return read(name)
+			error("call parse('" .. name .. "') before using request cookie")
+		, __newindex = ->
+			error("cannot modify request cookie")
+	})
+
+--``
+var memoize = \ngxtbl ->
+	return \tbl, key ->
+		var f = ngxtbl[key]
+		if f
+			var res = f(tbl)
+			tbl[key] = res
+			return res
+``
+
+return ->
+	var K = { cookies = cookie() }
+	
+	return setmetatable(K, {
+		__metatable = false
+		, __index = \tbl, key ->
+			var f = ngx_basic[key]
+			if f
+				var res = f(tbl)
+				tbl[key] = res
+				return res
+	})

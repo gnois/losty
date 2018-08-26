@@ -1,0 +1,38 @@
+-- Exec a function within a mutex
+-- Must have this nginx directive at http level
+-- lua_shared_dict locks 1m;
+var rlock = require('resty.lock')
+
+-- Eg: Create temp file (on the same filesystem) and work with that,
+-- once done, move (rename file) to a target "key" filename.
+
+-- done is function to check if target had been created by other process. It shd take the key as param and return bool
+-- create is function to create the target
+-- returns 
+return \lock, key, done, create, ...->
+	if done(key)
+		return true
+
+	-- wait...
+	var locker = rlock.new(@, lock)
+	var elapsed, err = locker.lock(@, key)
+	if not elapsed
+		ngx.log(ngx.ERR, "Fail to acquire '", key, "' from ", lock, ": ", err)
+		return false, err
+
+	-- lock acquired
+	ngx.log(ngx.INFO, "Acquired '", key, "' from ", lock, " after ", elapsed, " seconds")
+
+	-- while waiting, someone might have created the file
+	var ok, success
+	if not done(key)
+		success, err = create(...)
+	
+	-- release lock
+	ok, err = locker.unlock(@)
+	if not ok
+		ngx.log(ngx.ERR, "Fail to release '", key, "' from ", lock, ": ", err)
+		return false, err
+	return success
+
+

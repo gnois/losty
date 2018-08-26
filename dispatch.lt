@@ -1,0 +1,21 @@
+
+-- temporarily sets the req.next()
+
+return \hn, req, res, ... ->
+	var i, n = 0, #hn
+	var nargs = select('#', ...)
+	var args = {...}
+
+	var nxt = req.next
+	req.next = \... ->
+		var np = select('#', ...)
+		var p = {...}
+		for j = 1, np
+			args[nargs + j] = p[j]
+		nargs = nargs + np
+		i = i + 1
+		if i <= n
+			return hn[i](req, res, unpack(args, 1, nargs))
+
+	req.next()
+	req.next = nxt

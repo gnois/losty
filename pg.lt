@@ -1,0 +1,70 @@
+var pgmoon = require('pgmoon')
+var pgmarrays = require('pgmoon.arrays')
+var pgmjson = require('pgmoon.json')
+var sql = require('losty.sql')
+var is = require('losty.is')
+
+return \database, user, password, host, port, pool ->
+	
+	var db = pgmoon.new({database = database, user = user, password = password, host = host, port = port, pool = pool})
+	--var began = false
+  
+	var interpolate = \query, ... ->
+		var args = {...}
+		var i = 0
+		return (string.gsub(query, "%?", ->
+			i = i + 1
+			if not args[i]
+				return "NULL"
+			
+			if is.tbl(args[i])
+				var kind = type(args[i][1])
+				if 'number' == kind or 'string' == kind
+					-- encode_array cannot work with empty arr
+					return pgmarrays.encode_array(args[i])
+				else
+					return pgmjson.encode_json(args[i])
+					--return "'{" .. table.concat(args[i], ',') .. "}'"
+			-- return set_quote_pgsql_str(args[i]) ? how about using this?
+			return db.escape_literal(@, args[i])
+		))
+
+	var run = \str, ... ->
+		-- nil arguments are valid
+		if select("#", ...) > 0
+			str = interpolate(str, ...)
+		var result, err, partial, count = db.query(@, str)
+		print(str)	-- comment in production
+		-- result is true on success if no query result, nil if failed
+		if result == nil and err
+			print(err)  -- comment in production
+			ngx.log(ngx.ERR, err)
+		-- err can be count
+		return result, err, partial, count
+
+	var keepalive = \timeout ->
+		db.keepalive(@, timeout)
+		
+	var K = sql(db, run, keepalive)
+	
+	K.connect = ->
+		assert(db.connect(@))
+		--db.query(@, "SET TIME ZONE 'UTC';")
+
+	K.close = ->
+		db.disconnect(@)
+		
+	-- if read timed out, pgmoon closes the socket for us
+	-- no need to wrap in xpcall()
+	K.listen = ->
+		return db.wait_for_notification(@)
+	
+	K.subscribe = \channel ->
+		return db.query(@, 'LISTEN ' .. channel)
+	
+	K.unsubscribe = \channel ->
+		return db.query(@, 'UNLISTEN ' .. channel)
+		
+
+	return K
+

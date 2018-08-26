@@ -1,0 +1,62 @@
+
+return ->
+	var COLON = string.byte(':', 1)
+	var LEAF = "~"
+	var tree = {}
+	var K = {}
+
+	var resolve
+	resolve = \path, node, params ->
+		var _, token
+		_, _, token, path = string.find(path, "([^/]+)(.*)")
+		if not token
+			return node[LEAF], params
+		--print(token .. ' -> ' .. path)
+		for child_token, child_node in pairs(node) 
+			if child_token == token 
+				var func, bindings = resolve(path, child_node, params)
+				if func
+					return func, bindings 
+
+		for child_token, child_node in pairs(node) 
+			if string.byte(child_token, 1) == COLON  -- token begins with ':'
+				var name = string.sub(child_token, 2)
+				var value = params[name]
+				params[name] = token or value -- store the value in params, resolve tail path
+				var func, bindings = resolve(path, child_node, params)
+				if func
+					return func, bindings
+				params[name] = value -- reset the params table.
+		return false
+
+	var install = \node, path, ... ->
+		for token in string.gmatch(path, "[^/]+")
+			node[token] = node[token] or {}
+			node = node[token]
+		var old = node[LEAF]
+		if nil == old
+			node[LEAF] = {...}
+		else
+			for _, f in ipairs({...})
+				old[#old + 1] = f
+			node[LEAF] = old
+
+	
+	K.match = \method, path ->
+		var node = tree[method]
+		if not node
+			return nil, string.format("Unknown method: %s", method)
+		-- remove query string
+		path = string.gsub(path, "%?.*", "")
+		var func, params = resolve(path, node, {})
+		if not func
+			return nil, string.format("Could not resolve %s %s", method, path)
+		return func, params
+
+	K.set = \method, path, ... ->
+		assert(path and #path > 0)
+		if not tree[method]
+			tree[method] = {} 
+		install(tree[method], path, ...)
+				
+	return K

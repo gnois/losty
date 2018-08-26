@@ -1,0 +1,331 @@
+-- stolen from
+--  https://github.com/jshttp/negotiator
+var bit = require('bit')
+var to = require('losty.to')
+
+var yield = coroutine.yield
+var create = coroutine.create
+var resume = coroutine.resume
+var gmatch = string.gmatch
+var lower = string.lower
+var concat = table.concat
+var trim = to.trimmed
+
+-- parse a string without breaking "quoted" apart
+var parse = \s, sep ->
+	var r = create( ->
+		var acc, n = {}, 0
+		var bracket = false
+		for c in gmatch(s, '.')
+			if c == '"'
+				bracket = not bracket
+				n = n + 1
+				acc[n] = c
+			else
+				if c == sep and not bracket
+					if n > 0
+						yield(concat(acc))
+						acc, n = {}, 0
+				else
+					n = n + 1
+					acc[n] = c
+		-- remainder
+		if n > 0
+			yield(concat(acc))
+	)
+	return ->
+		var code, res = resume(r)
+		return res
+
+
+var split = \str, sep ->
+	var acc, a = {}, 0
+	for each in parse(str, sep)
+		var x = trim(each)
+		if #x > 0
+			a = a + 1
+			acc[a] = x
+	return acc
+
+
+var media_re = `^\s*([^\s\/;]+)\/([^;\s]+)\s*(?:;(.*))?$`
+
+var media_mt = {
+	__tostring = \m -> 
+		var out = { m.media .. '/' .. m.subtype }
+		var o = 2
+		for k, v in pairs(m.params)
+			out[o] = k .. '=' .. (v or '')
+			o = o + 1
+		return concat(out, ';')
+}
+
+var parse_media = \mt, i ->
+	var arr = ngx.re.match(mt, media_re)
+	if arr
+		var m = {
+			media = lower(arr[1])
+			, subtype = lower(arr[2])
+			, q = 1
+			, i = i
+			, params = {}
+		}
+		
+		if arr[3]
+			var params = split(arr[3], ';')
+			for _, param in ipairs(params)
+				var k, v = string.match(param, '^(.-)=(.*)$')
+				if k and v
+					k = lower(k)
+					if k == 'q'
+						m.q = tonumber(v)
+					else
+						m.params[k] = v
+
+		return setmetatable(m, media_mt)
+
+
+var parse_accept = \accept ->
+	var medias = split(accept, ',')
+	var acc, a = {}, 0
+	for i, mt in ipairs(medias)
+		var m = parse_media(mt, i)
+		if m
+			a = a + 1
+			acc[a] = m
+	return acc
+
+
+var specify = \mt, i, spec ->
+	if mt
+		var s = 0
+		if spec.media == mt.media
+			s = bit.bor(s, 4)
+		else if spec.media ~= '*'
+			return
+
+		if spec.subtype == mt.subtype
+			s = bit.bor(s, 2)
+		else if spec.subtype ~= '*'
+			return
+
+		-- all params shd match
+		if #spec.params > 0 and not mt.params
+			return
+		for k, v in pairs(spec.params)
+			var w = mt.params[k]
+			-- try unquoted "v" if needed, () is needed bcoz string.match may return nil and equals w=nil
+			if w and (v == '*' or w == v or w == string.match(v, '^"%s*(.*)%s*"$'))
+				s = bit.bor(s, 1)
+			else
+				return
+
+		return {
+			i = i
+			, o = spec.i
+			, q = spec.q
+			, s = s
+		}
+
+
+
+var prioritize = \media, i, accepts ->
+	var mt = parse_media(media)
+	var prio = {
+		i = i
+		, o = 0
+		, q = 0
+		, s = 0
+	}
+	for _, acc in ipairs(accepts)
+		var spec = specify(mt, i, acc)
+		if spec
+			--print(spec.s, ',', spec.q, ',', spec.o, ',', spec.i)
+			if spec.s >= prio.s
+				prio = spec
+			else if spec.s == prio.s and spec.q >= prio.q
+				prio = spec
+			else if spec.s == prio.s and spec.q == prio.q and spec.o >= prio.o
+				prio = spec
+
+	--print(' final -->  ', prio.s, ',', prio.q, ',', prio.o, ',', prio.i)
+	if not mt
+		mt = setmetatable({ media = media, subtype = '' }, media_mt)
+	mt.i = prio.i
+	mt.o = prio.o
+	mt.q = prio.q
+	mt.s = prio.s
+	return mt
+	
+
+
+-- remove media types where q = 0, then sort
+var sort_with_q = \list ->
+
+	var acc, a = {}, 0
+	for _, l in ipairs(list)
+		if l.q > 0
+			a = a + 1
+			acc[a] = l
+	table.sort(acc, \x, y -> 
+		if x.q
+			if y.q
+				if x.q ~= y.q
+					return x.q > y.q
+				-- else check s
+			else
+				return true
+		else if y.q
+			return false
+		
+		if x.s
+			if y.s
+				if x.s ~= y.s
+					return x.s > y.s
+				-- else check o
+			else
+				return true
+		else if y.s
+			return false
+
+		if x.o
+			if y.o
+				if x.o ~= y.o
+					return x.o < y.o
+				-- else check i
+			else
+				return true
+		else if y.o
+			return false
+
+		if x.i
+			if y.i
+				return x.i < y.i
+			return true
+		else if y.i
+			return false
+		
+		-- keep order
+		return true
+	)
+	return acc
+
+
+-- avails is string array of media types, eg: {'text/html', 'application/json'}
+var choose = \accept, avails ->
+	-- RFC 2616 sec 14.2: no header means */*
+	if not accept or #accept == 0
+		accept = '*/*'
+
+	var acc = parse_accept(accept)
+
+	if avails
+		var prio = {}
+		for i, av in ipairs(avails)
+			prio[i] = prioritize(av, i, acc)
+		acc = prio
+
+	return sort_with_q(acc)
+
+
+
+
+--````
+
+var tests = ->
+	var is = require('losty.is')
+	
+	var prn = \j, v ->
+		print(j, ' - ', tostring(v))
+		for k, vv in pairs(v)
+			if is.tbl(vv)
+				print('  ', k, ':{')
+				for kk, vvv in pairs(vv)
+					print('    ', kk .. ':', vvv)
+				print('  ', '}')
+			else
+				print('  ', k .. ':', vv)
+	
+	var data = {
+		'text/plain;q=0.1, application/json;q=0.5, text/html, */*'
+		, 'audio/*; q=0.2, audio/basic'
+		, 'text/plain; q=0.5, text/html,\r\n               text/x-dvi; q=0.8, text/x-c'
+		, 'text/*, text/html, text/html;level=1, */*'
+		, 'text/plain; stuff="as=d"; q=0.00; foo=bar'
+		, 'text/plain, application/json;q=0.5, text/html, text/xml, text/yaml, text/javascript, text/csv, text/css, text/rtf, text/markdown, application/octet-stream;q=0.2, */*;q=0.1'
+		, 'text/html;foo="bar;text/css;";fizz="buzz,5,6", text/plain'
+		, 'text/plain, application/json;q=0.5, text/html;ext="la,lu, lo", */*;q=0.1'
+		, 'text/plain, application/json;q=0.5, text/html, text/xml, text/yaml, text/javascript, text/csv, text/css, text/rtf, text/markdown, application/octet-stream;q=0.2, */*;q=0.1'
+		, 'text/*;q=0.3, text/html;q=0.7, text/html;level=1,\r\n               text/html;level=2;q=0.4, */*;q=0.5'
+	}
+--``
+	for _, test in ipairs(data)
+		print("\n  Testing: ", test)
+		for j, v in ipairs(parse_accept(test))
+			prn(j, v)
+
+--``
+	-- Format: {accept text, {array of available media} or nil, {array of matched media str} or nil}
+	----``
+	data = {
+		{'', nil, {'*/*'}}
+		, {'*/*', nil, {'*/*'}}
+		, {'app/json', nil, {'app/json'}}
+		, {'app/json;q=0', nil, nil}
+		, {'app/json;q=0.2, text/html', nil, {'text/html', 'app/json'}}
+		, {'text/plain;q=0.1, app/json;q=0.5, text/html, */*', nil, {'text/html', '*/*', 'app/json', 'text/plain'}}
+
+		
+		, {nil, {'app/json', 'text/html'}, {'app/json', 'text/html'}}
+		, {'app/json', {'text/html'}, nil}
+		, {'app/json', {'app/json', 'text/html'}, {'app/json'}}
+		, {'app/json;q=0.2, text/html', {'app/json', 'text/html'}, {'text/html', 'app/json'}}
+		, {'text/*', {'app/json', 'text/html'}, {'text/html'}}
+		, {'text/*, text/plain;q=0', {'app/json', 'text/html'}, {'text/html'}}
+		, {'text/plain, application/json;q=0.5, text/html, */*;q=0.1', {'image/jpeg', 'image/gif'}, {'image/jpeg', 'image/gif'}}
+		, {'text/plain, application/json;q=0.5, text/html, */*;q=0.1', {'text/html', 'text/plain'}, {'text/plain', 'text/html'}}
+		, {'text/plain, application/json;q=0.5, text/html, */*;q=0.1', {'image/jpeg', 'text/html', 'text/plain'}, {'text/plain', 'text/html', 'image/jpeg'}}
+		
+		, {'/*;q=0.8, text/*, image/*', {'application/json', 'text/html', 'text/plain', 'text/xml', 'application/xml', 'image/gif', 'image/jpeg', 'image/png', 'audio/mp3', 'application/javascript', 'text/javascript'}, {'text/html', 'text/plain', 'text/xml', 'text/javascript', 'image/gif', 'image/jpeg', 'image/png', 'application/json', 'application/xml', 'audio/mp3', 'application/javascript'}}
+		, {'text/*, text/plain;q=0', {'text/html', 'text/plain'}, {'text/html'}}
+		, {'text/*, text/plain;q=0.5', {'text/html', 'text/plain', 'text/xml'}, {'text/html', 'text/xml', 'text/plain'}}
+		, {'text/html;level=1', {'text/html;level=1'}, {'text/html;level=1'}}
+		, {'text/html;level=1', {'text/html;level=2'}, nil}
+		, {'text/html;level=2;q=0.1, text/html;level=1, text/html;q=0.5', {'text/html;level=1', 'text/html;level=2', 'text/html'}, {'text/html;level=1', 'text/html', 'text/html;level=2'}}
+		, {'text/html;level=1;foo=bar', {'text/html;level=1'}, nil}
+		, {'text/html;level=1;foo=bar', {'text/html;foo=bar;level=1'}, {'text/html;foo=bar;level=1'}}
+		, {'text/html;level=1;foo="bar,baz";', {'text/html;foo=bar,baz;level=1'}, {'text/html;foo=bar,baz;level=1'}}
+		, {'text/html;foo=";level=2;"', {'text/html;level=2'}, nil}
+		, {'text/html;foo=";level=2;"', {'text/html;foo=";level=2;"'}, {'text/html;foo=";level=2;"'}}
+		, {'text/html;level=2;q=0.1;level=1', {'text/html;level=2'}, nil}
+	}
+	--`` for zero in to check
+	data = {
+		{'text/html;level=2;q=0.1, text/html;level=1, text/html;q=0.5', {'text/html;level=1', 'text/html;level=2', 'text/html'}, {'text/html;level=1', 'text/html', 'text/html;level=2'}}
+	}
+	--``
+	for _, test in ipairs(data)
+		print("\n  Choosing: ", test[1] or 'nil', " < > ", test[2] and concat(test[2], ',') or 'nil')
+		
+		var chosen = choose(test[1], test[2])
+		if #chosen > 0
+			if test[3]
+				for i, v in ipairs(chosen)
+					var match = tostring(v)
+					if match == test[3][i]
+						print(match)
+					else
+						print(" ~~~~~~~~~~~>   Wrong at item ", i, ". Shd be ", test[3][i], " instead of ", match)
+						break
+					--prn(i, v)
+			else
+				print(" ==========> Wrong, result shd be nil")
+		else if test[3]
+			print(" -----------> Wrong, result shd be ", concat(test[3], ','), " instead of ", chosen)
+
+
+tests()
+
+--````
+
+return choose

@@ -1,0 +1,51 @@
+--``
+
+ http://stackoverflow.com/questions/742013/how-to-code-a-url-shortener
+ ShortURL (https://github.com/delight-im/ShortURL)
+ Copyright (c) delight.im (https://www.delight.im/)
+ Licensed under the MIT License (https://opensource.org/licenses/MIT)
+ 
+
+  ShortURL: Bijective conversion between natural numbers (IDs) and short strings
+
+  ShortURL.encode() takes an ID and turns it into a short string
+  ShortURL.decode() takes a short string and turns it into an ID
+
+  Features:
+  + large alphabet (51 chars) and thus very short resulting strings
+  + proof against offensive words (removed 'a', 'e', 'i', 'o' and 'u')
+  + unambiguous (removed 'I', 'l', '1', 'O' and '0')
+
+  Example output:
+    123456789 <=> pgK8p
+--``
+
+var alphabet = '23456789bcdfghjkmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ-_'
+var base = string.len(alphabet)
+
+var encode = \num -> 
+	var str = ''
+	while num > 0
+		var at = (num % base) + 1  -- Lua starts from 1
+		str = alphabet.sub(@, at, at) .. str
+		num = math.floor(num / base)
+	return str
+
+var decode = \str ->
+	var num = 0
+	for i = 0, string.len(str)
+		var ch = string.sub(str, i, i)
+		num = num * base + (alphabet.find(ch) - 1)  -- Lua starts from 1
+	return num
+
+
+--``
+var test = ->
+	assert(encode(123456789) == 'pgK8p')
+	assert(123456789 == decode('pgK8p'))
+``
+
+return {
+	encode = encode
+	, decode = decode
+}

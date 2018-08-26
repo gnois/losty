@@ -1,0 +1,121 @@
+-- Each function only does 1 thing. For eg,
+--   int(val) assumes val is already a number. It does not coerce val from string and never check for nil
+
+var K = {}
+
+-- nil check
+K.have = \t ->
+	if t
+		return true
+	-- nil to terminate check, else further access when checking may throw
+	return nil, 'exist'
+
+	
+var is = \check, expected ->
+	return \v ->
+		if check(v) == expected
+			return true
+		return false, 'be a ' .. expected
+
+var tbl = is(type, 'table')
+
+K.tbl = tbl
+K.num = is(type, 'number')
+K.str = is(type, 'string')
+K.bool = is(type, 'boolean')
+K.func = is(type, 'function')
+
+
+-- `of` should be a type checking function from above
+K.array = \of -> 
+	return \t ->
+		if not tbl(t)
+			return false, 'be an array'
+		var i = 0
+		for _ in pairs(t)
+			i = i + 1
+			if t[i] == nil
+				return false, 'be an array'
+			if of
+				var ok, err = of(t[i])
+				if not ok
+					return false, err .. ' array' 
+		return true, i
+
+K.len = \min, max ->
+	return \t ->
+		var l = string.len(t)
+		if l < min or l > max
+			return false, 'be between '.. min .. ' to' .. max .. ' characters'
+		return true
+
+K.atleast = \min ->
+	return \t ->
+		var l = string.len(t)
+		if l < min
+			return false, 'be at least ' .. min .. ' characters'
+		return true
+
+K.atmost = \max ->
+	return \t ->
+		var l = string.len(t)
+		if l > max
+			return false, 'be at most ' .. max .. ' characters'
+		return true
+
+K.email = \t ->
+	if not string.match(t, "[A-Za-z0-9%.%%%+%-]+@[A-Za-z0-9%.%%%+%-]+%.%w%w%w?%w?")
+		return false, 'be a valid email address'
+	return true
+
+
+K.no_space = \t ->
+	if string.find(t, "%s")
+		return false, 'not contain whitespace'
+	return true
+
+-- Numbers
+K.min = \n ->
+	return \t ->
+		if t < n
+			return false, 'be greater than ' .. n
+		return true
+
+K.max = \n ->
+	return \t ->
+		if t > n
+			return false, 'be less than ' .. n
+		return true
+
+K.int = \t ->
+	if math.floor(t) == t
+		return false, 'be an integer'
+	return true
+
+K.date = \fmt ->
+	return \t ->
+		var ok = false
+		if string.match(t, "^%d+%p%d+%p%d%d%d%d$")
+			var d, m, y
+			if not fmt
+				d, m, y = string.match(t, "(%d+)%p(%d+)%p(%d+)")
+			else 
+				if fmt == 'us'
+					m, d, y = string.match(t, "(%d+)%p(%d+)%p(%d+)")
+				else if fmt == 'iso'
+					y, m, d = string.match(t, "(%d+)%p(%d+)%p(%d+)")
+
+			d, m, y = tonumber(d), tonumber(m), tonumber(y)
+
+			if d and d > 0 and m and m > 0 and y and y > 1000
+				var dmm = d * m * m
+				if d > 31 or m > 12 or dmm == 116 or dmm == 120 or dmm == 124 or dmm == 496 or dmm == 1116 or dmm == 2511 or dmm == 3751
+					-- leap year
+					if dmm == 116 and (y % 400 == 0 or (y % 100 ~= 0 and y % 4 == 0))
+						ok = true
+
+		if not ok
+			return false, 'be a valid date'
+		return true
+
+return K

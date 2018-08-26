@@ -1,0 +1,228 @@
+-- BIG REMINDER:
+-- http://stackoverflow.com/questions/24847971/null-equals-0-in-c-so-should-i-treat-both-values-like-a-nil
+-- if value then .... won't work, coz value is a cdata object and therefore evaluates to true, even though it is equal to nil
+
+var cv = require('cv.cv')
+var core = require('cv.core')
+var hg = require('cv.highgui')
+var ip = require('cv.imgproc')
+
+var ffi = require('ffi')
+var imgptr = ffi.typeof("IplImage*[1]")
+var matptr = ffi.typeof("CvMat*[1]")
+var rect = ffi.typeof("CvRect")
+var point = ffi.typeof("CvPoint")
+var size = ffi.typeof("CvSize")
+
+var scalar = \r, g, b, a ->
+	r = r or 255
+	g = g or 255
+	b = b or 255
+	a = a or 255
+	return ffi.new("CvScalar", {
+		val = {b, g, r, a}
+	})
+
+var color = scalar
+
+-- returns cvMat. call releaseMat() after use
+var encodeImage = \ext, img, ... ->
+	assert(img ~= nil)
+	var params
+	var n = select('#', ...)
+	if n > 0
+		params = ffi.new("int[?]", n, {...})
+	var data = hg.cvEncodeImage(ext, img, params)
+	-- if cdata always true
+	if data ~= nil
+		return data
+
+-- http://stackoverflow.com/questions/26441072/finding-the-size-in-bytes-of-cvmat
+var matBytes = \mat ->
+	assert(mat ~= nil)
+	return ffi.string(mat.data.ptr, mat.step * mat.rows)
+	
+var releaseMat = \mat ->
+	assert(mat ~= nil)
+	core.cvReleaseMat(matptr(mat))
+
+var releaseImage = \img ->
+	assert(img ~= nil)
+	core.cvReleaseImage(imgptr(img))
+
+var releaseImageHeader = \img ->
+	assert(img ~= nil)
+	core.cvReleaseImageHeader(imgptr(img))
+
+var loadImage = \path ->
+	var img = hg.cvLoadImage(path, cv.CV_LOAD_IMAGE_UNCHANGED)
+	-- if cdata always true
+	if img ~= nil
+		return img
+
+var saveImage = \path, img, ... ->
+	assert(img ~= nil)
+	var params
+	var n = select('#', ...)
+	if n > 0
+		params = ffi.new("int[?]", n, {...})
+	return hg.cvSaveImage(path, img, params)
+
+var getImage = \arr ->
+	assert(arr ~= nil)
+	var header = ffi.new("IplImage[1]")
+	var img = core.cvGetImage(arr, header[0])
+	-- if cdata always true
+	if img ~= nil
+		return img
+
+var getDims = \arr ->
+	assert(arr ~= nil)
+	var dims = ffi.new("int[1]")
+	return core.cvGetDims(arr, dims[0])
+
+var getRawData = \arr ->
+	assert(arr ~= nil)
+	var data = ffi.new("uchar*[1]")
+	var step = ffi.new("int[1]")
+	var sz = ffi.new("CvSize[1]")
+	core.cvGetRawData(arr, data, step, sz)
+	return data[0], step[0], sz[0]
+
+
+var copyImage = \img ->
+	var sz = size({ img.width, img.height })
+	var dst = core.cvCreateImage(sz, img.depth, img.nChannels)
+	-- if cdata always true, so check for nil
+	if dst ~= nil
+		core.cvCopy(img, dst, nil)
+		return dst
+
+		
+var cropImage = \img, x, y, w, h ->
+	assert(img ~= nil)
+	assert(x >= 0)
+	assert(y >= 0)
+	assert(w > 0)
+	assert(h > 0)
+	
+	var region = rect({ x, y, w, h })
+	core.cvSetImageROI(img, region)
+	var sz = size({ w, h })
+	var cropped = core.cvCreateImage(sz, img.depth, img.nChannels)
+		-- if cdata always true
+	if cropped ~= nil
+		core.cvCopy(img, cropped, nil)
+		core.cvResetImageROI(img)
+		return cropped
+
+	
+var resizeImage = \img, w, h ->
+	assert(img ~= nil)
+	assert(w > 0)
+	assert(h > 0)
+
+	-- Scale the image to the new dimensions regardless of aspect ratio
+	var outImg = core.cvCreateImage(size({ w, h }), img.depth, img.nChannels)
+	if outImg ~= nil
+		core.cvResetImageROI(img)
+		if w > img.width and h > img.height
+			-- CV_INTER_LINEAR: good at enlarging
+			-- CV_INTER_CUBIC: good at enlarging
+			ip.cvResize(img, outImg, cv.CV_INTER_LINEAR)
+		else
+			-- CV_INTER_AREA: good at shrinking (decimation) only
+			ip.cvResize(img, outImg, cv.CV_INTER_AREA)
+		return outImg
+
+
+-- Creates a new image that is of a desired size. 
+-- The aspect ratio will be kept by cropping undesired parts so that 
+-- only pixels of the original image are shown, instead of adding extra blank space.
+-- Remember to free the new image later.
+var cropResizeImage = \img, w, h ->
+	assert(img ~= nil)
+	assert(w > 0)
+	assert(h > 0)
+
+	-- Resize the image without changing its aspect ratio
+	var aspect = img.width / img.height
+	var newAspect = w / h
+	
+	var cropped
+	
+	if aspect > newAspect  -- crop width to be img.height * newAspect
+		var tw = img.height * w / h
+		cropped = cropImage(img, (img.width - tw)/2, 0, tw, img.height)
+	
+	else  -- crop height to be img.width / newAspect
+		var th = img.width * h / w
+		cropped = cropImage(img, 0, (img.height - th)/2, img.width, th)
+
+	if cropped ~= nil
+		var outImg = resizeImage(cropped, w, h)
+		releaseImage(cropped)
+		return outImg
+
+
+-- If not force and image is narrower, return a copy of the image
+-- Else return a new image of desired width, while keeping aspect ratio.
+-- Remember to free the new image later.
+var maxWidthImage = \img, w, force ->
+	assert(img ~= nil)
+	assert(w > 0)
+	
+	if (not force and w >= img.width)
+		return copyImage(img)
+		
+	var h = img.height * w / img.width
+	return resizeImage(img, w, h)
+
+
+
+-- If not force and image is shorter, return a copy of the image
+-- Else return a new image of desired height, while keeping aspect ratio.
+-- Remember to free the new image later.
+var maxHeightImage = \img, h, force ->
+	assert(img ~= nil)
+	assert(h > 0)
+
+	if (not force and h >= img.height)
+		return copyImage(img)
+	
+	var w = img.width * h / img.height
+	return resizeImage(img, w, h)
+
+
+
+var test = ->
+	var img = hg.cvLoadImage('b.png', cv.CV_LOAD_IMAGE_UNCHANGED)
+	assert(img ~= nil)
+	var smaller = cropResizeImage(img, 300, 1400)
+	assert(smaller)
+	saveImage('small.png', smaller)
+	releaseImage(smaller)
+
+	var high = maxHeightImage(img, 200)
+	assert(high)
+	saveImage('height.png', high)
+	releaseImage(high)
+
+	var wide = maxWidthImage(img, 333)
+	assert(wide)
+	saveImage('width.png', wide)
+	releaseImage(wide)
+
+	releaseImage(img)
+
+return {
+	load = loadImage
+	, save = saveImage
+	, release = releaseImage
+	, resize = cropResizeImage
+	, resizeX = maxWidthImage
+	, resizeY = maxHeightImage
+	, encodeImage = encodeImage
+	, matBytes = matBytes
+	, releaseMat = releaseMat
+}

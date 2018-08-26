@@ -1,0 +1,62 @@
+var set
+-- items must be an empty table or {key1 = true, key2 = true, ...}
+set = \items ->
+	if items and "table" ~= type(items)
+		error("Argument to set() must be nil, an empty table or a table of {key1 = true, key2 = true, ...}")
+	else
+		items = {}
+
+	return {
+		add = \key ->
+			items[key] = true
+			
+		, del = \key ->
+			items[key] = nil
+		
+		, has = \key ->
+			return items[key] ~= nil
+		
+		-- optionally takes a transformation(x) function like map
+		, map = \fx ->
+			if fx
+				var other = {}
+				for k, _ in ipairs(items)
+					other[fx(k)] = true
+				return set(other)
+			return set(items)
+		
+		-- before calling any()
+		--  math.randomseed(ngx.time()) called in web.web
+		, any = ->
+			var n = 0
+			var x
+			for k, _ in pairs(items)
+				n = n + 1
+				if math.random() < 1/n
+					x = k
+			return x
+		
+		, each = ->
+			var k
+			return ->
+				k = next(items, k)
+				return k
+		
+		, length = ->
+			var n = 0
+			for _ in pairs(items)
+				n = n + 1
+			return n
+	}
+
+
+-- may take variadic list of string or number, or {key1 = true, key2 = true}
+return \... ->
+	var args = {...}
+	if #args == 1 and "table" == type(args[1])
+		return set(args[1])
+	
+	var s = set()
+	for _, v in ipairs(args)
+		s.add(v)
+	return s

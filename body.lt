@@ -1,0 +1,120 @@
+var upload = require('resty.upload')
+var cjson = require('cjson.safe')
+var str = require('losty.str')
+
+var has_body = \req ->
+	if not req.headers["Transfer-Encoding"] and not tonumber(req.headers["Content-Length"])
+		return false, "Empty request body"
+	return true
+
+var urlencoded = \req ->
+	var ok, err = has_body(req)
+	if ok
+		ngx.req.read_body()
+		return ngx.req.get_post_args()
+	return ok, err
+	
+var raw = \req ->
+	var ok, err = has_body(req)
+	if ok
+		ngx.req.read_body()
+		var data = ngx.req.get_body_data()
+		if not data 
+			var file = ngx.req.get_body_file()
+			if file 
+				var fp
+				fp, err = io.open(file, 'r')
+				if fp
+					data = fp.read(@, '*a')
+					fp.close(@)
+		return data, err
+	return ok, err
+	
+var json = \req ->
+	var r, err = raw(req)
+	if r
+		return cjson.decode(r)
+	return r, err
+
+
+var content_disposition = \value ->
+	var dtype, params = string.match(value, '([%w%-%._]+);(.+)')
+	if dtype and params
+		var out, o = {}, 0
+		for param in str.gsplit(params, ';')
+			var key, val = string.match(param, '([%w%.%-_]+)="(.+)"$')
+			if key
+				o = o + 1
+				out[o] = {key, val}
+		return out
+
+
+
+var K = {}
+
+-- https://github.com/felixge/node-formidable/blob/master/lib/incoming_form.js
+-- http://stackoverflow.com/questions/18877778/how-to-inspect-post-body-in-nginx-httpluamodule/19060711#19060711
+-- buffered way
+K.buffered = \req ->
+	var ctype = req.headers["Content-Type"]
+	if ctype
+		if string.match(ctype, "octet-stream")
+			return raw(req)
+		else if string.match(ctype, "urlencoded")
+			return urlencoded(req)
+		else if string.match(ctype, "json")
+			return json(req)
+		return nil, "Unfamiliar content-type " .. ctype
+	return nil, "Missing content-type"
+
+-- streaming way can look at 
+-- https://github.com/openresty/lua-resty-websocket/
+
+
+--``
+coroutine yields key, val
+case key
+	string: means header key, val
+	true: val is partial body
+	false: one body ended, val is nil
+	nil: all body ended. val is err or nil
+--``
+K.multi = \req ->
+	var yield = coroutine.yield
+	
+	var parse = coroutine.create( ->
+		var input, err = upload.new(@, 8192)
+		if input
+			input.set_timeout(@, 1000) -- 1 sec
+			var t, data
+			do
+				t, data, err = input.read(@)
+				if t
+					if 'header' == t
+						var name, value = unpack(data)
+						if name == 'Content-Disposition'
+							var params = content_disposition(value)
+							if params
+								for _, v in ipairs(params)
+									yield(v[1], v[2])
+						else
+							yield(string.lower(name), value)
+					else if 'body' == t
+						yield(true, data)
+					else if 'part_end' == t
+						yield(false, nil)
+				else
+					err = err or "Fail to parse upload data"
+			until not t or t == 'eof'
+		
+		return nil, err
+	)
+	return ->
+		var ctype = req.headers["Content-Type"]
+		if ctype and string.match(ctype, "multipart")
+			var code, key, val = coroutine.resume(parse)
+			return key, val
+		return nil, "Expected multipart/form-data but received " .. ctype or 'nil'
+
+
+return K
