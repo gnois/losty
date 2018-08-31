@@ -3,7 +3,7 @@ var choose = require('losty.accept')
 
 --print(ngx.worker.id())
 
-var CType = "text/event-stream"
+var EVstream = "text/event-stream"
 -- timeout in secs
 var timeout = 30
 var ping = "event:ping\ndata:\n\n"
@@ -28,14 +28,12 @@ var push = \str ->
 	ngx.print(str)
 	ngx.flush(true)
 
-var EVstream
-
 var subscribe = ->
 	var headers = ngx.req.get_headers()
-	var prefs = choose(headers["Accept"], {CType})
+	var prefs = choose(headers["Accept"], {EVstream})
 
-	if tostring(prefs[1]) == CType
-		ngx.header["Content-Type"] = CType
+	if tostring(prefs[1]) == EVstream
+		ngx.header["Content-Type"] = EVstream
 		ngx.header["Cache-Control"] = "no-cache"
 		ngx.status = 200
 		ngx.send_headers()

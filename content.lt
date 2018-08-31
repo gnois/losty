@@ -13,7 +13,7 @@ var reject = \req, res ->
 	res.status = 406
 	-- web.run() already provides desc for status >= 400
 	--res.headers['Content-Type'] = "text/plain"
-	--res.body = 'Not acceptable lo'
+	--res.body = 'Not acceptable'
 
 -- Once a route respond differently based on HTTP Accept header, shd set Vary: Accept for all responses
 -- See https://www.fastly.com/blog/best-practices-for-using-the-vary-header

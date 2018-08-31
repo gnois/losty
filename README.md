@@ -1,21 +1,31 @@
-*Losty* is a modern and practical web framework running atop OpenResty with minimal dependencies.
+Losty = [**_L_**uaty](https://github.com/gnois/luaty) + [**_O_**penResty](http://openresty.org)
 
-Putting functions first and foremost, *Losty* is similar to middleware based frameworks like Koa.js, but comes included with opinionated batteries. 
-It has a router, cookie and session handlers, content-negotiation, request body parsers, DSL for HTML generation, input checking, SQL migration helpers and other time saving features.
+Losty is a modern and practical web framework running atop OpenResty with minimal dependencies.
 
-Losty stands for [L]uaty + [O]penRe[sty]
+Putting functions first and foremost, Losty is similar to middleware based frameworks like Koa.js, but comes included with opinionated batteries, such as:
+
+- DSL for HTML generation
+- request router
+- request body parsers
+- content-negotiation
+- cookie and session handlers
+- Server side event (SSE) support
+- SQL query and migration helpers
+- input validation helpers
+- table, string and functional helpers
+
 
 
 Installation
 ------------
 
-Requirement: OpenResty
+Dependency: [OpenResty](http://openresty.org)
+
+Optional:
+[Luaty](https://github.com/gnois/luaty) to compile to Lua
+[pgmoon](https://github.com/leafo/pgmoon) if using PostgreSQL
 
 
-After installing OpenResty, run
-```
-opm install losty
-```
 
 
 Usage

@@ -103,6 +103,7 @@ var script_path = ->
 	var str = string.sub(debug.getinfo(2, "S").source, 2)
 	return string.match(str, "(.*/)")
 
+-- Note: stops_en.txt is also referenced by  sphinx.conf
 var file, err = io.open(script_path() .. "stops_en.txt", "r")
 if not file
 	error(err)
