@@ -2,10 +2,10 @@
 -- http://stackoverflow.com/questions/24847971/null-equals-0-in-c-so-should-i-treat-both-values-like-a-nil
 -- if value then .... won't work, coz value is a cdata object and therefore evaluates to true, even though it is equal to nil
 
-var cv = require('cv.cv')
-var core = require('cv.core')
-var hg = require('cv.highgui')
-var ip = require('cv.imgproc')
+var cv = require('losty.cv.cv')
+var core = require('losty.cv.core')
+var hg = require('losty.cv.highgui')
+var ip = require('losty.cv.imgproc')
 
 var ffi = require('ffi')
 var imgptr = ffi.typeof("IplImage*[1]")

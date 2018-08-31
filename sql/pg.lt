@@ -1,8 +1,8 @@
 var pgmoon = require('pgmoon')
 var pgmarrays = require('pgmoon.arrays')
 var pgmjson = require('pgmoon.json')
-var sql = require('losty.sql')
 var is = require('losty.is')
+var sql = require('losty.sql.base')
 
 return \database, user, password, host, port, pool ->
 	
