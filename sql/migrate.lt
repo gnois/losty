@@ -1,7 +1,7 @@
 var to = require('losty.to')
 var str = require('losty.str')
-var model = require('losty.model')
 var c = require('losty.exec')
+var model = require('losty.sql.model')
 
 var usage = ->
 	io.stderr.write(@, ```
