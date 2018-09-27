@@ -74,7 +74,8 @@ K.seed = \db, fn ->
 	assert('function' == type(fn), "seed must take a function which accepts a database handle")
 	
 	db.connect()
-	db.begin()
+	-- dont start tx, in case fn() also has tx causing nested tx and PG issues warning/error: already inside a transaction
+	-- db.begin()
 	
 	var ok, trace = xpcall(fn, \err ->
 		return debug.traceback(err, 2)
@@ -83,11 +84,11 @@ K.seed = \db, fn ->
 	if not ok
 		print(c.syan, trace, c.reset)
 		print(c.onred, c.white, c.bright, "  Transaction not committed  ", c.reset)
-		db.rollback()
+		--db.rollback()
 		db.disconnect()
 		return false
 
-	db.commit()
+	-- db.commit()
 	db.disconnect()
 	return true
 

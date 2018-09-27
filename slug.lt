@@ -212,7 +212,8 @@ return \title ->
 			
 			-- trim begin and end again
 			clean = to.trimmed(clean)
-			-- all middle spaces to dash
+			-- all middle spaces to dash (underscore is not treated as separator by google)
+			-- https://www.ecreativeim.com/blog/index.php/2011/03/30/seo-basics-hyphen-or-underscore-for-seo-urls/
 			clean = string.gsub(clean, '%s+', '-')
 			return clean
 	return ''

@@ -9,6 +9,7 @@ Putting functions first and foremost, Losty is similar to middleware based frame
 - request body parsers
 - content-negotiation
 - cookie and session handlers
+- slug generation for url
 - Server side event (SSE) support
 - SQL query and migration helpers
 - input validation helpers
@@ -22,9 +23,8 @@ Installation
 Dependency: [OpenResty](http://openresty.org)
 
 Optional:
-[Luaty](https://github.com/gnois/luaty) to compile to Lua
-[pgmoon](https://github.com/leafo/pgmoon) if using PostgreSQL
-
+- [Luaty](https://github.com/gnois/luaty) to compile to Lua
+- [pgmoon](https://github.com/leafo/pgmoon) if using PostgreSQL (for MySQL, OpenResty comes with lua-resty-mysql)
 
 
 
@@ -68,7 +68,7 @@ var not_found = page({
 w.get('/', \req, res->
 	res.ok(page({
 		title = 'Hi'
-		, message = 'Luasty here'
+		, message = 'Losty is live!'
 	}))
 )
 
