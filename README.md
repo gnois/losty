@@ -1,6 +1,6 @@
 Losty = [**_L_**uaty](https://github.com/gnois/luaty) + [**_O_**penResty](http://openresty.org)
 
-Losty is a modern and practical web framework running atop OpenResty with minimal dependencies.
+Losty is a practical web framework running atop OpenResty with minimal dependencies.
 
 Putting functions first and foremost, Losty is similar to middleware based frameworks like Koa.js, but comes included with opinionated batteries, such as:
 
@@ -82,5 +82,5 @@ server.run(replies)
 
 Credits
 -------
-This project has stolen ideas and codes from respectable projects such as Lapis, Mashape router, lua-resty-* from Bungle, and helpful examples from OpenResty and around the web.
+This project has stolen ideas and codes from respectable projects such as Lapis, Kong router, lua-resty-* from Bungle, and helpful examples from OpenResty and around the web.
 Of course it wouldn't exist without the magnificent OpenResty in the first place.
