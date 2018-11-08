@@ -1,4 +1,3 @@
-	
 var dump = \value ->
 	var seen = {}
 	var dmp

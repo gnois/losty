@@ -35,7 +35,7 @@ var read_uid_binary = ->
 
 	--``
 	var printx = \x ->
-		print("0x"..bit.tohex(x))
+		print("0x", bit.tohex(x))
 	
 	--printx(a)
 	--printx(b)

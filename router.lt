@@ -1,3 +1,4 @@
+-- stolen from mashape router
 
 return ->
 	var COLON = string.byte(':', 1)
@@ -11,7 +12,7 @@ return ->
 		_, _, token, path = string.find(path, "([^/]+)(.*)")
 		if not token
 			return node[LEAF], params
-		--print(token .. ' -> ' .. path)
+		--print(token, ' -> ', path)
 		for child_token, child_node in pairs(node) 
 			if child_token == token 
 				var func, bindings = resolve(path, child_node, params)

@@ -1,5 +1,5 @@
--- same as Rails flash, except is only read or written by browser
--- vs `session` which is encrypted and only readable by server
+-- flash is only read or written by browser
+-- vs session which is encrypted and only readable by server
 
 var enc = require('losty.enc')
 var tbl = require('losty.tbl')

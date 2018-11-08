@@ -1,4 +1,4 @@
--- https://github.com/kernelsauce/turbo
+-- Stolen from https://github.com/kernelsauce/turbo
 -- Copyright 2013 John Abrahamsen
 
 var ffi = require('ffi')
@@ -32,7 +32,7 @@ fs.exists = \path ->
 
 fs.read_all = \file ->
 	var f = io.open(file, "rb")
-	assert(f, "Could not open file " .. file .. " for reading.")
+	assert(f, "Could not open file ", file, " for reading.")
 	var content = f.read(@, "*all")
 	f.close(@)
 	return content

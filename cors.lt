@@ -1,4 +1,4 @@
--- Copied from https://github.com/detailyang/lua-resty-cors
+-- Stolen from https://github.com/detailyang/lua-resty-cors
 -- https://www.w3.org/TR/cors/
 
 

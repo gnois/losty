@@ -1,3 +1,5 @@
+-- Stolen 
+
 var ffi = require("ffi")
 
 var ENCODED_LEN = 108
@@ -64,7 +66,7 @@ _M.encrypt = \pwd, salt, opts ->
       if o == nil
         opts[k] = v
       else if k ~= "argon2d" and type(o) ~= "number"
-        error("expected "..k.." to be a number", 2)
+        error("expected " .. k .. " to be a number", 2)
 
   var res
   if opts.argon2d
@@ -80,7 +82,7 @@ _M.encrypt = \pwd, salt, opts ->
 
 _M.verify = \hash, plain ->
   if type(hash) ~= "string"
-    error("bad argument #1 to 'verify' (string expected, got "..type(hash)..")", 2)
+    error("bad argument #1 to 'verify' (string expected, got " .. type(hash) .. ")", 2)
   else if type(plain) ~= "string"
     error("bad argument #2 to 'verify' (string expected, got "..type(plain)..")", 2)
   

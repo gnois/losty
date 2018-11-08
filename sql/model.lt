@@ -31,7 +31,7 @@ K.migrate = \db, migrations ->
 	for _, v in ipairs(tuples)
 		var index, sql = tostring(v[1]), v[2]
 		if not exists[index]
-			print("Migrating " .. index)
+			print("Migrating ", index)
 			var ok, err = db.run(sql)
 			if ok 
 				db.insert("migrations (index) VALUES (?)", index)
@@ -39,7 +39,7 @@ K.migrate = \db, migrations ->
 				print(err)
 				break
 		else
-			print(index .. " already migrated")
+			print(index, " already migrated")
 	
 	db.disconnect()
 	return true

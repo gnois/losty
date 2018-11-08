@@ -244,7 +244,7 @@ var tests = ->
 					print('    ', kk .. ':', vvv)
 				print('  ', '}')
 			else
-				print('  ', k .. ':', vv)
+				print('  ', k, ' : ', vv)
 	
 	var data = {
 		'text/plain;q=0.1, application/json;q=0.5, text/html, */*'
