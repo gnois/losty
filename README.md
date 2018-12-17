@@ -19,6 +19,9 @@ Putting functions first and foremost, Losty is similar to middleware based frame
 
 Installation
 ------------
+```
+$ opm get gnois/losty
+```
 
 Dependency: [OpenResty](http://openresty.org)
 
@@ -30,9 +33,21 @@ Optional:
 
 Usage
 -----
+
+Create nginx.conf and app.lt under yourapp folder:
 ```
-var web = require('web.web')
-var view = require('web.view')
+yourapp/
+  |-- nginx.conf
+  |-- app.lt
+```
+
+app.lt
+```
+require('resty.core')
+collectgarbage("collect")
+
+var web = require('losty.web')
+var view = require('losty.view')
 
 var server = web()
 var w = server.route()
@@ -73,10 +88,78 @@ w.get('/', \req, res->
 )
 
 -- custom error pages
-var replies = {
+var errors = {
 	[404] = not_found()
 }
-server.run(replies)
+
+return ->
+	server.run(errors)
+```
+
+
+nginx.conf
+```
+
+http {
+
+	lua_package_path ";;../?.lua;";  # losty is one level up
+	lua_code_cache off;  # turn on in production
+	
+	init_by_lua_block {
+		require("app")
+	}
+
+	server {
+		listen 80;
+		listen [::]:80;
+		server_name domain.com;
+
+		access_log off;
+		
+		error_page 404 /404.html;
+		error_page 500 /5xx.html;
+		
+		# static files shd not need /prefix, bcoz google check existance of /file.html to verify domain ownership
+		# Eg:
+		# /file.css
+		# /7890322/file.js
+		# /404.html
+		root public;
+		location ~ ^/.+\.(html|txt|js|css|ico)$ {
+			expires 1y;
+			location ~ ^/\d+/(.+)$ {
+				# for busting browser cache
+				try_files /$1 =404;
+			}
+		}
+
+		# dynamic content
+		location / {
+			userid on;
+			userid_name id;
+			userid_path /;
+			userid_mark Y;
+			userid_expires max;
+			etag off;
+			access_log on;
+			access_by_lua_block {
+				local ua = ngx.req.get_headers()['User-Agent']
+				if not ua or ua == ''
+					return ngx.exit(ngx.HTTP_FORBIDDEN)
+			}
+			content_by_lua_block {
+				require("app")()
+			}
+		}
+	}
+}
+```
+
+Finally, start nginx with prefix in yourapp/ folder
+```
+ > cd yourapp
+ > luaty app.lt app.lua
+ > nginx -p . -c nginx.conf
 ```
 
 
