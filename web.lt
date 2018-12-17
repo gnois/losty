@@ -68,6 +68,7 @@ return ->
 		-- for status 400 above without body, we try to 
 		-- 1. use the error[status] html if any text/html is requested
 		-- 2. provide default response if json is requested or if no html is given
+		-- If want to use error_page in nginx configuration, call ngx.exit(status) instead of using res.status
 		if not res.body and res.status >= 400
 			if req.method ~= 'HEAD'
 				var pref = choose(req.headers["Accept"], {HTML, JSON})

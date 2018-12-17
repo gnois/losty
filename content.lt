@@ -82,7 +82,7 @@ var header = \req, res ->
 	-- res.headers["Vary"] = "Accept-Encoding"
 	res.headers["Content-Type"] = "text/html"
 	-- we don't want to go inside iframe
-	res.headers["X-Frame-Options"] = "deny"
+	-- res.headers["X-Frame-Options"] = "deny"  -- can be set in nginx.conf   add_header X-Frame-Options "SAMEORIGIN" always;   or "deny" always;
 	-- browser must not cache html. Else Login then Back button loses the credential
 	res.nocache()
 	return req.next()
