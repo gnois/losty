@@ -74,7 +74,7 @@ return ->
 				var pref = choose(req.headers["Accept"], {HTML, JSON})
 				var ctype = tostring(pref[1])
 				if ctype == HTML
-					res.body = errors[res.status]
+					res.body = errors and errors[res.status]
 				else
 					res.body = json.encode({ fail = status(res.status) })
 				
