@@ -99,7 +99,6 @@ return ->
 
 nginx.conf
 ```
-
 http {
 
 	lua_package_path ";;../?.lua;";  # losty is one level up
@@ -161,6 +160,30 @@ Finally, start nginx with prefix in yourapp/ folder
  > luaty app.lt app.lua
  > nginx -p . -c nginx.conf
 ```
+
+
+General Idea
+-------
+
+Losty is assumed to run under content_by_lua directive. 
+Its route handlers are function taking request and response object.
+
+Response headers, status and body are buffered using
+```
+res.headers[Name] = value
+res.body = 'body'
+res.status = 200
+```
+and finally set into ngx.headers, ngx.status and calling ngx.print(body) and ngx.eof() after the last handler.
+
+This means that code below will not produce desired effect because ngx.say or ngx.print is not yet being called:
+```
+res.body = 'Hello world'
+ngx.flush()
+ngx.eof() 
+```
+
+To short circuit Losty dispatcher and return control to nginx, call `return ngx.exit(status)`. This is useful for example to reuse error_page directive instead of using Losty generated error page.
 
 
 Credits

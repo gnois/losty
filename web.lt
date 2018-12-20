@@ -33,7 +33,8 @@ return ->
 		return req.method == 'HEAD' or code == 204 or code == 205 or code == 304
 
 
-	-- errors is a table { [status >= 400] = "<html> error message markup </html>" }
+	-- errors will only be used for HTTP status >= 400 and 
+	-- can be true, nil or table indexed by HTTP status number, eg: { [400] = "<html> error message markup </html>" }
 	var run = \errors ->
 		var req = request()
 		var resp = response()
@@ -65,23 +66,28 @@ return ->
 		else
 			res.status = 404
 
-		-- for status 400 above without body, we try to 
-		-- 1. use the error[status] html if any text/html is requested
-		-- 2. provide default response if json is requested or if no html is given
-		-- If want to use error_page in nginx configuration, call ngx.exit(status) instead of using res.status
+		-- for status 400 above without body:
+		-- 1. if json is requested, provide default response 
+		-- 2. if text/* is requested
+			-- if errors is true, fall back to nginx error_page
+			-- else if errors is table, use error[status] html
+			-- else generate text/plain error msg
 		if not res.body and res.status >= 400
+			var pref = choose(req.headers["Accept"], {HTML, JSON})
+			var ctype = tostring(pref[1])
 			if req.method ~= 'HEAD'
-				var pref = choose(req.headers["Accept"], {HTML, JSON})
-				var ctype = tostring(pref[1])
-				if ctype == HTML
-					res.body = errors and errors[res.status]
-				else
+				if ctype == JSON
 					res.body = json.encode({ fail = status(res.status) })
+				else
+					if errors == true
+						ngx.exit(res.status)
+					else if errors
+						res.body = errors[res.status]
 				
-				if not res.body or #res.body < 1
-					ctype = "text/plain"
-					res.body = status(res.status)
-				res.headers['Content-Type'] = ctype
+					if not res.body or #res.body < 1
+						ctype = "text/plain"
+						res.body = status(res.status)
+			res.headers['Content-Type'] = ctype
 
 		resp.send_headers(req.secure)
 		if not must_no_body(req, res.status)
