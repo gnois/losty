@@ -1,4 +1,4 @@
-Losty = [**_L_**uaty](https://github.com/gnois/luaty) + [**_O_**penResty](http://openresty.org)
+Losty = [*L*uaty](https://github.com/gnois/luaty) + [*O*penRe*sty*](http://openresty.org)
 
 Losty is a practical web framework running atop OpenResty with minimal dependencies.
 
@@ -180,29 +180,30 @@ Handlers
 --------
 Losty handlers are functions having the general structure below:
 
+```
 \req, res, w, x, ... ->
 	if ok
 		req.next(y, z)
 	else
 		res.status = 400
 		-- skip the following handlers
-	
+```	
 Handlers can be chained, and values passed to req.next() will appear as function arguments in the following handlers, as w, x in the above example. 
 
 
 
 For example, here is a handler for http POST, PUT or DELETE request:
-
+```
 var form = \req, res ->
 	var val, fail = body.buffered(req)
 	if val or req.method == 'DELETE'
 		return req.next(val)
 	res.status = 400 -- bad request
 	return { fail = fail or req.method .. " should have request body" }
-
+```
 
 Here is another handler to open a database connection, and pass on the connection, then returning the return value of the next handler after closing the connection.
-
+```
 var pg = require('losty.sql.pg')
 
 var database = \req, res ->
@@ -211,12 +212,11 @@ var database = \req, res ->
 	var out = req.next(db)
 	db.disconnect()
 	return out
-
-
+```
 
 The above handlers can be used like this:
 
-
+```
 w.post('/path', \_, res ->
 	res.headers["Content-Type"] = "application/json"
 	req.next()
@@ -226,28 +226,23 @@ w.post('/path', \_, res ->
 	db.insert(...)
 	res.status = 201
 )
-
+```
 Notice how handlers are chained, and the body and db are accumulated and passed as arguments to the following handlers.
 
 Other frameworks normally use a context table that get extended with keys and passed around to handlers, but Losty passes them as function arguments.
 There are pros and cons to this design:
 
-
-Pros:
----
+* Pros:
 Arguments are easily visible. Handlers are sometimes copied or moved around, and listing arguments deliberately reduces mistakes.
 Argument never gets overwritten accidentally. On the contrary, extending context table need to be careful not to reuse the same key.
 Switching to a context table is easy. Just append keys to the req or res table. Or use req.next(ctx) in the first handler and in the following handlers, extend ctx and call req.next() without argument.
 
-
-Cons:
----
+* Cons:
 Arguments (un)packing is slower. But handlers are probably not too many to make the slowness significant.
 
+* Renaming keys in context table is errorprone. All following handlers have to be changed. For Losty, the position of the arguments need to be followed when moving handlers around.
 
-Tie
----
-- Renaming keys in context table is errorprone. All following handlers have to be changed. For Losty, the position of the arguments need to be followed when moving handlers around.
+
 
 
 
