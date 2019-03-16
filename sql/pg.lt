@@ -7,7 +7,6 @@ var sql = require('losty.sql.base')
 return \database, user, password, host, port, pool ->
 	
 	var db = pgmoon.new({database = database, user = user, password = password, host = host, port = port, pool = pool})
-	--var began = false
   
 	var interpolate = \query, ... ->
 		var args = {...}
@@ -46,11 +45,14 @@ return \database, user, password, host, port, pool ->
 		db.keepalive(@, timeout)
 		
 	var K = sql(db, run, keepalive)
-	
+
+	-- must only connect() inside a function, not at top level
+	-- else Error: cannot yield across C-call boundary
 	K.connect = ->
 		assert(db.connect(@))
 		--db.query(@, "SET TIME ZONE 'UTC';")
 
+	-- closes the connection, vs K.disconnect() which keepalive the connection and rollback uncommitted transaction
 	K.close = ->
 		db.disconnect(@)
 		

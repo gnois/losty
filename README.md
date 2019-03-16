@@ -1,6 +1,6 @@
 Losty = [*L*uaty](https://github.com/gnois/luaty) + [*O*penRe*sty*](http://openresty.org)
 
-Losty is a practical web framework running atop OpenResty with minimal dependencies.
+Losty is a practically simple web framework running atop OpenResty with minimal dependencies.
 
 It is similar with middleware based frameworks like Sinatra or Koa.js, but using Lua specific features and includes opinionated batteries, such as:
 
@@ -11,7 +11,7 @@ It is similar with middleware based frameworks like Sinatra or Koa.js, but using
 - cookie and session handlers
 - slug generation for url
 - Server Side Event (SSE) support
-- SQL query and migration helpers
+- SQL operation helpers
 - input validation helpers
 - table, string and functional helpers
 
@@ -242,6 +242,63 @@ Arguments (un)packing is slower. But handlers are probably not too many to make 
 
 * Renaming keys in context table is errorprone. All following handlers have to be changed. For Losty, the position of the arguments need to be followed when moving handlers around.
 
+
+
+SQL Operations
+---------
+Losty provides wrappers for MySQL and PostgreSQL drivers and a basic migration utility. There is no ORM layer, because no ORM is able to fully abstract the flexibility of SQL.
+
+As an example, suppose we want to use an existing PostgreSQL database.
+Lets create a new table with SQL file:
+
+users.sql
+```
+CREATE TABLE user (
+	id serial PRIMARY KEY
+	, name text NOT NULL
+	, email text NOT NULL
+)
+```
+Lets create another table using Luaty:
+
+friends.lt
+```
+return {
+	`CREATE TABLE friend (
+		id int NOT NULL REFERENCES users
+		, userid int NOT NULL REFERENCES users
+		, UNIQUE (id, userid)
+	)`
+}
+```
+
+We can then migrate the tables into PostgreSQL using `resty` below:
+```
+resty -I ../ -e 'require("losty.sql.migrate")(require("losty.sql.pg")("dbname", "user", "password", host, port))' users.sql friends
+```
+
+The database server host and port are optional, and defaults to '127.0.0.1' and 5432 respectively.
+Losty migration accepts both SQL and Lua source files. 
+A Lua source file extension is optional, and should return an array of strings, which are SQL commands. This allows us to generate SQL using Lua variables and code. Each array item is sent to the database server in a separate batch.
+An SQL file uses `----` as batch separator. Separating SQL commands into batches are helpful in case an error occurs, without which it's harder to locate the line of error.
+
+Lets create a function to insert a user:
+
+user.lt
+```
+var db = require("losty.sql.pg")("dbname", "user", "password")
+
+var insert = \name, email ->
+	db.connect()
+	var r, err = db.insert("user (name, email) VALUES (?, ?) RETURNING id", name, email)
+	db.disconnect()
+	return r and r.id, err
+```
+
+Note that db.connect() must be called inside a function (not at top level), else the error `cannot yield across C-call boundary` will occur.
+Calling disconnect() will keep the connection back to the connection pool and is considered a better practice than calling close() which releases the connection.
+
+The input values `name` and `email` are properly escaped and interpolated into the SQL statement, before sending to the database, and the result is accessible from the first return value object if it succeeds, or the second string if failed. Please refer to pgmoon or lua-resty-mysql documentation on the full explanation of return values.
 
 
 

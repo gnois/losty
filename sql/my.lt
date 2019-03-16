@@ -36,6 +36,7 @@ return \database, user, password, host, port, pool ->
 		assert(db.connect(@, {database = database, user = user, password = password, host = host, port = port, pool = pool}))
 		--db.query(@, "SET TIME ZONE 'UTC';")
 
+	-- closes the connection, vs K.disconnect() which keepalive the connection and rollback uncommitted transaction
 	K.close = ->
 		db.close(@)
 
