@@ -29,20 +29,21 @@ Optional:
 Usage
 -----
 
-1. Clone this repo as losty/
+1. Copy the losty/ folder
 2. Create nginx.conf and app.lt under yourapp/ folder, which is at the same level as losty/:
 
 ```
-yourapp/
-  |-- nginx.conf
-  |-- app.lt
-  |-- ...
-  |-- static/
-     |-- 404.html
-     |-- 5xx.html
-     |-- robots.txt
-     |-- xx.css
-     |-- xx.js
+|-- losty/
+|-- yourapp/
+     |-- nginx.conf
+     |-- app.lt
+     |-- ...
+     |-- static/
+          |-- 404.html
+          |-- 5xx.html
+          |-- robots.txt
+          |-- xx.css
+          |-- xx.js
 ```
 
 app.lt
