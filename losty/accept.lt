@@ -1,5 +1,6 @@
 -- stolen from
 --  https://github.com/jshttp/negotiator
+require('resty.core.regex')
 var bit = require('bit')
 var to = require('losty.to')
 
@@ -61,7 +62,8 @@ var media_mt = {
 }
 
 var parse_media = \mt, i ->
-	var arr = ngx.re.match(mt, media_re)
+	-- https://segmentfault.com/a/1190000007298100  optimize PCRE
+	var arr = ngx.re.match(mt, media_re, "jo")
 	if arr
 		var m = {
 			media = lower(arr[1])
