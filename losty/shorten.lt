@@ -35,7 +35,7 @@ var decode = \str ->
 	var num = 0
 	for i = 0, string.len(str)
 		var ch = string.sub(str, i, i)
-		num = num * base + (alphabet.find(ch) - 1)  -- Lua starts from 1
+		num = num * base + (string.find(alphabet, ch) - 1)  -- Lua starts from 1
 	return num
 
 
