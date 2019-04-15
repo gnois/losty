@@ -216,7 +216,7 @@ var normal = \tag, attrs, ... ->
 		-- if we have only attrs, but it is a string or is an array and have a tag property, consider it as children
 		if n == 0
 			var kind = type(attrs)
-			if 'string' == kind or 'table' == kind and attrs[1] or attrs.tag
+			if 'number' == kind or 'string' == kind or 'table' == kind and attrs[1] or attrs.tag
 				args = attrs
 				attrs = nil
 		else if n == 1 
