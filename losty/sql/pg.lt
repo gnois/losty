@@ -1,42 +1,65 @@
 var pgmoon = require('pgmoon')
-var pgmarrays = require('pgmoon.arrays')
-var pgmjson = require('pgmoon.json')
+var parrays = require('pgmoon.arrays')
+var pjson = require('pgmoon.json')
+var phstore = require('pgmoon.hstore')
 var is = require('losty.is')
 var sql = require('losty.sql.base')
+
+-- Remember to call setup_hstore() 
 
 return \database, user, password, host, port, pool ->
 	
 	var db = pgmoon.new({database = database, user = user, password = password, host = host, port = port, pool = pool})
-  
+	-- use ngx.null instead of nil
+	db.convert_null = true
+	db.NULL = ngx.null
+	
+	-- To list all pgsql operators
+	-- psql 
+	-- \do ?
+	-- \do ??
+	-- \do ???
+	-- why not named parameter :var: inside query ? coz Luaty can no longer check use of undeclared variable
+	--   only nil, boolean, number, string and table acceptable as arguments for placeholder
 	var interpolate = \query, ... ->
 		var args = {...}
 		var i = 0
-		return (string.gsub(query, "%?", ->
+		return (string.gsub(query, "(:?):([a-z%?])", \c, x ->
+			-- if using [^:] instead of (:?), we will not match at the beginning of a line
+			if c == ':'  -- return :: verbatim
+				return '::' .. x
+
 			i = i + 1
-			if not args[i]
-				return "NULL"
-			
-			if is.tbl(args[i])
-				var kind = type(args[i][1])
-				if 'number' == kind or 'string' == kind
-					-- encode_array cannot work with empty arr
-					return pgmarrays.encode_array(args[i])
-				else
-					return pgmjson.encode_json(args[i])
-					--return "'{" .. table.concat(args[i], ',') .. "}'"
-			-- return set_quote_pgsql_str(args[i]) ? how about using this?
-			return db.escape_literal(@, args[i])
-		))
+			var a = args[i]
+			if a and a ~= ngx.null
+				if is.tbl(a)
+					if x == 'a'
+						return parrays.encode_array(a)
+					else if x == 'h'
+						return phstore.encode_hstore(a)
+					else if x ~= '?'
+						ngx.log(ngx.ERR, "Invalid query placeholder `:", x, "` for table value at position ", i)
+					return pjson.encode_json(a)
+				
+				else if is.num(a) or is.str(a) or is.bool(a)
+					if x == 'b'
+						return db.encode_bytea(@, a)
+					else if x ~= '?'
+						ngx.log(ngx.ERR, "Invalid query placeholder `:", x, "` for scalar value at position ", i)
+					return db.escape_literal(@, a)
+
+			return "NULL"
+		)), i
 
 	var run = \str, ... ->
-		-- nil arguments are valid
-		if select("#", ...) > 0
-			str = interpolate(str, ...)
-		var result, err, partial, count = db.query(@, str)
-		print(str)	-- comment in production
+		var n = select("#", ...)
+		var q, i = interpolate(str, ...)
+		if n ~= i
+			ngx.log(ngx.ERR, "Trying to match ", i ," placeholders to ", n ," arguments for query `", str, "`")
+		var result, err, partial, count = db.query(@, q)
+		print(q)
 		-- result is true on success if no query result, nil if failed
 		if result == nil and err
-			print(err)  -- comment in production
 			ngx.log(ngx.ERR, err)
 		-- err can be count
 		return result, err, partial, count
@@ -45,6 +68,9 @@ return \database, user, password, host, port, pool ->
 		db.keepalive(@, timeout)
 		
 	var K = sql(db, run, keepalive)
+
+	K.hstore = ->
+		db.setup_hstore(@)
 
 	-- must only connect() inside a function, not at top level
 	-- else Error: cannot yield across C-call boundary
