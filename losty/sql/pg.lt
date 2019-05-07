@@ -2,7 +2,6 @@ var pgmoon = require('pgmoon')
 var parrays = require('pgmoon.arrays')
 var pjson = require('pgmoon.json')
 var phstore = require('pgmoon.hstore')
-var is = require('losty.is')
 var sql = require('losty.sql.base')
 
 -- Remember to call setup_hstore() 
@@ -20,19 +19,21 @@ return \database, user, password, host, port, pool ->
 	-- \do ??
 	-- \do ???
 	-- why not named parameter :var: inside query ? coz Luaty can no longer check use of undeclared variable
-	--   only nil, boolean, number, string and table acceptable as arguments for placeholder
+	
+	-- Only nil, boolean, number, string and table acceptable as arguments for placeholder
 	var interpolate = \query, ... ->
 		var args = {...}
 		var i = 0
 		return (string.gsub(query, "(:?):([a-z%?])", \c, x ->
-			-- if using [^:] instead of (:?), we will not match at the beginning of a line
-			if c == ':'  -- return :: verbatim
+			-- if using [^:] instead of (:?), we will miss :? at the beginning of a line
+			if c == ':'  -- return verbatim
 				return '::' .. x
 
 			i = i + 1
 			var a = args[i]
 			if a and a ~= ngx.null
-				if is.tbl(a)
+				var ty = type(a)
+				if 'table' == ty
 					if x == 'a'
 						return parrays.encode_array(a)
 					else if x == 'h'
@@ -41,7 +42,7 @@ return \database, user, password, host, port, pool ->
 						ngx.log(ngx.ERR, "Invalid query placeholder `:", x, "` for table value at position ", i)
 					return pjson.encode_json(a)
 				
-				else if is.num(a) or is.str(a) or is.bool(a)
+				else if 'number' == ty or 'string' == ty or 'boolean' == ty
 					if x == 'b'
 						return db.encode_bytea(@, a)
 					else if x ~= '?'
