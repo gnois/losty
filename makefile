@@ -16,20 +16,24 @@ PACKAGE := "package.path=package.path .. '/luaty/?.lua'"
 # https://unix.stackexchange.com/questions/140912/no-target-error-using-make
 # https://stackoverflow.com/questions/2908057/can-i-compile-all-cpp-files-in-src-to-os-in-obj-then-link-to-binary-in/2908351#2908351
 
-# SRC path cannot end with $/ bcoz make cannot understand target $(SRC)%.lua without the slash as separator
-SRC := .$/losty
-LT := $(wildcard $(SRC)/*.lt) $(wildcard $(SRC)/sql/*.lt) 
-LUA := $(patsubst $(SRC)/%.lt,$(SRC)/%.lua,$(LT))
+# SRC and DST path cannot end with $/ bcoz gnu make cannot understand target $(SRC)%.lua without the slash as separator
+SRC := .$/lt
+DST := .$/losty
+LT := $(wildcard $(SRC)/*.lt) $(wildcard $(SRC)/sql/*.lt)
+#LUA := $(patsubst $(DST)/%.lt,$(DST)/%.lua,$(LT))
+LUA := $(patsubst $(DST)/%.lt,$(DST)/%.lua,$(subst $(SRC)/,$(DST)/,$(LT)))
+
 
 .PHONY: all clean
+#all: ; $(info $$LUA is [${LUA}])echo Hello
 all: $(LUA)
 
 # Cannot use $< in recipe bcoz windows require backslash
 
-$(SRC)/%.lua: $(SRC)/%.lt
-	$(LUAJIT) -e $(PACKAGE) $(LTFLAGS) $(SRC)$/$*.lt .
+$(DST)/%.lua: $(SRC)/%.lt
+	$(LUAJIT) -e $(PACKAGE) $(LTFLAGS) $(SRC)$/$*.lt $(DST)$/$*.lua
 # $(MAKE) -C $(SRC) $*.lua
 
 clean:
-	$(RM) $(SRC)$/*.lua
-	$(RM) $(SRC)$/sql$/*.lua
+	$(RM) $(DST)$/*.lua
+	$(RM) $(DST)$/sql$/*.lua
