@@ -296,12 +296,12 @@ var insert = \name, email ->
 Note that db.connect() must be called inside a function (not at top level), else the error `cannot yield across C-call boundary` will occur.
 db.disconnect() calls keepalive() under the hood, which puts the connection back to the connection pool and is considered a better practice than calling close().
 
-The :? are placeholders, where ? is a default modifier that converts Lua table and Lua strings to json and quoted strings respectively. The values in `name` and `email` will be interpolated into the placeholders, before sending to the database.
+The `:?` are placeholders, where `?` is a default modifier that converts Lua table and string to PostgreSQL json and quoted string respectively. The values in `name` and `email` will be interpolated into the placeholders, before sending to the database.
 
 Other placeholder modifiers exist to customize the conversion from Lua to PostgreSQL data types:
-* :a Lua arrays => PostgreSQL arrays
-* :h Lua table => PostgreSQL hstore
-* :b Lua string => PostgreSQL bytea
+* `:a` Lua table => PostgreSQL arrays
+* `:h` Lua table => PostgreSQL hstore
+* `:b` Lua string => PostgreSQL bytea
 
 The query result is accessible from the first return value object if it succeeds, or the second string if failed. Please refer to pgmoon or lua-resty-mysql documentation on the full explanation of return values.
 

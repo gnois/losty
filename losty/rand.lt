@@ -1,13 +1,11 @@
 var rnd = require('resty.random')
 var str = require('resty.string')
-var base64enc = ngx.encode_base64
-var hmac = ngx.hmac_sha1
 
 var K = {}
 
 -- generate symmetric key
 K.key = \secret, key ->
-	return base64enc(hmac(secret, key))
+	return ngx.encode_base64(ngx.hmac_sha1(secret, key))
 
 
 -- generate a random binary of `length` converted to hex
