@@ -20,21 +20,24 @@ local binary = function(v)
 end
 local read_uid_binary = function()
     local uid = read_uid()
-    local a = tonumber(string.sub(uid, 1, 8), 16)
-    local b = tonumber(string.sub(uid, 9, 16), 16)
-    local c = tonumber(string.sub(uid, 17, 24), 16)
-    local d = tonumber(string.sub(uid, 25, 32), 16)
-    a = bit.bswap(a)
-    b = bit.bswap(b)
-    c = bit.bswap(c)
-    d = bit.bswap(d)
-    local buff = {}
-    buff[1] = binary(a)
-    buff[2] = binary(b)
-    buff[3] = binary(c)
-    buff[4] = binary(d)
-    local bytes16 = table.concat(buff, "")
-    return bytes16
+    if uid and string.len(uid) > 1 then
+        local a = tonumber(string.sub(uid, 1, 8), 16)
+        local b = tonumber(string.sub(uid, 9, 16), 16)
+        local c = tonumber(string.sub(uid, 17, 24), 16)
+        local d = tonumber(string.sub(uid, 25, 32), 16)
+        a = bit.bswap(a)
+        b = bit.bswap(b)
+        c = bit.bswap(c)
+        d = bit.bswap(d)
+        local buff = {}
+        buff[1] = binary(a)
+        buff[2] = binary(b)
+        buff[3] = binary(c)
+        buff[4] = binary(d)
+        local bytes16 = table.concat(buff, "")
+        return bytes16
+    end
+    ngx.log(ngx.ERR, "req.id() function family requires directive `userid on;`")
 end
 local ngx_basic = {
     socket = function()

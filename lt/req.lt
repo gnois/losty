@@ -22,37 +22,38 @@ var binary = \v ->
 -- returns 16 bytes of binary string
 var read_uid_binary = ->
 	var uid = read_uid()
-	-- split into four int32
-	var a = tonumber(string.sub(uid, 1, 8), 16)
-	var b = tonumber(string.sub(uid, 9, 16), 16)
-	var c = tonumber(string.sub(uid, 17, 24), 16)
-	var d = tonumber(string.sub(uid, 25, 32), 16)
-	-- i dunno why need to bswap twice: here and in binary()
-	a = bit.bswap(a)
-	b = bit.bswap(b)
-	c = bit.bswap(c)
-	d = bit.bswap(d)
+	if uid and string.len(uid) > 1
+		-- split into four int32
+		var a = tonumber(string.sub(uid, 1, 8), 16)
+		var b = tonumber(string.sub(uid, 9, 16), 16)
+		var c = tonumber(string.sub(uid, 17, 24), 16)
+		var d = tonumber(string.sub(uid, 25, 32), 16)
+		-- i dunno why need to bswap twice: here and in binary()
+		a = bit.bswap(a)
+		b = bit.bswap(b)
+		c = bit.bswap(c)
+		d = bit.bswap(d)
 
-	--``
-	var printx = \x ->
-		print("0x", bit.tohex(x))
-	
-	--printx(a)
-	--printx(b)
-	--printx(c)
-	--printx(d)
-	``
-	
-	var buff = {}
-	buff[1] = binary(a)
-	buff[2] = binary(b)
-	buff[3] = binary(c)
-	buff[4] = binary(d)
-	var bytes16 = table.concat(buff, '')
-	--for i = 1, string.len(bytes16)
-	--	print(string.byte(bytes16, i), '  0x' , string.format("%x", string.byte(bytes16, i)))
-	return bytes16
-
+		--``
+		var printx = \x ->
+			print("0x", bit.tohex(x))
+		
+		--printx(a)
+		--printx(b)
+		--printx(c)
+		--printx(d)
+		``
+		
+		var buff = {}
+		buff[1] = binary(a)
+		buff[2] = binary(b)
+		buff[3] = binary(c)
+		buff[4] = binary(d)
+		var bytes16 = table.concat(buff, '')
+		--for i = 1, string.len(bytes16)
+		--	print(string.byte(bytes16, i), '  0x' , string.format("%x", string.byte(bytes16, i)))
+		return bytes16
+	ngx.log(ngx.ERR, "req.id() function family requires directive `userid on;`")
 
 -- Build request
 ----------------
