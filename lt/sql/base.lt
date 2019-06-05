@@ -81,10 +81,4 @@ return \db, run, keepalive ->
 			return e[1], err
 		return nil, err
 
-	K.placeholders = \... ->
-		var places = {}
-		for i, _ in ipairs({...})
-			places[i] = ", ?"
-		return table.concat(places)
-
 	return K

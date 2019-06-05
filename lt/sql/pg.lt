@@ -73,6 +73,13 @@ return \database, user, password, host, port, pool ->
 	K.hstore = ->
 		db.setup_hstore(@)
 
+	-- returns variadic arguments that are interpolated
+	K.variadic = \modifier, ... ->
+		var n = select("#", ...)
+		if n > 0
+			var places = string.rep(", " .. modifier, n - 1)
+			return interpolate(modifier .. places, ...)
+
 	-- must only connect() inside a function, not at top level
 	-- else Error: cannot yield across C-call boundary
 	K.connect = ->

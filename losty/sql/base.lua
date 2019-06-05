@@ -79,12 +79,5 @@ return function(db, run, keepalive)
         end
         return nil, err
     end
-    K.placeholders = function(...)
-        local places = {}
-        for i, _ in ipairs({...}) do
-            places[i] = ", ?"
-        end
-        return table.concat(places)
-    end
     return K
 end

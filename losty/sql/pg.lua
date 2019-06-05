@@ -69,6 +69,13 @@ return function(database, user, password, host, port, pool)
     K.hstore = function()
         db:setup_hstore()
     end
+    K.variadic = function(modifier, ...)
+        local n = select("#", ...)
+        if n > 0 then
+            local places = string.rep(", " .. modifier, n - 1)
+            return interpolate(modifier .. places, ...)
+        end
+    end
     K.connect = function()
         assert(db:connect())
     end
