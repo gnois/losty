@@ -1,6 +1,8 @@
 var tbl = require('losty.tbl')
 var set = require('losty.set')
 var concat = table.concat
+var remove = table.remove
+var insert = table.insert
 var yield = coroutine.yield
 var create = coroutine.create
 var resume = coroutine.resume
@@ -160,11 +162,16 @@ var parse = \s ->
 		var code, res = resume(r)
 		return res
 
+		
+var NoChild = \tag ->
+	return "<" .. tag .. "> cannot have child element"
+
+	
 -- void tag
 var void = \tag, attrs ->
-	var cell = {tag = tag, attrs = {}}
+	var cell = {_tag = tag, attrs = {}}
 	var classes, n = {}, 1
-	if attrs
+	if attrs ~= nil
 		var kind = type(attrs)
 		if 'string' == kind
 			for v in parse(attrs)
@@ -189,16 +196,23 @@ var void = \tag, attrs ->
 					error(msg .. " attribute must start with `.` or `#` or `[`")
 
 		else if 'table' == kind
+			-- attr cannot be array
+			if attrs[1]
+				error(NoChild(tag))
+				
 			for key, val in pairs(attrs)
+				-- attr cannot have {_tag=...}
+				if key == '_tag'
+					error(NoChild(tag))
 				if key == 'class'
 					if val ~= nil and val ~= ''
 						classes[n] = val --insert(classes, val)
 						n = n + 1
-				else 
+				else
 					cell.attrs[key] = val
 		else
-			var msg = tag .. '(' .. kind
-			error(msg .. " attribute must be a table or a string")
+			var msg = tag .. '(' .. kind .. ')'
+			error("Attribute must be a table or a string: " .. msg)
 		
 	if classes[1]
 		cell.attrs['class'] = concat(classes, ' ')
@@ -206,129 +220,151 @@ var void = \tag, attrs ->
 	return cell
 	
 -- normal tag
-var normal = \tag, attrs, ... ->
-	var args
-	if attrs
-		-- ignore at the first nil, instead of var n = select('#', ...)
-		args = {...}
-		-- the length of a table t is only defined if the table has no holes, else is incorrect
-		var n = #args
-		-- if we have only attrs, but it is a string or is an array and have a tag property, consider it as children
-		if n == 0
-			var kind = type(attrs)
-			if 'number' == kind or 'string' == kind or 'table' == kind and attrs[1] or attrs.tag
-				args = attrs
-				attrs = nil
-		else if n == 1 
-			if 'table' == type(args[n]) and args[n][1]
-				-- flatten
-				args = args[n]
-
-	var cell = void(tag, attrs)
-	cell.children = args
+var normal = \tag, ... ->
+	var args = {...}
+	var attr
+	if args[2]
+		-- test if possible attr
+		var a = args[1]
+		var k = type(a)
+		if a == nil
+			attr = true
+		else if 'string' == k
+			-- be attr once is a string, and error if string is not empty and not starting with . # [
+			-- rather than silenty make it child node on typo
+			--`
+			attr = #a == 0
+			if not attr
+				var ch1 = string.sub(a, 1, 1)
+				-- or starts with ., # or [
+				attr = ch1 == '.' or ch1 == '#' or ch1 == '['
+			--`
+			attr = true
+		else if 'table' == k
+			-- attr cannot be array and cannot have key `_tag`
+			attr = a[1] == nil and a._tag == nil
+	
+	--print('attr', attr)
+	var attrib
+	if attr
+		attrib = args[1]
+		remove(args, 1)
+	
+	var cell = void(tag, attrib)
+	cell._children = args
 	return cell
 
 
-var html5 = \node ->
-	var o, n = { "<!DOCTYPE html>" }, 2
-
-	var convert
-	convert = \cell ->
-		if cell and cell.tag
-			o[n] = '<' .. cell.tag --insert(o, '<' .. cell.tag)
-			n = n + 1
-			for k, v in pairs(cell.attrs)
-				o[n] = ' ' .. k --insert(o, ' ' .. k)
+var markup
+markup = \nodes ->
+	if nodes ~= nil
+		var o, n = {}, 1
+		if 'table' == type(nodes)
+			if nodes and nodes._tag
+				o[n] = '<' .. nodes._tag
 				n = n + 1
-				if not ('boolean' == type(v))
-					o[n] = '="' .. v .. '"' --insert(o, '="' .. v .. '"')
+				for k, v in pairs(nodes.attrs)
+					o[n] = ' ' .. k
 					n = n + 1
-			o[n] = '>' --insert(o, '>')
-			n = n + 1
-			var child = cell.children
-			if child
-				if 'table' == type(child)
-					for _, c in ipairs(child)
-						if 'table' == type(c)
-							convert(c)
-						else
-							o[n] = tostring(c) --insert(o, tostring(c))
-							n = n + 1
-				else
-					o[n] = tostring(child) --insert(o, tostring(child))
-					n = n + 1
-			
-			if not void_tags.has(cell.tag)
-				o[n] = '</' .. cell.tag .. '>' --insert(o, '</' .. cell.tag .. '>')
+					if 'boolean' ~= type(v)
+						o[n] = '="' .. v .. '"'
+						n = n + 1
+				o[n] = '>'
 				n = n + 1
-			
-	convert(node)
-	return concat(o)
+				if not void_tags.has(nodes._tag)
+					o[n] = markup(nodes._children)
+					n = n + 1
+					o[n] = '</' .. nodes._tag .. '>'
+					n = n + 1
+			else
+				for _, c in ipairs(nodes)
+					o[n] = markup(c)
+					n = n + 1
+		else
+			o[n] = tostring(nodes)
+			n = n + 1
+		return concat(o)
+	return ''
 
 
-return \func, args, strict ->
+var view = \func, args, naked, strict ->
 	var env = {
-		concat = table.concat
-		, insert = table.insert
-		, remove = table.remove
+		concat = concat
+		, insert = insert
+		, remove = remove
 	}
 	env = setmetatable(env, { 
 		__index = \t, name ->
 			--print(name)
 			if void_tags.has(name)
-				return \attrs ->
+				return \attrs, w, x, y, z ->
+					if w or x or y or z
+						error(NoChild(name))
 					return void(name, attrs)
 			if normal_tags.has(name)
-				return \attrs, ... ->
-					return normal(name, attrs, ...)
+				return \... ->
+					return normal(name, ...)
 			if strict
-				error("Unrecognized html5 tag " .. name)
+				error("Unrecognized html5 tag <" .. name .. ">")
 			return _G[name]
 	})
 	func = setfenv(func, env)
 	-- not using pcall(), let it throw if error
-	var res = func(args)
-	--print(tbl.dump(res)) 
-	return html5(res)
+	var list = func(args)
+	--print(tbl.dump(list))
+	var html = markup(list)
+	
+	if naked
+		return html
+	return '<!DOCTYPE html> ' .. html
+
 
 
 --```
 var test = ->
-	var m = v.m
-	assert(m("div").tag == "div")
-	assert(m(".foo").tag == "div")
-	assert(m(".foo").attrs.class == "foo")
-	assert(m("[title=bar]").tag == "div")
-	assert(m("[title=bar]").attrs.title == "bar")
-	assert(m("[title='bar']").attrs.title == "bar")
-	assert(m("[title=\"bar\"]").attrs.title == "bar")
-	assert(m("div", "test").children[1] == "test")
-	assert(m("div", "test", "test2").children[2] == "test2")
-	assert(m("div", {"test"}).children[1] == "test")
-	assert(m("div", {title = "bar"}, "test").attrs.title == "bar")
-	assert(m("div", {title = "bar"}, "test").children[1] == "test")
-	assert(m("div", {title = "bar"}, {"test"}).children[1] == "test")
-	assert(m("div", {title = "bar"}, {m("div")}).children[1].tag == "div")
-	assert(m("div", {title = "bar"}, m("div")).children[1].tag == "div")
-	assert(m("div", {title = "bar"}, "test0", "test1", "test2", "test3").children[4] == "test3")
-	assert(m("div", {title = "bar"}, m("div"), m("i"), m("span")).children[3].tag == "span")
-	assert(#m("div", {"a", "b"}).children == 2)
-	assert(m("div", {m("div")}).children[1].tag == "div")
-	assert(m("div", m("div")).children[1].tag == "div")
-	assert(m("div", {}).tag == "div")
-	assert(m("div", {{foo = "bar"}}))
-	assert(m("svg", {m("g")}))
-	assert(m("svg", {m("a[href='http://google.com']")}))
-	assert(m(".foo", {class = "bar"}).attrs.class == "foo bar")
-	assert(m(".foo", {class = ""}).attrs.class == "foo")
-	assert(m("div", {class = ""}).attrs["class"] == nil)
-	assert(#m("div", {1, 2, 3}, 4).children == 2)
-	assert(#m("div", {1, 2, 3}, 4).children[1] == 3)
-	assert(m("div", {1, 2, 3}, 4).children[2] == 4)
-	assert(#m("div", {1, 2, 3}).children == 3)
-	assert(#m("div", {1, 2, 3}, {4, 5, 6, 7}).children == 2)
-	assert(#m("div", {1, 2, 3}, {4, 5, 6, 7}).children[1] == 3)
-	assert(#m("div", {1, 2, 3}, {4, 5, 6, 7}).children[2] == 4)
-	assert(#m("div", {1}, {2}, {3}).children == 3)
-	assert(m(".ho", { ( -> if true return m("div") else return m("span"))() }).children[1].tag == 'div')
---```
+	var v = \fn, a -> return view(fn, a, true)
+	var as = assert
+	var pr = print
+
+	-- void element
+	as(v(-> return br()) == '<br>')
+	as(v(-> return br(nil)) == '<br>')  -- attr can be nil
+	as(v(-> return br('')) == '<br>')  -- or string
+	as(v(-> return br({})) == '<br>') -- or table
+	as(v(-> return img({src='/a.png', alt='A'})) == '<img alt="A" src="/a.png">')  -- using table as attr
+	
+	-- error: void element cannot have children
+	as(pcall(v, -> return hr(hr())) == false)
+	as(pcall(v, -> return hr({div(), span()})) == false)
+	
+	
+	-- normal element
+	as(v(-> return div()) == '<div></div>')
+	as(v(-> return div("foo")) == '<div>foo</div>')  -- by default, args are children
+	-- if 2nd arg exists, and 1st arg is a str or a tbl with key/val (except key '_tag'), then 1st arg is attr
+	as(v(-> return div(".foo", '')) == '<div class="foo"></div>')
+	-- invalid attr
+	as(pcall(v, -> return div("   .foo", '')) == false)
+	as(v(-> return div("#id1.foo", '')) == '<div class="foo" id="id1"></div>')  -- #str is id, .str is class
+	as(v(-> return div("[class=foo][title=bar]", {})) == '<div title="bar" class="foo"></div>') -- or str of boxed [key=value] list
+	as(v(-> return div("[id=id1][title='bar']", "x")) == '<div title="bar" id="id1">x</div>')  -- quotes in boxed attr are optional
+	as(v(-> return div("[title=\"bar\"]", 1)) == '<div title="bar">1</div>')  -- children can take number or str
+
+	as(v(-> return p(h1("blog"))) == '<p><h1>blog</h1></p>')  -- child can be a single element
+	
+	as(v(-> return nav(span('z'), span(1), span(false))) == '<nav><span>z</span><span>1</span><span>false</span></nav>') -- children can be args
+	as(v(-> return p({"AA", mark("mk")}, "YY", "ZZ")) == '<p>AA<mark>mk</mark>YYZZ</p>') -- children can be args
+	as(v(-> return p({"AA", mark("mk"), "ZZ"})) == '<p>AA<mark>mk</mark>ZZ</p>') -- children can be an array
+	as(v(-> return ul({ li("item1"), li("item2")})) == '<ul><li>item1</li><li>item2</li></ul>') -- children can be an array
+	as(v(-> return a({href = "/"}, strong(nil, "Home"))) == '<a href="/"><strong>Home</strong></a>') 
+	
+	as(v(-> return {img("[src=/img/tmp file.png]"), span("span1")}) == '<img src="/img/tmp file.png"><span>span1</span>') -- view function can return a list
+	as(v(-> return {"AAA", "bbb", p("para")}) == 'AAAbbb<p>para</p>')  -- list with plain string too
+
+	print('pass')
+
+
+test()
+---```
+
+return view

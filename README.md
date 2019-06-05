@@ -4,12 +4,12 @@ Losty is a practically simple web framework running atop OpenResty with minimal 
 
 It is similar with middleware based frameworks like Sinatra or Koa.js, but using Lua specific features and includes utilities like:
 
-- DSL for HTML generation
 - request router
 - request body parsers
 - content-negotiation
 - cookie and session handlers
 - slug generation for url
+- DSL for HTML generation
 - Server Side Event (SSE) support
 - SQL operation helpers
 - input validation helpers
@@ -153,10 +153,11 @@ http {
 ```
 
 
-General Idea
+Introduction
 -------
 
-Losty puts functions first and foremost. Functions taking a request and a response object are called handlers. 
+Losty makes use of Lua first class function everywhere. Functions taking a request and a response object are called handlers, and can be easily composed and reused.
+
 A HTTP request that arrives in [content_by_lua](https://github.com/openresty/lua-nginx-module#content_by_lua) directive first reaches the Losty router that matches a route pattern, and then the dispatcher that bubbles the request/response object down and up the stack of registered handlers for the route.
 
 Response headers, status and body are buffered using
@@ -175,6 +176,10 @@ ngx.eof()
 ```
 The recommended way is simply not calling `ngx.flush` and `ngx.eof`, unless you want to short circuit Losty dispatcher and return control to nginx immediately. In such case, you may also use `return ngx.exit(status)`. This is useful for example to use error_page directive instead of using Losty generated error page.
 
+If the response body is large, or may not be available all at once, we can assign a function to `res.body`, and Losty will convert the function into a coroutine and keeps resuming it until it is done. That function would use `coroutine.yield()` to return the next available response, which would be sent via `ngx.print()` immediately.
+
+
+
 
 
 Handlers
@@ -189,7 +194,7 @@ Losty handlers are functions having the general structure below:
 		res.status = 400
 		-- skip the following handlers
 ```	
-Handlers can be chained, and values passed to req.next() will appear as function arguments in the following handlers, as w, x in the above example. 
+Values passed to req.next() will appear as function arguments in the following handlers, as w, x in the above example. 
 
 
 
@@ -243,7 +248,7 @@ Here are some considerations for both designs.
 
 SQL Operations
 ---------
-Losty provides wrappers for MySQL and PostgreSQL drivers and a basic migration utility. There is no ORM layer, because no ORM is able to fully abstract the flexibility of SQL.
+Losty provides wrappers for MySQL and PostgreSQL drivers and a basic migration utility. There is no ORM layer, because no ORM is able to fully abstract the features of SQL.
 
 As an example, suppose we want to use an existing PostgreSQL database.
 Lets create a new table with SQL file:
@@ -308,9 +313,96 @@ The query result is accessible from the first return value object if it succeeds
 
 
 
+Generating HTML
+---------------
+Unlike templating libraries that embed control flow inside HTML constructs, Losty goes the other way round by generating HTML with Lua, with full language features at your disposal. In Javascript, it is like JSX vs hyperscript on steroids, where the HTML tags become functions themselves, thanks to Lua metatable.
+
+```
+var tmpl = \args ->
+	html({
+		head({
+			meta('[charset=UTF-8]')
+			, title(args.title)
+			, style({'.center { text-align: center; }'})
+		})
+		, body({
+			div('.center', {
+				h1(args.title)
+			})
+			, footer({
+				hr()
+				, div('.center', '&copy' .. args.copyright)
+			})
+		})
+	})
+
+
+var view = require('losty.view')
+var output = view(tmpl, {title='Sample', copyright='company'})
+
+```
+
+HTML generation starts with a view template function that may take an argument, which should be a key/value table. It should return one or more strings. 
+
+For example, within a view template function,
+```
+img({src='/a.png', alt='A'})
+```
+returns this string
+```
+<img alt="A" src="/a.png">
+```
+In fact, you could return the 2nd string and the resulting html will be the same. That means you can copy existing html code and quote it as Lua strings, and interleave with losty html tag functions as needed.
+
+As you know there are void and normal html tags (elements). Void elements such as <br>, <hr>, <img>, <link> etc cannot have children element, while normal elements like <div>, <p> can. 
+So the below gives errors because hr() cannot have children.
+```
+hr(hr())
+hr({div(), span()})
+```
+While this works
+```
+div("foo")
+div(".foo", '')
+div("#id1.foo", '')
+div("[class=foo][title=bar]", {})
+```
+Here is the result
+```
+<div>foo</div>
+<div class="foo"></div>
+<div class="foo" id="id1"></div>
+<div class="foo" title="bar"></div>
+```
+
+Notice that if 2 or more arguments are given, and if the first argument is a string or a key/value table, then it is treated as attribute. Using string as attribute requires special syntax. They can be listed in square brackets, or preceded with dot to indicate classname, or hash to indicate id, and they can be combined.
+
+This works as expected
+```
+p(h1("blog"))
+nav(span('z'), span(1), span(false))
+ul({li("item1"), li("item2")})
+strong(nil, "Home")
+```
+Gives
+```
+<p><h1>blog</h1></p>
+<nav><span>z</span><span>1</span><span>false</span></nav>
+<ul><li>item1</li><li>item2</li></ul>
+<strong>Home</strong>
+```
+
+Unfortunately the <table> tag and the table library in Lua have the same name. Hence, functions like `table.remove()`, `table.insert()` and `table.concat()` are exposed as just `remove()`, `insert()` and `concat()` without qualifying with the name `table`.
+
+
+Finally, to get your html string generated, call losty `view()` function with your view template as first parameter, followed by the needed key/value table.
+
+
+
+ 
 
 Credits
 -------
-This project has stolen ideas and codes from respectable projects such as Lapis, Kong router, lua-resty-* from Bungle, and helpful examples from OpenResty and around the web.
+This project has taken ideas and codes from respectable projects such as Lapis, Kong router, lua-resty-* from Bungle, and helpful examples from OpenResty and around the web.
 Of course it wouldn't exist without the magnificent OpenResty in the first place.
 
