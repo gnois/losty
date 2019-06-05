@@ -323,7 +323,9 @@ var tmpl = \args ->
 		head({
 			meta('[charset=UTF-8]')
 			, title(args.title)
-			, style({'.center { text-align: center; }'})
+			, style({
+				'.center { text-align: center; }'
+			})
 		})
 		, body({
 			div('.center', {
@@ -352,7 +354,7 @@ returns this string
 ```
 <img alt="A" src="/a.png">
 ```
-In fact, you could return the 2nd string and the resulting html will be the same. That means you can copy existing html code and quote it as Lua strings, and interleave with losty html tag functions as needed.
+In fact, you could return the 2nd string and the resulting html will be the same, as demonstrated in the style() tag in the example above. That means you can copy existing html code and quote it as Lua strings, and interleave with losty html tag functions as needed. 
 
 As you know there are void and normal html tags (elements). Void elements such as <br>, <hr>, <img>, <link> etc cannot have children element, while normal elements like <div>, <p> can. 
 So the below gives errors because hr() cannot have children.
@@ -375,9 +377,10 @@ Here is the result
 <div class="foo" title="bar"></div>
 ```
 
-Notice that if 2 or more arguments are given, and if the first argument is a string or a key/value table, then it is treated as attribute. Using string as attribute requires special syntax. They can be listed in square brackets, or preceded with dot to indicate classname, or hash to indicate id, and they can be combined.
+Notice that if 2 or more arguments are given, and if the first argument is a string or a key/value table, then it is treated as attribute. Using string as attribute requires special syntax. They can be listed in square brackets, or preceded with dot to indicate classname, or hash to indicate id, or can be combined. Otherwise attributes can be listed as a key/value table.
 
-This works as expected
+
+This works as expected, without attributes
 ```
 p(h1("blog"))
 nav(span('z'), span(1), span(false))
@@ -392,10 +395,11 @@ Gives
 <strong>Home</strong>
 ```
 
+Generally, Losty view templates are shorter than its html counterpart, like Luaty to Lua.
 Unfortunately the <table> tag and the table library in Lua have the same name. Hence, functions like `table.remove()`, `table.insert()` and `table.concat()` are exposed as just `remove()`, `insert()` and `concat()` without qualifying with the name `table`.
 
 
-Finally, to get your html string generated, call losty `view()` function with your view template as first parameter, followed by the needed key/value table.
+Finally, to get your html string generated, call Losty `view()` function with your view template as first parameter, followed by the needed key/value table. A third boolean parameter exists which prepends <!DOCTYPE html> to the result if true, and a fourth boolean parameter decides whether to error out if an invalid html5 tag is used.
 
 
 
