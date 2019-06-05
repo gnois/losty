@@ -3,9 +3,11 @@
 # *nix
 #/ = $(strip /)
 #RM := rm
+#CP := cp
 # Windows
 / = $(strip \)
 RM := del
+CP := copy
 
 # Change path as needed
 LUAJIT := $/app$/lua$/luajit.exe
@@ -22,18 +24,21 @@ DST := .$/losty
 LT := $(wildcard $(SRC)/*.lt) $(wildcard $(SRC)/sql/*.lt)
 #LUA := $(patsubst $(DST)/%.lt,$(DST)/%.lua,$(LT))
 LUA := $(patsubst $(DST)/%.lt,$(DST)/%.lua,$(subst $(SRC)/,$(DST)/,$(LT)))
-
+TXT := $(DST)/stops_en.txt
 
 .PHONY: all clean
-#all: ; $(info $$LUA is [${LUA}])echo Hello
-all: $(LUA)
+#all: ; $(info $$LUA is [${LUA}])echo hello
+all: $(LUA) $(TXT)
 
 # Cannot use $< in recipe bcoz windows require backslash
-
 $(DST)/%.lua: $(SRC)/%.lt
 	$(LUAJIT) -e $(PACKAGE) $(LTFLAGS) $(SRC)$/$*.lt $(DST)$/$*.lua
-# $(MAKE) -C $(SRC) $*.lua
+
+$(DST)/stops_en.txt: $(SRC)/stops_en.txt
+	$(CP) $(SRC)$/stops_en.txt $(DST)$/
+
 
 clean:
 	$(RM) $(DST)$/*.lua
 	$(RM) $(DST)$/sql$/*.lua
+	$(RM) $(DST)$/*.txt
