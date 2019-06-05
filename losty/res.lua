@@ -115,18 +115,9 @@ return function()
         end
         res.headers["Location"] = url
     end
-    local set = function(status, body)
-        res.status = status
-        res.body = body
-    end
     res.ok = function(body)
-        set(ngx.HTTP_OK, body)
-    end
-    res.notfound = function(body)
-        set(ngx.HTTP_NOT_FOUND, body or "Resource not found")
-    end
-    res.crashed = function(body)
-        set(ngx.HTTP_INTERNAL_SERVER_ERROR, body or "Internal server error")
+        res.status = ngx.HTTP_OK
+        res.body = body
     end
     return {send_headers = function(secure)
         if res.status then

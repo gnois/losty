@@ -114,7 +114,7 @@ return ->
 		, cookies = cookies.new()
 	}
 	
-	--`` utilities ``
+	-- utilities
 
 	-- simple template generation with {}
 	res.render = \template, data ->
@@ -159,19 +159,10 @@ return ->
 			res.status = ngx.HTTP_SEE_OTHER  -- always use GET to get the new resource
 		res.headers['Location'] = url
 
-	var set = \status, body ->
-		res.status = status
-		res.body = body
-
 	res.ok = \body ->
-		set(ngx.HTTP_OK, body)
+		res.status = ngx.HTTP_OK
+		res.body = body
 		
-	res.notfound = \body ->
-		set(ngx.HTTP_NOT_FOUND, body or "Resource not found")
-
-	res.crashed = \body ->
-		set(ngx.HTTP_INTERNAL_SERVER_ERROR, body or "Internal server error")
-
 	return {
 		send_headers = \secure ->
 			-- event-stream can have no status
