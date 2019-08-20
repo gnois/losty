@@ -1,11 +1,14 @@
-# On Windows use mingw64\bin\mingw32-make.exe
+# On Windows use  mingw64\bin\mingw32-make.exe SHELL=cmd
+# Else its behaviour changes based on %PATH% env
+# See https://stackoverflow.com/questions/47874932/why-does-make-exe-try-to-run-usr-bin-sh-on-windows
+
 
 # *nix
-#/ = $(strip /)
+#/ := $(strip /)
 #RM := rm
 #CP := cp
 # Windows
-/ = $(strip \)
+/ := $(strip \)
 RM := del
 CP := copy
 

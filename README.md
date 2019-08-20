@@ -19,6 +19,7 @@ It is similar with middleware based frameworks like Sinatra or Koa.js, but using
 
 Dependency
 ------
+Required:
 [OpenResty](http://openresty.org)
 
 Optional:
@@ -26,14 +27,18 @@ Optional:
 - [pgmoon](https://github.com/leafo/pgmoon) if using PostgreSQL (For MySQL, OpenResty comes with lua-resty-mysql)
 
 
+Installation
+-----
+Use OpenResty Package Manager (opm):
+```
+opm get gnois/losty
+```
+
 Usage
 -----
-
-1. Copy the losty/ folder
-2. Create nginx.conf and app.lt under yourapp/ folder, which is at the same level as losty/:
+Create nginx.conf and app.lt under yourapp/ folder:
 
 ```
-|-- losty/
 |-- yourapp/
      |-- nginx.conf
      |-- app.lt
@@ -46,7 +51,8 @@ Usage
           |-- xx.js
 ```
 
-app.lt
+
+app.lt 
 ```
 require('resty.core')
 collectgarbage("collect")
@@ -105,8 +111,6 @@ return ->
 nginx.conf
 ```
 http {
-
-	lua_package_path ";;../?.lua;";  # losty is one level up
 	lua_code_cache on;  # turn off in development
 	
 	# preload
@@ -132,11 +136,6 @@ http {
 		# dynamic content
 		location / {
 			access_log on;
-			access_by_lua_block {
-				local ua = ngx.req.get_headers()['User-Agent']
-				if not ua or ua == ''
-					return ngx.exit(ngx.HTTP_FORBIDDEN)
-			}
 			content_by_lua_block {
 				require("app")()
 			}
@@ -145,7 +144,7 @@ http {
 }
 ```
 
-3. Compile your app.lt to Lua and start nginx with prefix as yourapp/ folder
+3. Compile your app.lt to app.lua and start nginx with prefix as yourapp/ folder
 ```
  > cd yourapp/
  > luaty app.lt app.lua
@@ -188,12 +187,13 @@ Losty handlers are functions having the general structure below:
 
 ```
 \req, res, w, x, ... ->
+	var ok = some_operation(...)
 	if ok
 		req.next(y, z)
 	else
-		res.status = 400
 		-- skip the following handlers
-```	
+		res.status = 400
+```
 Values passed to req.next() will appear as function arguments in the following handlers, as w, x in the above example. 
 
 
@@ -399,7 +399,8 @@ Generally, Losty view templates are shorter than its HTML counterpart, like Luat
 
 Unfortunately the <table> tag and the table library in Lua have the same name. Hence, functions like `table.remove()`, `table.insert()` and `table.concat()` are exposed as just `remove()`, `insert()` and `concat()` without qualifying with the name `table`.
 
-Finally, to get your HTML string generated, call Losty `view()` function with your view template as first parameter, followed by the needed key/value table. A third boolean parameter exists which prepends `<!DOCTYPE html>` to the result if true, and a fourth boolean parameter decides whether to error out if an invalid HTML5 tag is used.
+Finally, to get your HTML string generated, call Losty `view()` function with your view template as first parameter, followed by the needed key/value table. 
+A third boolean parameter prevents `<!DOCTYPE html>` being prepended to the result if truthy, and a fourth boolean parameter decides whether to error out if an invalid HTML5 tag is used.
 
 
 
