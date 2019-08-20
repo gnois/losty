@@ -61,6 +61,9 @@ local cookie = function()
             if m.path then
                 insert(txt, "; Path=" .. m.path)
             end
+            if m.samesite then
+                insert(txt, "; SameSite=strict")
+            end
             if m.httponly then
                 insert(txt, "; HttpOnly")
             end
@@ -70,8 +73,15 @@ local cookie = function()
             tbl.add(ngx.header, "Set-Cookie", concat(txt))
         end
     end, new = function()
-        return setmetatable({create = function(name, age, httponly, domain, path, encode)
-            metas[name] = {age = age, httponly = httponly, domain = domain, path = path, encode = encode}
+        return setmetatable({create = function(name, age, httponly, domain, path, samesite, encode)
+            metas[name] = {
+                age = age
+                , httponly = httponly
+                , domain = domain
+                , path = path
+                , samesite = samesite
+                , encode = encode
+            }
             cookies[name] = {}
             return cookies[name]
         end, delete = function(name, httponly, domain, path)

@@ -46,7 +46,7 @@ var cookie = ->
 	var metas = {}
 
 	return {
-		set = \secure  ->
+		set = \secure ->
 			for k, m in pairs(metas)
 				var val = cookies[k] or ''
 				if m.encode
@@ -71,6 +71,8 @@ var cookie = ->
 					insert(txt, "; Domain=" .. m.domain)
 				if m.path
 					insert(txt, "; Path=" .. m.path)
+				if m.samesite
+					insert(txt, "; SameSite=strict")
 				if m.httponly 
 					insert(txt, "; HttpOnly")
 				if secure
@@ -78,12 +80,13 @@ var cookie = ->
 				tbl.add(ngx.header, 'Set-Cookie', concat(txt))
 			
 		, new = ->
+			-- TODO: add SameSite=strict;
 			return setmetatable({
-				create = \name, age, httponly, domain, path, encode ->
+				create = \name, age, httponly, domain, path, samesite, encode ->
 					-- cookies[name].__tostring cannot be encode(), 
 					--  coz metamethods only exist for table, yet value can be string, number or nil
 					--  hence metas is needed
-					metas[name] = { age = age, httponly = httponly, domain = domain, path = path, encode = encode }
+					metas[name] = { age = age, httponly = httponly, domain = domain, path = path, samesite = samesite, encode = encode }
 					cookies[name] = {}
 					return cookies[name]
 
