@@ -86,11 +86,11 @@ return function(db)
                     error(c.red .. " Error in " .. fname .. c.reset)
                 end
             else
-                local fn = print
+                local msg = fname .. " is empty."
                 if e then
-                    fn = error
+                    error(msg)
                 end
-                fn(fname .. " is empty.")
+                print(msg)
             end
         end
         print(c.green, "Migration successful.", c.reset)

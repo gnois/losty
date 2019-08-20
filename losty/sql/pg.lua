@@ -56,7 +56,7 @@ return function(database, user, password, host, port, pool)
             ngx.log(ngx.ERR, "Trying to match ", i, " placeholders to ", n, " arguments for query `", str, "`")
         end
         local result, err, partial, count = db:query(q)
-        print(q)
+        ngx.log(ngx.NOTICE, q)
         if result == nil and err then
             ngx.log(ngx.ERR, err)
         end
