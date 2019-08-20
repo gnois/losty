@@ -60,9 +60,9 @@ K.buffered = \req ->
 	if ctype
 		if string.match(ctype, "octet-stream")
 			return raw(req)
-		else if string.match(ctype, "urlencoded")
+		if string.match(ctype, "urlencoded")
 			return urlencoded(req)
-		else if string.match(ctype, "json")
+		if string.match(ctype, "json")
 			return json(req)
 		return nil, "Unfamiliar content-type " .. ctype
 	return nil, "Missing content-type"
@@ -79,7 +79,7 @@ case key
 	false: one body ended, val is nil
 	nil: all body ended. val is err or nil
 --``
-K.multi = \req ->
+K.multipart = \req ->
 	var yield = coroutine.yield
 	
 	var parse = coroutine.create( ->

@@ -65,16 +65,18 @@ K.buffered = function(req)
     if ctype then
         if string.match(ctype, "octet-stream") then
             return raw(req)
-        elseif string.match(ctype, "urlencoded") then
+        end
+        if string.match(ctype, "urlencoded") then
             return urlencoded(req)
-        elseif string.match(ctype, "json") then
+        end
+        if string.match(ctype, "json") then
             return json(req)
         end
         return nil, "Unfamiliar content-type " .. ctype
     end
     return nil, "Missing content-type"
 end
-K.multi = function(req)
+K.multipart = function(req)
     local yield = coroutine.yield
     local parse = coroutine.create(function()
         local input, err = upload:new(8192)
