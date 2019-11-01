@@ -38,23 +38,26 @@ return \secret, key -> --, size, mode, hash, rounds)
 
 
 	var decrypt = \s ->
-		var x = str.split(s, '|')
-		var salt = base64dec(x[1])
-		var d = base64dec(x[2])
-		var h = base64dec(x[3])
-		if salt and d and h
-			var k = hmac(secret, salt)
-			var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
-			d = a.decrypt(@, d)
-			if d
-				if hmac(k, table.concat({salt, d, key})) == h
-					return json.decode(d)
+		if s
+			var x = str.split(s, '|')
+			if x and x[1] and x[2] and x[3]
+				var salt = base64dec(x[1])
+				var d = base64dec(x[2])
+				var h = base64dec(x[3])
+				if salt and d and h
+					var k = hmac(secret, salt)
+					var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
+					d = a.decrypt(@, d)
+					if d
+						if hmac(k, table.concat({salt, d, key})) == h
+							return json.decode(d)
 
 
 	-- vs LocalStorage http://stackoverflow.com/questions/3220660/local-storage-vs-cookies
 	--  Cookies are primarily for reading server-side, LocalStorage can only be read client-side
 	-- Stormpath recommends that you store your JWT in httpOnly cookies for web applications (vs localStorage)
 	-- https://stormpath.com/blog/where-to-store-your-jwts-cookies-vs-html5-web-storage
+	-- http://cryto.net/~joepie91/blog/2016/06/13/stop-using-jwt-for-sessions/
 	var K = {}
 	
 	K.create = \res, expiry ->

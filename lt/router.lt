@@ -1,4 +1,5 @@
 -- stolen from mashape router
+-- use nginx location for complex routes
 
 return ->
 	var COLON = string.byte(':', 1)

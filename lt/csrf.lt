@@ -1,4 +1,8 @@
+-- https://pragmaticstudio.com/tutorials/rails-session-cookies-for-api-authentication
+-- https://flask-wtf.readthedocs.io/en/stable/csrf.html
 -- http://blog.ircmaxell.com/2013/02/preventing-csrf-attacks.html
+-- one time key/token
+
 var sign = require('losty.sign')
 var enc = require('losty.enc')
 var rnd = require('losty.rand')
@@ -27,13 +31,15 @@ return \secret ->
 	K.generate = generate
 	K.ok = ok
 	
+	-- insert in cookie
 	K.write = \res, expiry ->
 		-- cookie removed on browser close
 		var csrf = res.cookies.create('csrf', 0, false, nil, '/', enc.encode)
 		csrf.key, csrf.token = generate(expiry)
 	
-	K.read = \req ->
+	K.read = \req, res ->
 		var csrf = req.cookies.parse('csrf', enc.decode)
+		res.cookies.delete('csrf', false, nil, '/')
 		return ok(csrf.key, csrf.token)
 
 	return K

@@ -32,8 +32,9 @@ return function(secret)
         local csrf = res.cookies.create("csrf", 0, false, nil, "/", enc.encode)
         csrf.key, csrf.token = generate(expiry)
     end
-    K.read = function(req)
+    K.read = function(req, res)
         local csrf = req.cookies.parse("csrf", enc.decode)
+        res.cookies.delete("csrf", false, nil, "/")
         return ok(csrf.key, csrf.token)
     end
     return K

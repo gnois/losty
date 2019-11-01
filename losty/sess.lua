@@ -26,17 +26,21 @@ return function(secret, key)
         return d, err
     end
     local decrypt = function(s)
-        local x = str.split(s, "|")
-        local salt = base64dec(x[1])
-        local d = base64dec(x[2])
-        local h = base64dec(x[3])
-        if salt and d and h then
-            local k = hmac(secret, salt)
-            local a = aes:new(k, salt)
-            d = a:decrypt(d)
-            if d then
-                if hmac(k, table.concat({salt, d, key})) == h then
-                    return json.decode(d)
+        if s then
+            local x = str.split(s, "|")
+            if x and x[1] and x[2] and x[3] then
+                local salt = base64dec(x[1])
+                local d = base64dec(x[2])
+                local h = base64dec(x[3])
+                if salt and d and h then
+                    local k = hmac(secret, salt)
+                    local a = aes:new(k, salt)
+                    d = a:decrypt(d)
+                    if d then
+                        if hmac(k, table.concat({salt, d, key})) == h then
+                            return json.decode(d)
+                        end
+                    end
                 end
             end
         end
