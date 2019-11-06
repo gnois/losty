@@ -1,0 +1,12 @@
+var str = require('losty.str')
+
+-- simple template generation with {}
+return \template, data ->
+	-- extra parenthesis needed coz string.gsub has multiple returns
+	return (string.gsub(template, "{([_%w%.]*)}", \s ->
+		var keys = str.split(s, "%.")
+		var v = data[keys[1]]
+		for i = 2, #keys
+			v = v[keys[i]]
+		return v or '{'.. s ..'}'
+	))
