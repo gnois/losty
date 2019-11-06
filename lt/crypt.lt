@@ -1,26 +1,6 @@
 var aes = require('resty.aes')
 
 --``
-Always encrypt data then MAC
---CipherText = iv|| aes(key1,iv,message)  
---tag = hmac(key2,ciphertext)
-
-Cookie generation:
-	user name|expiration time|(data)k
-	|HMAC(user name|expiration time|data|session key, k)
-	where k=HMAC(user name|expiration time, sk)
-	where sk=server key
-
-Cookie Verification:
-	Output: TRUE if the cookie is valid; FALSE otherwise
-	1. Compare the cookie’s expiration time and the server’s current time. If the cookie has expired, then return FALSE.
-	2. Compute the encryption key as follows:
-		k=HMAC(user name|expiration time, sk)
-	3. Decrypt the encrypted data using k.
-	4. Compute HMAC(user name|expiration time|data|session key, k),	and compare it with the keyed-hash message authentication code of the cookie. If match, return TRUE else FALSE.
-``
-
---``
 -- all can be nil
 salt = <string>
 size = <int> 128, 192, 256 bits key sizes
@@ -28,7 +8,6 @@ mode = <string> ecb, cbc, cfb1, cfb8, cfb128, ofb, or ctr (not available with 25
 hash = <aes.hash> md5, sha1, sha224, sha256, sha384, sha512
 rounds = <int>
 ``
-
 return \key, salt, size, mode, hash, rounds ->
 	size = size or 128
 	mode = mode or "cbc"

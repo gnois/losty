@@ -1,5 +1,4 @@
 var enc = require('losty.enc')
-var base64enc = ngx.encode_base64
 -- var base64dec = ngx.decode_base64
 var hmac = ngx.hmac_sha1
 
@@ -16,7 +15,7 @@ return \secret ->
 			error("a key is required to sign()", 2)
 		var obj = { key = key, data = data }
 		var str = enc.encode(obj, func)
-		var sig = base64enc(hmac(secret, str))
+		var sig = ngx.encode_base64(hmac(secret, str))
 		return str .. '.' .. sig
 
 	K.unsign = \key, message, func ->
@@ -26,7 +25,7 @@ return \secret ->
 				if str
 					--if base64dec(sig) == hmac(secret, str)
 					-- this can do partial string comparison, see surl.lt
-					if sig == base64enc(hmac(secret, str))
+					if sig == ngx.encode_base64(hmac(secret, str))
 						var obj = enc.decode(str, func)
 						if obj.key == key
 							return obj.data

@@ -235,12 +235,11 @@ var choose = \accept, avails ->
 --````
 
 var tests = ->
-	var is = require('losty.is')
 	
 	var prn = \j, v ->
 		print(j, ' - ', tostring(v))
 		for k, vv in pairs(v)
-			if is.tbl(vv)
+			if 'table' == type(vv)
 				print('  ', k, ':{')
 				for kk, vvv in pairs(vv)
 					print('    ', kk .. ':', vvv)
