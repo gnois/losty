@@ -1,7 +1,17 @@
 --
 -- Generated from str.lt
 --
+local bit = require("bit")
 local K = {}
+K.hash = function(str)
+    local hash = 0
+    if str then
+        for c in string.gmatch(str, ".") do
+            hash = bit.lshift(hash, 5) - hash + c
+        end
+    end
+    return hash
+end
 K.each = function(str)
     local p, n = 1, #str
     return function()

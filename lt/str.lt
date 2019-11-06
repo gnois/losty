@@ -1,5 +1,13 @@
+var bit = require('bit')
 
 var K = {}
+
+K.hash = \str ->
+	var hash = 0
+	if str
+		for c in string.gmatch(str, '.')
+			hash = (bit.lshift(hash, 5) - hash) + c
+	return hash
 
 -- iterate every character in str
 K.each = \str ->
