@@ -35,18 +35,6 @@ K.dump = dump
 
 K.show = \value ->
 	print(dump(value))
-	
-K.add = \tb, k, v ->
-	var old = tb[k]
-	if nil == old
-		tb[k] = v
-	else
-		if "table" == type(old)
-			old[#old + 1] = v
-			tb[k] = old
-		else
-			tb[k] = { old, v }
-
 
 K.find = \arr, v ->
 	for i, k in ipairs(arr)

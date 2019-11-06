@@ -55,25 +55,13 @@ var read_uid_binary = ->
 		return bytes16
 	ngx.log(ngx.ERR, "req.id() function family requires directive `userid on;`")
 
--- Build request
-----------------
---``
-var flatten = \args ->
-	var flat = {}
-	if args
-		for key, val in pairs(args) do
-			if f.is_table(val)
-				flat[key] = table.concat(val, ', ')
-			else
-				flat[key] = val
-	return flat
-``
+
 
 --
 -- See http://nginx.org/en/docs/http/ngx_http_core_module.html, section 'Embedded Variables'
 --
 -- stolen from Lapis
-var ngx_basic = {
+var basic = {
 	socket = -> return ngx.req.socket()
 	, headers = -> return ngx.req.get_headers()
 	, method = -> return ngx.req.get_method() or ngx.var.request_method
@@ -83,8 +71,6 @@ var ngx_basic = {
 	, scheme = -> return ngx.var.scheme or 'http'
 	, query = -> return ngx.var.query_string
 	, host = -> return ngx.var.host or ngx.var.server_name
-	, referer = -> return ngx.var.http_referer
-	, agent = -> return ngx.var.http_user_agent
 	, url = -> return ngx.unescape_uri(ngx.var.request_uri)
 	-- without query string
 	, uri = -> return ngx.var.uri or ''
@@ -109,71 +95,25 @@ var ngx_basic = {
 	-- base64 encoded string, as seen in browser cookie
 	-- if you use `userid_mark` directive, that character replaces the first `=` padding at the end of the Base64. 
 	-- U need to replace that yourself by finding the first =, then replace your mark char.
-	, id_base64 = ->
-		var uid = read_uid_binary()
-		return ngx.encode_base64(uid)
+	, id_base64 = \t ->	return ngx.encode_base64(t.id_binary)
 }
 
-var cookie = ->
-	var unescape = ngx.unescape_uri
-	var cookies = {}
-	var decoders = {}
 
-	var decode = \name, val ->
-		if val
-			val = unescape(val)
-			var dec = decoders[name]
-			assert(dec)
-			return dec(val)
-		return val
-		
-	var read = \name ->
-		var val = cookies[name]
-		if nil == val
-			var key = 'cookie_' .. name
-			var ok
-			ok, val = pcall(decode, name, ngx.var[key])
-			if ok
-				cookies[name] = val
-		return val
 
-	var K = {
-		parse = \name, decoder ->
-			if nil == decode
-				decoder = \... -> return ...
-			decoders[name] = decoder
-			return read(name)
-	}
-	
-	return setmetatable(K, {
-		__metatable = false
-		, __index = \t, name ->
-			if decoders[name]
-				return read(name)
-			error("call parse('" .. name .. "') before using request cookie")
-		, __newindex = ->
-			error("cannot modify request cookie")
+return setmetatable({
+	cookies = setmetatable({}, {
+		__index = \_, name ->
+			var v = ngx.var['cookie_' .. name]
+			return ngx.unescape_uri(v)
 	})
-
---``
-var memoize = \ngxtbl ->
-	return \tbl, key ->
-		var f = ngxtbl[key]
+}, {
+	__metatable = false
+	
+	, __index = \tbl, key ->
+		var f = basic[key]
 		if f
-			var res = f(tbl)
-			tbl[key] = res
-			return res
-``
-
-return ->
-	var K = { cookies = cookie() }
-	
-	return setmetatable(K, {
-		__metatable = false
-		, __index = \tbl, key ->
-			var f = ngx_basic[key]
-			if f
-				var res = f(tbl)
-				tbl[key] = res
-				return res
-	})
+			var v = f(tbl)
+			-- memoize
+			tbl[key] = v
+			return v
+})

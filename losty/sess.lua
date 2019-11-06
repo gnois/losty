@@ -8,6 +8,10 @@ local str = require("losty.str")
 local base64enc = ngx.encode_base64
 local base64dec = ngx.decode_base64
 local hmac = ngx.hmac_sha1
+local Name = "sess"
+local make = function(res)
+    return res.cookie(Name, true, nil, "/")
+end
 return function(secret, key)
     if not secret or not key then
         error("secret and key is required for session", 2)
@@ -45,16 +49,11 @@ return function(secret, key)
             end
         end
     end
-    local K = {}
-    K.create = function(res, expiry)
-        expiry = expiry or 24 * 3600
-        return res.cookies.create("sess", expiry, true, nil, "/", encrypt)
-    end
-    K.read = function(req)
-        return req.cookies.parse("sess", decrypt)
-    end
-    K.delete = function(res)
-        res.cookies.delete("sess", true, nil, "/")
-    end
-    return K
+    return {read = function(req)
+        return decrypt(req.cookies[Name])
+    end, create = function(req, res, age)
+        return make(res)(age, true, req.secure, encrypt)
+    end, delete = function(res)
+        make(res)(-100)
+    end}
 end

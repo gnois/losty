@@ -40,19 +40,6 @@ K.dump = dump
 K.show = function(value)
     print(dump(value))
 end
-K.add = function(tb, k, v)
-    local old = tb[k]
-    if nil == old then
-        tb[k] = v
-    else
-        if "table" == type(old) then
-            old[#old + 1] = v
-            tb[k] = old
-        else
-            tb[k] = {old, v}
-        end
-    end
-end
 K.find = function(arr, v)
     for i, k in ipairs(arr) do
         if k == v then

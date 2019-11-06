@@ -14,27 +14,28 @@ local push = function(tb, k, v)
     end
     tb[k] = old
 end
+local Msg = "_Msg"
+local Flash = "Flash"
 return function(req, res)
-    local new = res.cookies["flash"]
+    local new = res.cookies[Flash]
     if not new then
-        new = res.cookies.create("flash", 0, false, nil, "/", enc.encode)
-        local old = req.cookies.parse("flash", enc.decode)
-        if old then
-            for k, v in pairs(old) do
-                new[k] = v
-            end
+        new = res.cookie(Flash, false, nil, "/")(nil, true, req.secure, enc.encode)
+    end
+    local old = enc.decode(req.cookies[Flash])
+    if old then
+        for k, v in pairs(old) do
+            new[k] = v
         end
     end
-    local K = {}
-    K.set = function(key, val)
+    local K = {set = function(key, val)
         new[key] = val
-    end
-    for _, meth in pairs({"pass", "fail", "info"}) do
+    end}
+    for _, meth in pairs({"pass", "fail", "warn", "info"}) do
         K[meth] = function(str)
-            if not new.note then
-                new.note = {}
+            if not new[Msg] then
+                new[Msg] = {}
             end
-            push(new.note, meth, str)
+            push(new[Msg], meth, str)
         end
     end
     return K

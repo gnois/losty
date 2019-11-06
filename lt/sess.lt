@@ -8,6 +8,16 @@ var base64enc = ngx.encode_base64
 var base64dec = ngx.decode_base64
 var hmac = ngx.hmac_sha1
 
+
+-- vs LocalStorage http://stackoverflow.com/questions/3220660/local-storage-vs-cookies
+--  Cookies are primarily for reading server-side, LocalStorage can only be read client-side
+-- Stormpath recommends that you store your JWT in httpOnly cookies for web applications (vs localStorage)
+-- https://stormpath.com/blog/where-to-store-your-jwts-cookies-vs-html5-web-storage
+-- http://cryto.net/~joepie91/blog/2016/06/13/stop-using-jwt-for-sessions/
+var Name = "sess"
+var make = \res ->
+	return res.cookie(Name, true, nil, '/')
+
 --``
 var generate_key = \req ->
 	var addr = req.headers["CF-Connecting-IP"] or req.headers["Fastly-Client-IP"] or req.headers["Incap-Client-IP"] or req.headers["X-Real-IP"]
@@ -16,6 +26,8 @@ var generate_key = \req ->
 	return table.concat({ req.agent, req.scheme, addr })
 var key = generate_key(req)
 ``
+
+
 
 -- size, mode, hash, rounds can be nil
 return \secret, key -> --, size, mode, hash, rounds)
@@ -51,26 +63,18 @@ return \secret, key -> --, size, mode, hash, rounds)
 					if d
 						if hmac(k, table.concat({salt, d, key})) == h
 							return json.decode(d)
+							
 
+	return {
+		read = \req ->
+			return decrypt(req.cookies[Name])
 
-	-- vs LocalStorage http://stackoverflow.com/questions/3220660/local-storage-vs-cookies
-	--  Cookies are primarily for reading server-side, LocalStorage can only be read client-side
-	-- Stormpath recommends that you store your JWT in httpOnly cookies for web applications (vs localStorage)
-	-- https://stormpath.com/blog/where-to-store-your-jwts-cookies-vs-html5-web-storage
-	-- http://cryto.net/~joepie91/blog/2016/06/13/stop-using-jwt-for-sessions/
-	var K = {}
-	
-	K.create = \res, expiry ->
-		-- cookie removed after 24 hrs by default
-		expiry = expiry or 24*3600
-		return res.cookies.create('sess', expiry, true, nil, '/', encrypt)
-
-	K.read = \req ->
-		return req.cookies.parse('sess', decrypt)
-
-	-- does not need secret and key, but how to export?
-	K.delete = \res ->
-		res.cookies.delete('sess', true, nil, '/')
-
-	return K
+		-- age nil means last till browser close
+		, create = \req, res, age ->
+			return make(res)(age, true, req.secure, encrypt)
+		
+		-- age -ve means delete
+		, delete = \res ->
+			make(res)(-100)
+	}
 

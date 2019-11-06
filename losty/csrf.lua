@@ -4,38 +4,41 @@
 local sign = require("losty.sign")
 local enc = require("losty.enc")
 local rnd = require("losty.rand")
+local Name = "csrf"
+local make = function(res)
+    return res.cookie(Name, false, nil, "/")
+end
+local write = function(req, res)
+    local c = make(res)(nil, true, req.secure, enc.encode)
+    c.key = rnd.least(8)
+    return c.key
+end
+local read = function(req)
+    local c = enc.decode(req.cookies[Name])
+    return c and c.key
+end
 return function(secret)
     local sg = sign(secret)
-    local K = {}
-    local generate = function(expiry)
-        local key = rnd.least(4)
-        expiry = expiry or -1
-        if expiry ~= -1 then
+    return {create = function(req, res, expiry)
+        local key = read(req)
+        if not key then
+            key = write(req, res)
+        end
+        expiry = expiry or 0
+        if expiry > 0 then
             expiry = ngx.time() + expiry
         end
-        local token = sg.sign(key, expiry)
-        return key, token
-    end
-    local ok = function(key, token)
+        return sg.sign(key, expiry)
+    end, check = function(req, res, token)
+        local key = read(req)
         if key and token then
             local expiry, err = sg.unsign(key, token)
-            if expiry and (expiry == -1 or expiry > ngx.time()) then
+            if expiry and (expiry == 0 or expiry > ngx.time()) then
                 return true
             end
-            return false, "This page may be outdated. Please refresh your browser."
+            make(res)(-10)
+            return false, "token expired"
         end
-        return false, "Request is forbidden"
-    end
-    K.generate = generate
-    K.ok = ok
-    K.write = function(res, expiry)
-        local csrf = res.cookies.create("csrf", 0, false, nil, "/", enc.encode)
-        csrf.key, csrf.token = generate(expiry)
-    end
-    K.read = function(req, res)
-        local csrf = req.cookies.parse("csrf", enc.decode)
-        res.cookies.delete("csrf", false, nil, "/")
-        return ok(csrf.key, csrf.token)
-    end
-    return K
+        return false, "forbidden"
+    end}
 end

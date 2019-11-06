@@ -1,46 +1,53 @@
--- https://pragmaticstudio.com/tutorials/rails-session-cookies-for-api-authentication
+-- https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
 -- https://flask-wtf.readthedocs.io/en/stable/csrf.html
--- http://blog.ircmaxell.com/2013/02/preventing-csrf-attacks.html
--- one time key/token
+-- reuses key in cookie, instead of generating new one for each request
+--  else browser `Back` button always fail csrf check
 
 var sign = require('losty.sign')
 var enc = require('losty.enc')
 var rnd = require('losty.rand')
 
+var Name = 'csrf'
+
+var make = \res ->
+	return res.cookie(Name, false, nil, '/')
+
+var write = \req, res ->
+	var c = make(res)(nil, true, req.secure, enc.encode)
+	c.key = rnd.least(8)
+	return c.key
+
+var read = \req ->
+	var c = enc.decode(req.cookies[Name])
+	return c and c.key
+	
+	
 return \secret ->
 	var sg = sign(secret)
 
-	var K = {}
-	
-	var generate = \expiry ->
-		var key = rnd.least(4)
-		expiry = expiry or -1
-		if expiry ~= -1
-			expiry = ngx.time() + expiry
-		var token = sg.sign(key, expiry)
-		return key, token
-
-	var ok = \key, token ->
-		if key and token
-			var expiry, err = sg.unsign(key, token)
-			if expiry and (expiry == -1 or expiry > ngx.time())
-				return true
-			return false, "This page may be outdated. Please refresh your browser."
-		return false, "Request is forbidden"
-
-	K.generate = generate
-	K.ok = ok
-	
-	-- insert in cookie
-	K.write = \res, expiry ->
+	return {
+		-- insert key in httponly cookie and return token (for use in form hidden input or ajax header)
 		-- cookie removed on browser close
-		var csrf = res.cookies.create('csrf', 0, false, nil, '/', enc.encode)
-		csrf.key, csrf.token = generate(expiry)
+		-- expiry can be nil, means no expiry
+		create = \req, res, expiry ->
+			var key = read(req)
+			if not key
+				key = write(req, res)
+			expiry = expiry or 0
+			if expiry > 0
+				expiry = ngx.time() + expiry
+			return sg.sign(key, expiry)
+
+
+		, check = \req, res, token ->
+			var key = read(req)
+			if key and token
+				var expiry, err = sg.unsign(key, token)
+				if expiry and (expiry == 0 or expiry > ngx.time())
+					return true
+				-- remove expired cookie
+				make(res)(-10)
+				return false, "token expired"
+			return false, "forbidden"
+	}
 	
-	K.read = \req, res ->
-		var csrf = req.cookies.parse('csrf', enc.decode)
-		res.cookies.delete('csrf', false, nil, '/')
-		return ok(csrf.key, csrf.token)
-
-	return K
-

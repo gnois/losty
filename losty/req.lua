@@ -39,7 +39,7 @@ local read_uid_binary = function()
     end
     ngx.log(ngx.ERR, "req.id() function family requires directive `userid on;`")
 end
-local ngx_basic = {
+local basic = {
     socket = function()
         return ngx.req.socket()
     end
@@ -67,12 +67,6 @@ local ngx_basic = {
     , host = function()
         return ngx.var.host or ngx.var.server_name
     end
-    , referer = function()
-        return ngx.var.http_referer
-    end
-    , agent = function()
-        return ngx.var.http_user_agent
-    end
     , url = function()
         return ngx.unescape_uri(ngx.var.request_uri)
     end
@@ -95,62 +89,18 @@ local ngx_basic = {
     end
     , id = read_uid
     , id_binary = read_uid_binary
-    , id_base64 = function()
-        local uid = read_uid_binary()
-        return ngx.encode_base64(uid)
+    , id_base64 = function(t)
+        return ngx.encode_base64(t.id_binary)
     end
 }
-local cookie = function()
-    local unescape = ngx.unescape_uri
-    local cookies = {}
-    local decoders = {}
-    local decode = function(name, val)
-        if val then
-            val = unescape(val)
-            local dec = decoders[name]
-            assert(dec)
-            return dec(val)
-        end
-        return val
+return setmetatable({cookies = setmetatable({}, {__index = function(_, name)
+    local v = ngx.var["cookie_" .. name]
+    return ngx.unescape_uri(v)
+end})}, {__metatable = false, __index = function(tbl, key)
+    local f = basic[key]
+    if f then
+        local v = f(tbl)
+        tbl[key] = v
+        return v
     end
-    local read = function(name)
-        local val = cookies[name]
-        if nil == val then
-            local key = "cookie_" .. name
-            local ok
-            ok, val = pcall(decode, name, ngx.var[key])
-            if ok then
-                cookies[name] = val
-            end
-        end
-        return val
-    end
-    local K = {parse = function(name, decoder)
-        if nil == decode then
-            decoder = function(...)
-                return ...
-            end
-        end
-        decoders[name] = decoder
-        return read(name)
-    end}
-    return setmetatable(K, {__metatable = false, __index = function(t, name)
-        if decoders[name] then
-            return read(name)
-        end
-        error("call parse('" .. name .. "') before using request cookie")
-    end, __newindex = function()
-        error("cannot modify request cookie")
-    end})
-end
-return function()
-    local K = {cookies = cookie()}
-    return setmetatable(K, {__metatable = false, __index = function(tbl, key)
-        local f = ngx_basic[key]
-        if f then
-            local res = f(tbl)
-            tbl[key] = res
-            return res
-        end
-    end})
-end
+end})

@@ -1,4 +1,4 @@
--- flash is only read or written by browser
+-- flash is for reading by js
 -- vs session which is encrypted and only readable by server
 
 var enc = require('losty.enc')
@@ -13,29 +13,32 @@ var push = \tb, k, v ->
 		if not tbl.find(old, v)
 			old[#old + 1] = v
 	tb[k] = old
+	
+
+var Msg = '_Msg'
+var Flash = 'Flash'
 
 return \req, res ->
 
-	-- removed on browser close, or manually by javascript
-	var new = res.cookies['flash']
+	var new = res.cookies[Flash]
 	if not new
-		new = res.cookies.create('flash', 0, false, nil, '/', enc.encode)
-		var old = req.cookies.parse('flash', enc.decode)
-		if old
-			-- copy old to new, so that flashes is accumulated until read
-			for k, v in pairs(old)
-				new[k] = v
+		-- removed on browser close, or manually by javascript
+		new = res.cookie(Flash, false, nil, '/')(nil, true, req.secure, enc.encode)
+	var old = enc.decode(req.cookies[Flash])
+	if old
+		-- copy old to new, so that flashes is accumulated until read
+		for k, v in pairs(old)
+			new[k] = v
 
-	var K = {}
-	
-	K.set = \key, val ->
-		new[key] = val
-	
-	for _, meth in pairs({'pass', 'fail', 'info'})
+	var K = {
+		set = \key, val ->
+			new[key] = val
+	}
+	for _, meth in pairs({'pass', 'fail', 'warn', 'info'})
 		K[meth] = \str ->
-			if not new.note
-				new.note = {}
-			push(new.note, meth, str)
+			if not new[Msg]
+				new[Msg] = {}
+			push(new[Msg], meth, str)
 	
 	return K
 

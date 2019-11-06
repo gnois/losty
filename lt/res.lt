@@ -1,203 +1,215 @@
-var is = require('losty.is')
+-- a resp is merely status and header
+var enc = require('losty.enc')
 var tbl = require('losty.tbl')
-var str = require('losty.str')
 
--- Create response
-------------------
+var cookies
 
-var header = ->
-	-- underscore to dash and capitalize word
-	-- t.foo_bar becomes t['Foo-Bar']
-	var normalize = \txt ->
-		return string.gsub(txt, "_", "-").lower(@).gsub(@, "^%l", string.upper).gsub(@, "-%l", string.upper)
+var insert
+insert = \tb, v ->
+	if 'table' == type(v)
+		for _, x in ipairs(v)
+			insert(tb, x)
+	else
+		table.insert(tb, v)
+
+
+-- push a string or array to ngx.header[k]
+var push = \tb, k, v ->
+	var old = tb[k]
+	if nil == old
+		tb[k] = v
+	else if 'table' == type(old)
+		insert(old, v)
+	else if 'table' == type(v)
+		insert(v, old)
+		tb[k] = v
+	else
+		tb[k] = {old, v}
+
+
+--`` unused, ngx lua will do this
+
+-- underscore to dash
+var normalize = \txt ->
+	if txt
+		return string.gsub(txt, "_", "-")
+
+-- capitalize word, t.foo_bar becomes t['Foo-Bar']
+var capitalize = \txt ->
+	if txt
+		return string.lower(txt).gsub(@, "^%l", string.upper).gsub(@, "-%l", string.upper)
+``
+
+-- ngx.header wrapper, store nothing
+-- headers[key] = x will append to existing header[key] array, unless x is nil
+-- for single valued header, only the last array item is sent
+var headers = setmetatable({
+}, {
+	__metatable = false
 	
-	var headers = {}
-	return {
-		set = ->
-			for k, v in pairs(headers)
-				ngx.header[k] = v
-			
-		, new = ->
-			return setmetatable({
-				delete = \name ->
-					headers[name] = nil
-			}, { 
-				__metatable = false
-				, __index = \_, k ->
-					var key = normalize(k)
-					return headers[key]
-				, __newindex = \_, k, v ->
-					var key = normalize(k)
-					-- add as value object, not comma concatenating, so we know if duplicate header are set
-					tbl.add(headers, key, v)
-			})
-	}
+	, __index = \_, k ->
+		-- header is being updated, so not calling ngx.resp.get_headers()
+		return ngx.header[k]
+	
+	, __newindex = \_, k, v ->
+		if nil == v
+			ngx.header[k] = v
+		else
+			push(ngx.header, k, v)
+})
 
 
 -- see http://www.nczonline.net/blog/2009/05/05/http-cookies-explained/ section 'Cookie maintenance and lifecycle'
---   we only identify cookie by name, no subcookie (a=b&c=d&h=k), 
---   and there cannot be 2 cookie of the same name with different domain/path/secure/httponly/expiry, which is actually valid in RFC
-var cookie = ->
-	var escape = ngx.escape_uri
-	var insert = table.insert
-	var concat = table.concat
+-- https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
 
-	var cookies = {}
-	var metas = {}
+-- a cookie has identity: name, domain, path and httponly
+-- it cannot be deleted from browser if any of these mismatch
+-- domain can be nil
+--  see https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie
+var cookie = \name, httponly, domain, path ->
+	if not name
+		error("cookie must have a name")
 
-	return {
-		set = \secure ->
-			for k, m in pairs(metas)
-				var val = cookies[k] or ''
-				if m.encode
-					val = m.encode(val)
-				else
-					val = tostring(val)
-				var age = tonumber(m.age)
-				var expires 
-				if age ~= 0
-					expires = ngx.cookie_time(ngx.time() + age) or nil
-				-- no zero or -ve max age
-				if age <= 0
-					age = nil
-				
-				var txt = { k, '=' }
-				insert(txt, escape(val))
-				if expires 
-					insert(txt, "; Expires=" .. expires)
-				if age 
-					insert(txt, "; Max-Age=" .. age)
-				if m.domain 
-					insert(txt, "; Domain=" .. m.domain)
-				if m.path
-					insert(txt, "; Path=" .. m.path)
-				if m.samesite
-					insert(txt, "; SameSite=strict")
-				if m.httponly 
-					insert(txt, "; HttpOnly")
-				if secure
-					insert(txt, "; Secure")
-				tbl.add(ngx.header, 'Set-Cookie', concat(txt))
-			
-		, new = ->
-			-- TODO: add SameSite=strict;
-			return setmetatable({
-				create = \name, age, httponly, domain, path, samesite, encode ->
-					-- cookies[name].__tostring cannot be encode(), 
-					--  coz metamethods only exist for table, yet value can be string, number or nil
-					--  hence metas is needed
-					metas[name] = { age = age, httponly = httponly, domain = domain, path = path, samesite = samesite, encode = encode }
-					cookies[name] = {}
-					return cookies[name]
-
-				-- to delete successfully, httponly, domain and path must match create()
-				, delete = \name, httponly, domain, path ->
-					metas[name] = { age = -24*3600, httponly = httponly, domain = domain, path = path }
-					cookies[name] = 'null'
-			}, {
-				__metatable = false
-				, __index = \_, name ->
-					return cookies[name]
-				, __newindex = \_, name, val ->
-					if not metas[name]
-						error("call create('" .. name .. "', ...) before using response cookie")
-					cookies[name] = val
-			})
-	}
-
-
-return ->
-	var headers = header()
-	var cookies = cookie()
-	
-	var res = {
-		status = nil
-		, body = nil
-		, headers = headers.new()
-		, cookies = cookies.new()
+	var c = {
+		_name = name
+		, _httponly = httponly
+		, _domain = domain
+		, _path = path
 	}
 	
-	-- utilities
+	var data = setmetatable({}, {
+		__metatable = false
+		-- expose attributes
+		, __index = c
 
-	-- simple template generation with {}
-	res.render = \template, data ->
-		-- extra parenthesis needed coz string.gsub has multiple returns
-		res.body = (string.gsub(template, "{([_%w%.]*)}", \s ->
-			var keys = str.split(s, "%.")
-			var v = data[keys[1]]
-			for i = 2, #keys
-				v = v[keys[i]]
-			return v or '{'.. s ..'}'
-		))
+		-- non identity, not needed for delete cookie: age, samesite, secure
+		-- age in secs, nil means last till browser close, -ve means delete
+		-- samesite can be bool or string [lax|strict|none]. true means strict
+		-- secure is bool, use req.secure
+		-- encoder nil defaults to losty.enc
+		, __call = \t, age, samesite, secure, encoder ->
+			c._age = age
+			c._samesite = samesite
+			c._secure = secure
+			c._encoder = encoder
+			return t
+	})
+	
+	if not cookies
+		cookies = {}
+	else if cookies[name]
+		ngx.log(ngx.NOTICE, "Overwriting cookie named " .. name)
 
+	cookies[name] = data
+	return data
+
+
+
+var bake = \c ->
+	var encode = c._encoder or enc.encode
+	var v = encode(c)
+	if v
+		v = ngx.escape_uri(v)
+	
+	var z = { c._name .. "=" .. (v or "") }
+	var y = 2
+
+	if c._domain
+		z[y] = "Domain=" .. c._domain
+		y = y + 1
+	if c._path
+		z[y] = "Path=" .. c._path
+		y = y + 1
+	var a = tonumber(c._age)
+	if a
+		if a ~= 0
+			z[y] = "Expires=" .. ngx.cookie_time(ngx.time() + a)
+			y = y + 1
+		-- no zero or -ve max age
+		if a > 0
+			z[y] = "Max-Age=" .. a
+			y = y + 1
+	var ss = c._samesite
+	if ss
+		if 'boolean' == type(ss) and ss
+			ss = "strict"
+		z[y] = "SameSite=" .. ss
+		y = y + 1
+	if c._httponly
+		z[y] = "HttpOnly"
+		y = y + 1
+	if c._secure
+		z[y] = "Secure"
+		
+	return table.concat(z, ";")
+
+
+
+return setmetatable({
+	headers = headers
+	, cookie = cookie
+	, cookies = cookies
+	
+	-- shortcut header functions
 	-- no caching
-	res.nocache = ->
-		res.headers["Cache-Control"] = "no-cache"   -- no-store ? github.com does not have max-age=0, s-maxage=0, must-revalidate, proxy-revalidate
+	, nocache = ->
+		headers["Cache-Control"] = "no-cache"   -- no-store ? github.com does not have max-age=0, s-maxage=0, must-revalidate, proxy-revalidate
 		
 	-- caching headers (in seconds)
-	res.cache = \sec ->
+	, cache = \sec ->
 		-- should check if status equals 200, 201, 204, 206, 301, 302, 303, 304, or 307
-		-- http://nginx.org/en/docs/http/ngx_http_headers_module.html#expires
-		res.headers["Cache-Control"] = "max-age=" .. sec     -- 'public' by default
-		-- http://www.freshblurbs.com/blog/2015/12/12/http-cache-restful-apis.html
-		-- res.headers["Expires"] = ngx.http_time(ngx.time() + sec)
-		
+		if ngx.status < 400
+			-- http://nginx.org/en/docs/http/ngx_http_headers_module.html#expires
+			headers["Cache-Control"] = "max-age=" .. sec     -- 'public' by default
+			-- http://www.freshblurbs.com/blog/2015/12/12/http-cache-restful-apis.html
+			-- headers["Expires"] = ngx.http_time(ngx.time() + sec)
+
 	--``
 	See 
 	https://en.wikipedia.org/wiki/HTTP_302, first paragraph
 	https://en.wikipedia.org/wiki/HTTP_303
 	http://stackoverflow.com/questions/5129076/after-a-post-should-i-do-a-302-or-a-303-redirect
 	
-	res.redirect = \url, permanent ->
+	, redirect = \url, permanent ->
 		if permanent
-			res.status = ngx.HTTP_MOVED_PERMANENTLY
+			ngx.status = ngx.HTTP_MOVED_PERMANENTLY
 		else
-			res.status = ngx.HTTP_MOVED_TEMPORARILY
-		res.headers['Location'] = url
+			ngx.status = ngx.HTTP_MOVED_TEMPORARILY
+		headers['Location'] = url
 	--``
-	res.redirect = \url, same_method ->
-		if same_method
-			res.status = 307  -- if request method is POST, use POST again to get the new resource
-		else
-			res.status = ngx.HTTP_SEE_OTHER  -- always use GET to get the new resource
-		res.headers['Location'] = url
+	, redirect = \url, same_method ->
+		if same_method   -- if request method is POST, use POST again to get the new resource
+			ngx.redirect(url, ngx.HTTP_TEMPORARY_REDIRECT)
+		else -- always use GET to get the new resource
+			ngx.redirect(url, ngx.HTTP_SEE_OTHER)
 
-	res.ok = \body ->
-		res.status = ngx.HTTP_OK
-		res.body = body
-		
-	return {
-		send_headers = \secure ->
-			-- event-stream can have no status
-			if res.status
-				ngx.status = res.status
-			headers.set()
-			cookies.set(secure)
-			ngx.send_headers()
-			
+	, send = ->
+		if cookies
+			var arr, n = {}, 1
+			for _, c in pairs(cookies)
+				arr[n] = bake(c)
+				n = n + 1
+			headers['Set-Cookie'] = arr
+		ngx.send_headers()
 
-		, send_body = ->
-			if is.func(res.body)
-				var co = coroutine.create(res.body)
-				do
-					var ok, val = coroutine.resume(co)
-					if ok and val
-						ngx.print(val)
-						ngx.flush(true)
-				until not ok
-			else
-				ngx.print(res.body)
+}, {
+	__metatable = false
+	
+	, __index = \_, k ->
+		if 'status' == k
+			return ngx.status
 
-		, eof = ->
-			ngx.eof()
-			
-		, create = ->
-			return res
-	}
+	, __newindex = \_, k, v ->
+		if 'status' == k
+			ngx.status = v
+})
+
+
+
 
 
 --``
- predefined status
+ngx predefined status
 
 ngx.HTTP_CONTINUE (100)
 ngx.HTTP_SWITCHING_PROTOCOLS (101)
