@@ -15,7 +15,9 @@ return \hn, req, res, ... ->
 		nargs = nargs + np
 		i = i + 1
 		if i <= n
+			-- unpack() accepts tables of up to 8000 elements only in Lua 5.1 and LuaJIT
 			return hn[i](req, res, unpack(args, 1, nargs))
 
-	req.next()
+	var v = req.next()
 	req.next = nxt
+	return v

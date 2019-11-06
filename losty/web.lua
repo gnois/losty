@@ -2,12 +2,12 @@
 -- Generated from web.lt
 --
 local json = require("cjson.safe")
-local request = require("losty.req")
-local response = require("losty.res")
 local status = require("losty.status")
-local choose = require("losty.accept")
+local accept = require("losty.accept")
 local router = require("losty.router")
 local dispatch = require("losty.dispatch")
+local req = require("losty.req")
+local res = require("losty.res")
 math.randomseed(ngx.time())
 local HTML = "text/html"
 local JSON = "application/json"
@@ -35,13 +35,11 @@ return function()
         end
         return r
     end
-    local must_no_body = function(req, code)
-        return req.method == "HEAD" or code == 204 or code == 205 or code == 304
+    local must_no_body = function(method, code)
+        return method == "HEAD" or code == 204 or code == 205 or code == 304
     end
     local run = function(errors)
-        local req = request()
-        local resp = response()
-        local res = resp.create()
+        local body
         local method = req.method
         if method == "HEAD" then
             method = "GET"
@@ -50,17 +48,17 @@ return function()
         if handlers then
             req.params = params
             local ok, trace = xpcall(function()
-                dispatch(handlers, req, res)
+                body = dispatch(handlers, req, res)
             end, function(err)
                 return debug.traceback(err, 2)
             end)
             if ok then
                 if not res.status then
-                    error("Response status is missing", 2)
+                    error("response status required", 2)
                 end
-                if res.status >= 200 and res.status < 300 or res.body and #res.body > 0 then
-                    if not must_no_body(req, res.status) and not res.headers["Content-Type"] then
-                        error("Content-Type header is missing", 2)
+                if res.status >= 200 and res.status < 300 or body then
+                    if not must_no_body(req.method, res.status) and not res.headers["Content-Type"] then
+                        error("Content-Type header required", 2)
                     end
                 end
             else
@@ -70,31 +68,42 @@ return function()
         else
             res.status = 404
         end
-        if not res.body and res.status >= 400 then
-            local pref = choose(req.headers["Accept"], {HTML, JSON})
+        if not body and res.status >= 400 then
+            local pref = accept(req.headers["Accept"], {HTML, JSON})
             local ctype = tostring(pref[1])
             if req.method ~= "HEAD" then
                 if ctype == JSON then
-                    res.body = json.encode({fail = status(res.status)})
+                    body = json.encode({fail = status(res.status)})
                 else
                     if errors == true then
                         ngx.exit(res.status)
                     elseif errors then
-                        res.body = errors[res.status]
+                        body = errors[res.status]
                     end
-                    if not res.body or #res.body < 1 then
+                    if not body then
                         ctype = "text/plain"
-                        res.body = status(res.status)
+                        body = status(res.status)
                     end
                 end
             end
             res.headers["Content-Type"] = ctype
         end
-        resp.send_headers(req.secure)
-        if not must_no_body(req, res.status) then
-            resp.send_body()
+        res.send()
+        if not must_no_body(req.method, res.status) then
+            if "function" == type(body) then
+                local co = coroutine.create(body)
+                repeat
+                    local ok, val = coroutine.resume(co)
+                    if ok and val then
+                        ngx.print(val)
+                        ngx.flush(true)
+                    end
+                until not ok
+            else
+                ngx.print(body)
+            end
         end
-        resp.eof()
+        ngx.eof()
     end
     return {route = route, run = run}
 end

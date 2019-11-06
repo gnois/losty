@@ -18,6 +18,7 @@ return function(hn, req, res, ...)
             return hn[i](req, res, unpack(args, 1, nargs))
         end
     end
-    req.next()
+    local v = req.next()
     req.next = nxt
+    return v
 end

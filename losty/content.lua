@@ -10,7 +10,7 @@ local choose = require("losty.accept")
 local dispatch = require("losty.dispatch")
 local HTML = "text/html"
 local JSON = "application/json"
-local reject = function(req, res)
+local reject = function(_, res)
     res.status = 406
 end
 local dual = function(vary)
@@ -24,27 +24,25 @@ local dual = function(vary)
             if tostring(pref[1]) == JSON then
                 local out = req.next()
                 res.headers["Content-Type"] = JSON
-                json.encode_empty_table_as_object(false)
-                res.body = json.encode(out)
+                out = json.encode(out)
                 local cachectrl = res.headers["Cache-Control"]
                 if cachectrl and (strz.contains(cachectrl, "no-cache") or strz.contains(cachectrl, "no-store")) then
-                    return 
+                    return out
                 end
                 local sha = sha1:new()
-                if sha:update(res.body) then
+                if sha:update(out) then
                     local digest = sha:final()
                     local etag = str.to_hex(digest)
                     etag = "W/\"" .. etag .. "\""
                     if etag == req.headers["If-None-Match"] then
                         res.status = 304
-                        res.body = nil
-                    else
-                        res.headers["ETag"] = etag
+                        return 
                     end
+                    res.headers["ETag"] = etag
                 end
-            else
-                dispatch(hn, req, res, ...)
+                return out
             end
+            return dispatch(hn, req, res, ...)
         end
     end
 end

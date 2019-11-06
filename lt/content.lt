@@ -9,11 +9,10 @@ var dispatch = require('losty.dispatch')
 var HTML = "text/html"
 var JSON = "application/json"
 
-var reject = \req, res ->
+var reject = \_, res ->
 	res.status = 406
 	-- web.run() already provides desc for status >= 400
-	--res.headers['Content-Type'] = "text/plain"
-	--res.body = 'Not acceptable'
+
 
 -- Once a route respond differently based on HTTP Accept header, shd set Vary: Accept for all responses
 -- See https://www.fastly.com/blog/best-practices-for-using-the-vary-header
@@ -41,19 +40,18 @@ var dual = \vary ->
 				var out = req.next()
 				--var tbl = require('losty.tbl')
 				--print(tbl.dump(out))
-				
 				res.headers["Content-Type"] = JSON
+				--json.encode_empty_table_as_object(false)
 				-- just throw if error
-				json.encode_empty_table_as_object(false)
-				res.body = json.encode(out)
-				
+				out = json.encode(out)
+
 				-- no etag if caching is disabled
 				var cachectrl = res.headers["Cache-Control"]
 				if cachectrl and (strz.contains(cachectrl, "no-cache") or strz.contains(cachectrl, "no-store"))
-					return
+					return out
 
 				var sha = sha1.new(@)
-				if sha.update(@, res.body)
+				if sha.update(@, out)
 					var digest = sha.final(@)
 					var etag = str.to_hex(digest)
 					-- https://groups.google.com/forum/#!topic/openresty-en/W16iCSRMMZk
@@ -62,12 +60,12 @@ var dual = \vary ->
 					etag = 'W/"' .. etag .. '"'
 					if etag == req.headers["If-None-Match"]
 						res.status = 304
-						res.body = nil  -- web.lt will clear body anyway
-					else
-						res.headers["ETag"] = etag
-			else
-				dispatch(hn, req, res, ...)
+						return -- no body
+					
+					res.headers["ETag"] = etag
+				return out
 
+			return dispatch(hn, req, res, ...)
 
 
 
