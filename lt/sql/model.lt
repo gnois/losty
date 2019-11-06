@@ -57,9 +57,9 @@ K.migrate = \db, migrations ->
 		var sql = to.trimmed(v)
 		if #sql > 0
 			ok, err = db.run(sql)
-			if ok or err == 0  -- err is 0 when all are sql comments
-				print(c.onblue, c.yellow, c.bright, "        ==> ", ok, c.reset)
-			else -- err is 0 when no statement to execute, maybe bcoz all are commented out
+			if tonumber(err) -- err is 0 when no statement to execute, maybe bcoz all are comments
+				print(c.onblue, c.yellow, c.bright, "        ==> ", err .. ' query ok', c.reset)
+			else
 				print(c.onred, c.white, c.bright, "        >>>> ", tbl.dump(err), c.reset)
 				break
 			

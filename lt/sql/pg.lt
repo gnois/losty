@@ -57,12 +57,14 @@ return \database, user, password, host, port, pool ->
 		var q, i = interpolate(str, ...)
 		if n ~= i
 			ngx.log(ngx.ERR, "Trying to match ", i ," placeholders to ", n ," arguments for query `", str, "`")
+
+		-- ngx.log(ngx.NOTICE, q)
 		var result, err, partial, count = db.query(@, q)
-		ngx.log(ngx.NOTICE, q)
-		-- result is true on success if no query result, nil if failed
-		if result == nil and err
+		-- a real error has nil result, and err is a string
+		-- err can be the number of queries, 0 if all are comments, which is not an error
+		if nil == result and not tonumber(err)
+			ngx.log(ngx.ERR, q)
 			ngx.log(ngx.ERR, err)
-		-- err can be count
 		return result, err, partial, count
 
 	var keepalive = \timeout ->
