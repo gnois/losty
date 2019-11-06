@@ -14,8 +14,8 @@ K.migrate = function(db, migrations)
         local sql = to.trimmed(v)
         if #sql > 0 then
             ok, err = db.run(sql)
-            if ok or err == 0 then
-                print(c.onblue, c.yellow, c.bright, "        ==> ", ok, c.reset)
+            if tonumber(err) then
+                print(c.onblue, c.yellow, c.bright, "        ==> ", err .. " query ok", c.reset)
             else
                 print(c.onred, c.white, c.bright, "        >>>> ", tbl.dump(err), c.reset)
                 break

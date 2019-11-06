@@ -2,7 +2,6 @@
 -- Generated from sign.lt
 --
 local enc = require("losty.enc")
-local base64enc = ngx.encode_base64
 local hmac = ngx.hmac_sha1
 return function(secret)
     if not secret then
@@ -15,7 +14,7 @@ return function(secret)
         end
         local obj = {key = key, data = data}
         local str = enc.encode(obj, func)
-        local sig = base64enc(hmac(secret, str))
+        local sig = ngx.encode_base64(hmac(secret, str))
         return str .. "." .. sig
     end
     K.unsign = function(key, message, func)
@@ -23,7 +22,7 @@ return function(secret)
             if message then
                 local str, sig = string.match(message, "^(.*)%.(.*)$")
                 if str then
-                    if sig == base64enc(hmac(secret, str)) then
+                    if sig == ngx.encode_base64(hmac(secret, str)) then
                         local obj = enc.decode(str, func)
                         if obj.key == key then
                             return obj.data
