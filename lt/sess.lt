@@ -14,9 +14,6 @@ var hmac = ngx.hmac_sha1
 -- Stormpath recommends that you store your JWT in httpOnly cookies for web applications (vs localStorage)
 -- https://stormpath.com/blog/where-to-store-your-jwts-cookies-vs-html5-web-storage
 -- http://cryto.net/~joepie91/blog/2016/06/13/stop-using-jwt-for-sessions/
-var Name = "sess"
-var make = \res ->
-	return res.cookie(Name, true, nil, '/')
 
 --``
 var generate_key = \req ->
@@ -30,9 +27,12 @@ var key = generate_key(req)
 
 
 -- size, mode, hash, rounds can be nil
-return \secret, key -> --, size, mode, hash, rounds)
+return \name, secret, key -> --, size, mode, hash, rounds)
+	if not name
+		error("session name required", 2)
+	
 	if not secret or not key
-		error("secret and key is required for session", 2)
+		error("session secret and key required", 2)
 
 	var encrypt = \value ->
 		-- AES salt length MUST BE MULTIPLE OF 8! else nginx gives INTERMITTENT Error 
@@ -64,10 +64,13 @@ return \secret, key -> --, size, mode, hash, rounds)
 						if hmac(k, table.concat({salt, d, key})) == h
 							return json.decode(d)
 							
+	var make = \res ->
+		return res.cookie(name, true, nil, '/')
+
 
 	return {
 		read = \req ->
-			return decrypt(req.cookies[Name])
+			return decrypt(req.cookies[name])
 
 		-- age nil means last till browser close
 		, create = \req, res, age ->
