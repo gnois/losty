@@ -21,17 +21,17 @@ local SCRYPT_p = 2
 local K = {}
 K.hash = function(password)
     if password then
-        local out = cstrz(SCRYPT_MCF_LEN)
+        local hashed = cstrz(SCRYPT_MCF_LEN)
         local pwd = const_cstrz(#password, password)
-        if scrypt.libscrypt_hash(out, pwd, SCRYPT_N, SCRYPT_r, SCRYPT_p) > 0 then
-            return ffi.string(out)
+        if scrypt.libscrypt_hash(hashed, pwd, SCRYPT_N, SCRYPT_r, SCRYPT_p) > 0 then
+            return ffi.string(hashed)
         end
     end
 end
-K.check = function(hashed, pwd)
-    if hashed and pwd then
+K.check = function(hashed, password)
+    if hashed and password then
         local gold = cstrz(#hashed, hashed)
-        local sand = const_cstrz(#pwd, pwd)
+        local sand = const_cstrz(#password, password)
         return scrypt.libscrypt_check(gold, sand) > 0
     end
 end

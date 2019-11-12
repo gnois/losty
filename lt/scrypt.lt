@@ -27,16 +27,16 @@ var K = {}
 
 K.hash = \password ->
 	if password
-		var out = cstrz(SCRYPT_MCF_LEN)
+		var hashed = cstrz(SCRYPT_MCF_LEN)
 		var pwd = const_cstrz(#password, password)
-		if scrypt.libscrypt_hash(out, pwd, SCRYPT_N, SCRYPT_r, SCRYPT_p) > 0
-			return ffi.string(out)
+		if scrypt.libscrypt_hash(hashed, pwd, SCRYPT_N, SCRYPT_r, SCRYPT_p) > 0
+			return ffi.string(hashed)
 
 
-K.check = \hashed, pwd ->
-	if hashed and pwd
+K.check = \hashed, password ->
+	if hashed and password
 		var gold = cstrz(#hashed, hashed)
-		var sand = const_cstrz(#pwd, pwd)
+		var sand = const_cstrz(#password, password)
 		return scrypt.libscrypt_check(gold, sand) > 0
 
 

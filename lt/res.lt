@@ -2,7 +2,7 @@
 var enc = require('losty.enc')
 var tbl = require('losty.tbl')
 
-var cookies
+var jar
 
 var insert
 insert = \tb, v ->
@@ -64,8 +64,8 @@ var headers = setmetatable({
 
 -- a cookie has identity: name, domain, path and httponly
 -- it cannot be deleted from browser if any of these mismatch
--- domain can be nil
---  see https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie
+-- domain shd be nil, to exclude subdomain. if specified, subdomains are always included
+-- https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie
 var cookie = \name, httponly, domain, path ->
 	if not name
 		error("cookie must have a name")
@@ -95,12 +95,12 @@ var cookie = \name, httponly, domain, path ->
 			return t
 	})
 	
-	if not cookies
-		cookies = {}
-	else if cookies[name]
+	if not jar
+		jar = {}
+	else if jar[name]
 		ngx.log(ngx.NOTICE, "Overwriting cookie named " .. name)
 
-	cookies[name] = data
+	jar[name] = data
 	return data
 
 
@@ -148,7 +148,7 @@ var bake = \c ->
 return setmetatable({
 	headers = headers
 	, cookie = cookie
-	, cookies = cookies
+	, cookies = jar
 	
 	-- shortcut header functions
 	-- no caching
@@ -184,9 +184,9 @@ return setmetatable({
 			ngx.redirect(url, ngx.HTTP_SEE_OTHER)
 
 	, send = ->
-		if cookies
+		if jar
 			var arr, n = {}, 1
-			for _, c in pairs(cookies)
+			for _, c in pairs(jar)
 				arr[n] = bake(c)
 				n = n + 1
 			headers['Set-Cookie'] = arr

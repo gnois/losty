@@ -3,7 +3,7 @@
 --
 local enc = require("losty.enc")
 local tbl = require("losty.tbl")
-local cookies
+local jar
 local insert
 insert = function(tb, v)
     if "table" == type(v) then
@@ -48,12 +48,12 @@ local cookie = function(name, httponly, domain, path)
         c._encoder = encoder
         return t
     end})
-    if not cookies then
-        cookies = {}
-    elseif cookies[name] then
+    if not jar then
+        jar = {}
+    elseif jar[name] then
         ngx.log(ngx.NOTICE, "Overwriting cookie named " .. name)
     end
-    cookies[name] = data
+    jar[name] = data
     return data
 end
 local bake = function(c)
@@ -103,7 +103,7 @@ end
 return setmetatable({
     headers = headers
     , cookie = cookie
-    , cookies = cookies
+    , cookies = jar
     , nocache = function()
         headers["Cache-Control"] = "no-cache"
     end
@@ -120,9 +120,9 @@ return setmetatable({
         end
     end
     , send = function()
-        if cookies then
+        if jar then
             local arr, n = {}, 1
-            for _, c in pairs(cookies) do
+            for _, c in pairs(jar) do
                 arr[n] = bake(c)
                 n = n + 1
             end
