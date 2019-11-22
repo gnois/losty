@@ -9,7 +9,7 @@ var read_uid = ->
 		var ind = string.find(str, '=')
 		if ind > 0
 			return string.sub(str, ind+1)
-	return ''
+	ngx.log(ngx.ERR, "req.id_xxx() functions requires nginx directive `userid on;`")
 
 -- convert an int32 into a 4-byte lua string
 var binary = \v ->
@@ -53,7 +53,6 @@ var read_uid_binary = ->
 		--for i = 1, string.len(bytes16)
 		--	print(string.byte(bytes16, i), '  0x' , string.format("%x", string.byte(bytes16, i)))
 		return bytes16
-	ngx.log(ngx.ERR, "req.id() function family requires directive `userid on;`")
 
 
 

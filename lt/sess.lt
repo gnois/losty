@@ -20,7 +20,7 @@ var generate_key = \req ->
 	var addr = req.headers["CF-Connecting-IP"] or req.headers["Fastly-Client-IP"] or req.headers["Incap-Client-IP"] or req.headers["X-Real-IP"]
 	if not addr
 		addr = req.remote_addr
-	return table.concat({ req.agent, req.scheme, addr })
+	return table.concat({ req.headers["User-Agent"], req.scheme, addr })
 var key = generate_key(req)
 ``
 

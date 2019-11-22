@@ -11,7 +11,7 @@ local read_uid = function()
             return string.sub(str, ind + 1)
         end
     end
-    return ""
+    ngx.log(ngx.ERR, "req.id_xxx() functions requires nginx directive `userid on;`")
 end
 local binary = function(v)
     local int32 = ffi.typeof("int32_t")
@@ -37,7 +37,6 @@ local read_uid_binary = function()
         local bytes16 = table.concat(buff, "")
         return bytes16
     end
-    ngx.log(ngx.ERR, "req.id() function family requires directive `userid on;`")
 end
 local basic = {
     socket = function()
