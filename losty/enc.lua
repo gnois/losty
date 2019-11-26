@@ -2,26 +2,28 @@
 -- Generated from enc.lt
 --
 local json = require("cjson.safe")
-local K = {}
-K.encode = function(obj, func)
-    if obj then
-        local str, err = json.encode(obj)
-        if str then
-            if func then
-                str = func(str)
-            end
-            return ngx.encode_base64(str)
-        end
-        return str, err
-    end
+local enc_url_chars = {["+"] = "-", ["/"] = "_", ["="] = "~"}
+local dec_url_chars = {["-"] = "+", _ = "/", ["~"] = "="}
+local encode64 = function(value)
+    local s = ngx.encode_base64(value)
+    return (string.gsub(s, "[+/=]", enc_url_chars))
 end
-K.decode = function(str, func)
-    if str then
-        str = ngx.decode_base64(str)
-        if func then
-            str = func(str)
-        end
-        return json.decode(str)
-    end
+local decode64 = function(value)
+    local s = (string.gsub(value, "[-_~]", dec_url_chars))
+    return ngx.decode_base64(s)
 end
-return K
+return {encode64 = encode64, decode64 = decode64, encode = function(obj, func)
+    assert(obj)
+    local str = json.encode(obj)
+    if func then
+        str = func(str)
+    end
+    return encode64(str)
+end, decode = function(str, func)
+    assert(str)
+    str = decode64(str)
+    if func then
+        str = func(str)
+    end
+    return json.decode(str)
+end}

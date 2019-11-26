@@ -1,25 +1,45 @@
 var json = require('cjson.safe')
 
-var K = {}
+-- + / = is invalid url chars
+var enc_url_chars = {
+	["+"] = "-",
+	["/"] = "_",
+	["="] = "~"
+}
+var dec_url_chars = {
+	["-"] = "+",
+	["_"] = "/",
+	["~"] = "="
+}
 
--- func can be crypt(key).encrypt
-K.encode = \obj, func ->
-	if obj
-		var str, err = json.encode(obj)
-		if str
-			if func
-				str = func(str)
-			return ngx.encode_base64(str)
-		return str, err
+var encode64 = \value ->
+	var s = ngx.encode_base64(value)
+	return (string.gsub(s, "[+/=]", enc_url_chars))
 
--- func can be crypt(key).decrypt
-K.decode = \str, func ->
-	if str
-		str = ngx.decode_base64(str)
+var decode64 = \value ->
+	var s = (string.gsub(value, "[-_~]", dec_url_chars))
+	return ngx.decode_base64(s)
+
+
+return {
+	encode64 = encode64
+	, decode64 = decode64
+	
+	-- func can be crypt(key).encrypt
+	, encode = \obj, func ->
+		assert(obj)
+		var str = json.encode(obj)
+		if func
+			str = func(str)
+		return encode64(str)
+
+
+	-- func can be crypt(key).decrypt
+	, decode = \str, func ->
+		assert(str)
+		str = decode64(str)
 		if func
 			str = func(str)
 		return json.decode(str)
+}
 
-
-
-return K

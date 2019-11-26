@@ -1,41 +1,26 @@
 --
--- Generated from sign.lt
+-- Generated from wrap.lt
 --
 local enc = require("losty.enc")
+local surl = require("losty.surl")
 local hmac = ngx.hmac_sha1
-return function(secret)
-    if not secret then
-        error("secret is required to sign/unsign", 2)
+return function(secret, key)
+    if not (secret and key) then
+        error("secret and key required", 2)
     end
-    local K = {}
-    K.sign = function(key, data, func)
-        if not key then
-            error("a key is required to sign()", 2)
-        end
+    local pen = surl(secret)
+    return {wrap = function(data, func, length)
         local obj = {key = key, data = data}
-        local str = enc.encode(obj, func)
-        local sig = ngx.encode_base64(hmac(secret, str))
-        return str .. "." .. sig
-    end
-    K.unsign = function(key, message, func)
-        if key then
-            if message then
-                local str, sig = string.match(message, "^(.*)%.(.*)$")
-                if str then
-                    if sig == ngx.encode_base64(hmac(secret, str)) then
-                        local obj = enc.decode(str, func)
-                        if obj.key == key then
-                            return obj.data
-                        end
-                        return nil, "invalid key"
-                    end
-                    return nil, "invalid signature"
-                end
-                return nil, "invalid message"
+        return pen.sign(str, length), enc.encode(obj, func)
+    end, unwrap = function(sig, text, func, length)
+        assert(text)
+        if pen.verify(sig, text, length) then
+            local obj = enc.decode(text, func)
+            if obj.key == key then
+                return obj.data
             end
-            return nil, "missing message"
+            return nil, "wrong key"
         end
-        return nil, "missing key"
-    end
-    return K
+        return nil, "wrong signature"
+    end}
 end

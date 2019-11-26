@@ -1,53 +1,27 @@
--- signed url
+-- url friendly sign
+var enc = require('losty.enc')
 var hmac = ngx.hmac_sha1
-
--- + / = is invalid url chars
-var enc_url_chars = {
-	["+"] = "-",
-	["/"] = "_",
-	["="] = "~"
-}
-var dec_url_chars = {
-	["-"] = "+",
-	["_"] = "/",
-	["~"] = "="
-}
-
-var enc64 = \value ->
-	var s = ngx.encode_base64(value)
-	return (string.gsub(s, "[+/=]", enc_url_chars))
-
-var dec64 = \value ->
-	var s = (string.gsub(value, "[-_~]", dec_url_chars))
-	return ngx.decode_base64(s)
-
 
 return \secret ->
 	if not secret
-		error("secret is required to sign/verify", 2)
+		error("secret required", 2)
 
-	var K = {
-		enc64 = enc64
-		, dec64 = dec64
-	}
-	
-	K.sign = \fragment, length ->
-		assert(fragment)
-		var mac = hmac(secret, fragment)
-		mac = enc64(mac)
-		if length
-			assert(length > 1)
-			return string.sub(mac, 1, length)
-		return mac
-		
-	K.verify = \mac, fragment, length ->
-		assert(fragment)
-		if mac
-			var dst = enc64(hmac(secret, fragment))
+	return {
+		sign = \fragment, length ->
+			assert(fragment)
+			var sig = enc.encode64(hmac(secret, fragment))
 			if length
 				assert(length > 1)
-				return string.sub(mac, 1, length) == string.sub(dst, 1, length)
-			return mac == dst
-		return false
-
-	return K
+				return string.sub(sig, 1, length)
+			return sig
+			
+		, verify = \sig, fragment, length ->
+			assert(fragment)
+			if sig
+				var mac = enc.encode64(hmac(secret, fragment))
+				if length
+					assert(length > 1)
+					return string.sub(sig, 1, length) == string.sub(mac, 1, length)
+				return sig == mac
+			return false
+	}
