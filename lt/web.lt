@@ -49,9 +49,10 @@ return ->
 			, \err ->
 				return debug.traceback(err, 2)
 			)
-			
+
 			if ok
-				if not res.status
+				-- ngx.status defaults to 0
+				if res.status == 0
 					error("response status required", 2)
 				-- status < 200 or >= 300 can have no content, so no content-type needed
 				if res.status >= 200 and res.status < 300 or body
@@ -87,7 +88,7 @@ return ->
 			res.headers['Content-Type'] = ctype
 
 		res.send()
-		if not must_no_body(req.method, res.status)
+		if body and not must_no_body(req.method, res.status)
 			if 'function' == type(body)
 				var co = coroutine.create(body)
 				do

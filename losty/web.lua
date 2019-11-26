@@ -53,7 +53,7 @@ return function()
                 return debug.traceback(err, 2)
             end)
             if ok then
-                if not res.status then
+                if res.status == 0 then
                     error("response status required", 2)
                 end
                 if res.status >= 200 and res.status < 300 or body then
@@ -89,7 +89,7 @@ return function()
             res.headers["Content-Type"] = ctype
         end
         res.send()
-        if not must_no_body(req.method, res.status) then
+        if body and not must_no_body(req.method, res.status) then
             if "function" == type(body) then
                 local co = coroutine.create(body)
                 repeat
