@@ -1,24 +1,21 @@
 --
 -- Generated from csrf.lt
 --
-local sign = require("losty.sign")
-local enc = require("losty.enc")
+local wrap = require("losty.wrap")
 local rnd = require("losty.rand")
 local Name = "csrf"
 local make = function(res)
-    return res.cookie(Name, false, nil, "/")
+    return res.cookie(Name, true, nil, "/")
 end
 local write = function(req, res)
-    local c = make(res)(nil, true, req.secure, enc.encode)
-    c.key = rnd.least(8)
-    return c.key
+    local key = rnd.least(8)
+    make(res)(nil, true, req.secure, key)
+    return key
 end
 local read = function(req)
-    local c = enc.decode(req.cookies[Name])
-    return c and c.key
+    return req.cookies[Name]
 end
 return function(secret)
-    local sg = sign(secret)
     return {create = function(req, res, expiry)
         local key = read(req)
         if not key then
@@ -28,16 +25,24 @@ return function(secret)
         if expiry > 0 then
             expiry = ngx.time() + expiry
         end
-        return sg.sign(key, expiry)
+        local bag = wrap(secret, key)
+        local sig, data = bag.wrap(expiry)
+        return sig .. "." .. data
     end, check = function(req, res, token)
         local key = read(req)
         if key and token then
-            local expiry, err = sg.unsign(key, token)
-            if expiry and (expiry == 0 or expiry > ngx.time()) then
-                return true
+            local bag = wrap(secret, key)
+            local sig, data = string.match(token, "^(.*)%.(.*)$")
+            if data then
+                local expiry = bag.unwrap(sig, data)
+                if expiry then
+                    if expiry == 0 or expiry > ngx.time() then
+                        return true
+                    end
+                    make(res)(-10)
+                    return false, "token expired"
+                end
             end
-            make(res)(-10)
-            return false, "token expired"
         end
         return false, "forbidden"
     end}

@@ -3,28 +3,24 @@
 -- reuses key in cookie, instead of generating new one for each request
 --  else browser `Back` button always fail csrf check
 
-var sign = require('losty.sign')
-var enc = require('losty.enc')
+var wrap = require('losty.wrap')
 var rnd = require('losty.rand')
 
 var Name = 'csrf'
 
 var make = \res ->
-	return res.cookie(Name, false, nil, '/')
+	return res.cookie(Name, true, nil, '/')
 
 var write = \req, res ->
-	var c = make(res)(nil, true, req.secure, enc.encode)
-	c.key = rnd.least(8)
-	return c.key
+	var key = rnd.least(8)
+	make(res)(nil, true, req.secure, key)
+	return key
 
 var read = \req ->
-	var c = enc.decode(req.cookies[Name])
-	return c and c.key
-	
-	
-return \secret ->
-	var sg = sign(secret)
+	return req.cookies[Name]
 
+
+return \secret ->
 	return {
 		-- insert key in httponly cookie and return token (for use in form hidden input or ajax header)
 		-- cookie removed on browser close
@@ -36,18 +32,26 @@ return \secret ->
 			expiry = expiry or 0
 			if expiry > 0
 				expiry = ngx.time() + expiry
-			return sg.sign(key, expiry)
+			
+			var bag = wrap(secret, key)
+			var sig, data = bag.wrap(expiry)
+			return sig .. "." .. data
 
 
 		, check = \req, res, token ->
 			var key = read(req)
 			if key and token
-				var expiry, err = sg.unsign(key, token)
-				if expiry and (expiry == 0 or expiry > ngx.time())
-					return true
-				-- remove expired cookie
-				make(res)(-10)
-				return false, "token expired"
+				var bag = wrap(secret, key)
+				var sig, data = string.match(token, "^(.*)%.(.*)$")
+				if data
+					var expiry = bag.unwrap(sig, data)
+					if expiry 
+						if expiry == 0 or expiry > ngx.time()
+							return true
+						-- remove expired cookie
+						make(res)(-10)
+						return false, "token expired"
+			-- leave cookie untouched
 			return false, "forbidden"
 	}
 	

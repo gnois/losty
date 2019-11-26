@@ -1,19 +1,17 @@
--- Stolen from https://github.com/bungle/lua-resty-session
+-- modified from https://github.com/bungle/lua-resty-session
+
+-- creates two cookies
+-- 1. salt                  (accessible by js)
+-- 2. payload | signature   (httponly)
+
 var json = require('cjson.safe')
 var aes = require('resty.aes')
 var rnd = require('resty.random')
 var str = require('losty.str')
 
-var base64enc = ngx.encode_base64
-var base64dec = ngx.decode_base64
+var encode64 = ngx.encode_base64
+var decode64 = ngx.decode_base64
 var hmac = ngx.hmac_sha1
-
-
--- vs LocalStorage http://stackoverflow.com/questions/3220660/local-storage-vs-cookies
---  Cookies are primarily for reading server-side, LocalStorage can only be read client-side
--- Stormpath recommends that you store your JWT in httpOnly cookies for web applications (vs localStorage)
--- https://stormpath.com/blog/where-to-store-your-jwts-cookies-vs-html5-web-storage
--- http://cryto.net/~joepie91/blog/2016/06/13/stop-using-jwt-for-sessions/
 
 --``
 var generate_key = \req ->
@@ -21,63 +19,62 @@ var generate_key = \req ->
 	if not addr
 		addr = req.remote_addr
 	return table.concat({ req.headers["User-Agent"], req.scheme, addr })
-var key = generate_key(req)
 ``
 
 
-
--- size, mode, hash, rounds can be nil
+-- size, mode, hash, rounds optional
+-- key optional
 return \name, secret, key -> --, size, mode, hash, rounds)
 	if not name
 		error("session name required", 2)
-	
-	if not secret or not key
-		error("session secret and key required", 2)
+	if not secret
+		error("session secret required", 2)
 
+	var name_s = name .. '_'
+	var salt = rnd.bytes(8)
+	
 	var encrypt = \value ->
 		-- AES salt length MUST BE MULTIPLE OF 8! else nginx gives INTERMITTENT Error 
 		-- ignoring stale global SSL error (SSL: error:06065064:digital envelope routines:EVP_DecryptFinal_ex:bad decrypt) 
-		var salt = rnd.bytes(8)
-		var d, err = json.encode(value)
-		if d
-			var k = hmac(secret, salt)
-			var h = hmac(k, table.concat({salt, d, key}))
-			var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
-			d = a.encrypt(@, d)
-			var x = { base64enc(salt), base64enc(d), base64enc(h) }
-			return table.concat(x, '|')
-		return d, err
+		var k = hmac(secret, salt)
+		var d = json.encode(value)
+		var h = hmac(k, table.concat({salt, d, key}))
+		var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
+		return encode64(a.encrypt(@, d)) .. '|' .. encode64(h)
 
-
-	var decrypt = \s ->
-		if s
-			var x = str.split(s, '|')
-			if x and x[1] and x[2] and x[3]
-				var salt = base64dec(x[1])
-				var d = base64dec(x[2])
-				var h = base64dec(x[3])
-				if salt and d and h
-					var k = hmac(secret, salt)
-					var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
+	var decrypt = \txt, s ->
+		if txt and s
+			var x = str.split(txt, '|')
+			if x and x[1] and x[2]
+				var d = decode64(x[1])
+				var h = decode64(x[2])
+				if d and h
+					s = decode64(s)
+					var k = hmac(secret, s)
+					var a = aes.new(@, k, s) --, aes.cipher(size, mode), hash, rounds)
 					d = a.decrypt(@, d)
 					if d
-						if hmac(k, table.concat({salt, d, key})) == h
+						if hmac(k, table.concat({s, d, key})) == h
 							return json.decode(d)
-							
+
 	var make = \res ->
 		return res.cookie(name, true, nil, '/')
-
+	
+	var make_s = \res ->
+		return res.cookie(name_s, false, nil, '/')
 
 	return {
 		read = \req ->
-			return decrypt(req.cookies[name])
+			return decrypt(req.cookies[name], req.cookies[name_s])
 
 		-- age nil means last till browser close
 		, create = \req, res, age ->
+			make_s(res)(age, true, req.secure, encode64(salt))
 			return make(res)(age, true, req.secure, encrypt)
 		
 		-- age -ve means delete
 		, delete = \res ->
+			make_s(res)(-100)
 			make(res)(-100)
 	}
 

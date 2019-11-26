@@ -1,8 +1,6 @@
 --
 -- Generated from res.lt
 --
-local empty = require("table.isempty")
-local enc = require("losty.enc")
 local insert
 insert = function(tb, v)
     if "table" == type(v) then
@@ -41,11 +39,11 @@ local cookie = function(name, httponly, domain, path)
         error("cookie must have a name")
     end
     local c = {_name = name, _httponly = httponly, _domain = domain, _path = path}
-    local data = setmetatable({}, {__metatable = false, __index = c, __call = function(t, age, samesite, secure, encoder)
+    local data = setmetatable({}, {__metatable = false, __index = c, __call = function(t, age, samesite, secure, value)
         c._age = age
         c._samesite = samesite
         c._secure = secure
-        c._encoder = encoder
+        c._value = value
         return t
     end})
     if jar[name] then
@@ -55,12 +53,14 @@ local cookie = function(name, httponly, domain, path)
     return data
 end
 local bake = function(c)
-    local encode = c._encoder or enc.encode
-    local v
-    if not empty(c) then
-        v = ngx.escape_uri(encode(c))
+    local val = c._value
+    if val then
+        if "function" == type(val) then
+            val = val(c)
+        end
     end
-    local z = {c._name .. "=" .. (v or "")}
+    val = val and ngx.escape_uri(val) or ""
+    local z = {c._name .. "=" .. val}
     local y = 2
     if c._domain then
         z[y] = "Domain=" .. c._domain

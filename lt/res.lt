@@ -1,7 +1,4 @@
 -- a resp is merely status and header
-var empty = require('table.isempty')
-var enc = require('losty.enc')
-
 var insert
 insert = \tb, v ->
 	if 'table' == type(v)
@@ -85,12 +82,15 @@ var cookie = \name, httponly, domain, path ->
 		-- age in secs, nil means last till browser close, -ve means delete
 		-- samesite can be bool or string [lax|strict|none]. true means strict
 		-- secure is bool, use req.secure
-		-- encoder nil defaults to losty.enc
-		, __call = \t, age, samesite, secure, encoder ->
+		-- value can be nil, string or function. 
+		--   nil becomes empty string
+		--   if string, taken as is
+		--   if function, shd encode the data table
+		, __call = \t, age, samesite, secure, value ->
 			c._age = age
 			c._samesite = samesite
 			c._secure = secure
-			c._encoder = encoder
+			c._value = value
 			return t
 	})
 	
@@ -103,12 +103,13 @@ var cookie = \name, httponly, domain, path ->
 
 
 var bake = \c ->
-	var encode = c._encoder or enc.encode
-	var v
-	if not empty(c)
-		v = ngx.escape_uri(encode(c))
+	var val = c._value
+	if val
+		if 'function' == type(val)
+			val = val(c)
+	val = val and ngx.escape_uri(val) or ""
 	
-	var z = { c._name .. "=" .. (v or "") }
+	var z = { c._name .. "=" .. val }
 	var y = 2
 
 	if c._domain
