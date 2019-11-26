@@ -1,9 +1,8 @@
 --
 -- Generated from res.lt
 --
+local empty = require("table.isempty")
 local enc = require("losty.enc")
-local tbl = require("losty.tbl")
-local jar
 local insert
 insert = function(tb, v)
     if "table" == type(v) then
@@ -36,6 +35,7 @@ end, __newindex = function(_, k, v)
         push(ngx.header, k, v)
     end
 end})
+local jar = {}
 local cookie = function(name, httponly, domain, path)
     if not name then
         error("cookie must have a name")
@@ -48,9 +48,7 @@ local cookie = function(name, httponly, domain, path)
         c._encoder = encoder
         return t
     end})
-    if not jar then
-        jar = {}
-    elseif jar[name] then
+    if jar[name] then
         ngx.log(ngx.NOTICE, "Overwriting cookie named " .. name)
     end
     jar[name] = data
@@ -58,9 +56,9 @@ local cookie = function(name, httponly, domain, path)
 end
 local bake = function(c)
     local encode = c._encoder or enc.encode
-    local v = encode(c)
-    if v then
-        v = ngx.escape_uri(v)
+    local v
+    if not empty(c) then
+        v = ngx.escape_uri(encode(c))
     end
     local z = {c._name .. "=" .. (v or "")}
     local y = 2
@@ -114,18 +112,19 @@ return setmetatable({
     end
     , redirect = function(url, same_method)
         if same_method then
-            ngx.redirect(url, ngx.HTTP_TEMPORARY_REDIRECT)
+            ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
         else
-            ngx.redirect(url, ngx.HTTP_SEE_OTHER)
+            ngx.status = ngx.HTTP_SEE_OTHER
         end
+        headers["Location"] = url
     end
     , send = function()
-        if jar then
-            local arr, n = {}, 1
-            for _, c in pairs(jar) do
-                arr[n] = bake(c)
-                n = n + 1
-            end
+        local arr, n = {}, 0
+        for _, c in pairs(jar) do
+            n = n + 1
+            arr[n] = bake(c)
+        end
+        if n > 0 then
             headers["Set-Cookie"] = arr
         end
         ngx.send_headers()

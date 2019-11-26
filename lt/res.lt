@@ -1,8 +1,6 @@
 -- a resp is merely status and header
+var empty = require('table.isempty')
 var enc = require('losty.enc')
-var tbl = require('losty.tbl')
-
-var jar
 
 var insert
 insert = \tb, v ->
@@ -66,6 +64,7 @@ var headers = setmetatable({
 -- it cannot be deleted from browser if any of these mismatch
 -- domain shd be nil, to exclude subdomain. if specified, subdomains are always included
 -- https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie
+var jar = {}
 var cookie = \name, httponly, domain, path ->
 	if not name
 		error("cookie must have a name")
@@ -95,9 +94,7 @@ var cookie = \name, httponly, domain, path ->
 			return t
 	})
 	
-	if not jar
-		jar = {}
-	else if jar[name]
+	if jar[name]
 		ngx.log(ngx.NOTICE, "Overwriting cookie named " .. name)
 
 	jar[name] = data
@@ -107,9 +104,9 @@ var cookie = \name, httponly, domain, path ->
 
 var bake = \c ->
 	var encode = c._encoder or enc.encode
-	var v = encode(c)
-	if v
-		v = ngx.escape_uri(v)
+	var v
+	if not empty(c)
+		v = ngx.escape_uri(encode(c))
 	
 	var z = { c._name .. "=" .. (v or "") }
 	var y = 2
@@ -177,18 +174,21 @@ return setmetatable({
 			ngx.status = ngx.HTTP_MOVED_TEMPORARILY
 		headers['Location'] = url
 	--``
+
 	, redirect = \url, same_method ->
 		if same_method   -- if request method is POST, use POST again to get the new resource
-			ngx.redirect(url, ngx.HTTP_TEMPORARY_REDIRECT)
+			ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
 		else -- always use GET to get the new resource
-			ngx.redirect(url, ngx.HTTP_SEE_OTHER)
+			ngx.status = ngx.HTTP_SEE_OTHER
+		headers['Location'] = url
+
 
 	, send = ->
-		if jar
-			var arr, n = {}, 1
-			for _, c in pairs(jar)
-				arr[n] = bake(c)
-				n = n + 1
+		var arr, n = {}, 0
+		for _, c in pairs(jar)
+			n = n + 1
+			arr[n] = bake(c)
+		if n > 0
 			headers['Set-Cookie'] = arr
 		ngx.send_headers()
 
