@@ -1,6 +1,5 @@
 var enc = require('losty.enc')
 var surl = require('losty.surl')
-var hmac = ngx.hmac_sha1
 
 -- data and key is optionally encrypted
 return \secret, key ->
@@ -14,7 +13,8 @@ return \secret, key ->
 		-- returns signature and json encoded key with payload
 		wrap = \data, func, length ->
 			var obj = {key = key, data = data}
-			return pen.sign(str, length), enc.encode(obj, func)
+			var text = enc.encode(obj, func)
+			return pen.sign(text, length), text
 
 		, unwrap = \sig, text, func, length ->
 			assert(text)
