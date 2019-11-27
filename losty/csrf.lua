@@ -2,6 +2,7 @@
 -- Generated from csrf.lt
 --
 local rnd = require("resty.random")
+local str = require("resty.string")
 local wrap = require("losty.wrap")
 local encode64 = ngx.encode_base64
 local decode64 = ngx.decode_base64
