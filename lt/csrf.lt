@@ -3,21 +3,31 @@
 -- reuses key in cookie, instead of generating new one for each request
 --  else browser `Back` button always fail csrf check
 
+var rnd = require('resty.random')
 var wrap = require('losty.wrap')
-var rnd = require('losty.rand')
-
+var encode64 = ngx.encode_base64
+var decode64 = ngx.decode_base64
 var Name = 'csrf'
+var Len = 8
 
 var make = \res ->
 	return res.cookie(Name, true, nil, '/')
 
+-- generate a random binary of `length` converted to hex
+-- the returned string is longer than `length`
+var least = \length ->
+	var key = rnd.bytes(length)
+	return str.to_hex(key)
+
 var write = \req, res ->
-	var key = rnd.least(8)
-	make(res)(nil, true, req.secure, key)
+	var key = least(Len)
+	make(res)(nil, true, req.secure, encode64(key))
 	return key
 
 var read = \req ->
-	return req.cookies[Name]
+	var key = req.cookies[Name]
+	if key
+		return decode64(key)
 
 
 return \secret ->
@@ -27,12 +37,11 @@ return \secret ->
 		-- expiry can be nil, means no expiry
 		create = \req, res, expiry ->
 			var key = read(req)
-			if not key
+			if not key  -- leave fake keys alone
 				key = write(req, res)
 			expiry = expiry or 0
 			if expiry > 0
 				expiry = ngx.time() + expiry
-			
 			var bag = wrap(secret, key)
 			var sig, data = bag.wrap(expiry)
 			return sig .. "." .. data
@@ -40,7 +49,7 @@ return \secret ->
 
 		, check = \req, res, token ->
 			var key = read(req)
-			if key and token
+			if token and key and #key > Len
 				var bag = wrap(secret, key)
 				var sig, data = string.match(token, "^(.*)%.(.*)$")
 				if data

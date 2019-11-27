@@ -94,7 +94,7 @@ local basic = {
 }
 return setmetatable({cookies = setmetatable({}, {__index = function(_, name)
     local v = ngx.var["cookie_" .. name]
-    return ngx.unescape_uri(v)
+    return v and ngx.unescape_uri(v)
 end})}, {__metatable = false, __index = function(tbl, key)
     local f = basic[key]
     if f then

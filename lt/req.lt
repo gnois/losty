@@ -103,7 +103,7 @@ return setmetatable({
 	cookies = setmetatable({}, {
 		__index = \_, name ->
 			var v = ngx.var['cookie_' .. name]
-			return ngx.unescape_uri(v)
+			return v and ngx.unescape_uri(v)
 	})
 }, {
 	__metatable = false
