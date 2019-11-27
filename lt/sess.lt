@@ -30,7 +30,7 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 	if not secret
 		error("session secret required", 2)
 
-	var name_s = name .. '_'
+	var name_ = name .. '_'
 	var salt = rnd.bytes(8)
 	
 	var encrypt = \value ->
@@ -42,8 +42,8 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 		var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
 		return encode64(a.encrypt(@, d)) .. '|' .. encode64(h)
 
-	var decrypt = \txt, s ->
-		if txt and s
+	var decrypt = \s, txt ->
+		if s and txt
 			var x = str.split(txt, '|')
 			if x and x[1] and x[2]
 				var d = decode64(x[1])
@@ -57,24 +57,23 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 						if hmac(k, table.concat({s, d, key})) == h
 							return json.decode(d)
 
-	var make = \res ->
-		return res.cookie(name, true, nil, '/')
-	
-	var make_s = \res ->
-		return res.cookie(name_s, false, nil, '/')
+	var make = \res ->  -- js readable salt
+		return res.cookie(name, false, nil, '/')
+	var make_ = \res ->  -- httponly payload
+		return res.cookie(name_, true, nil, '/')
 
 	return {
 		read = \req ->
-			return decrypt(req.cookies[name], req.cookies[name_s])
+			return decrypt(req.cookies[name], req.cookies[name_])
 
 		-- age nil means last till browser close
 		, create = \req, res, age ->
-			make_s(res)(age, true, req.secure, encode64(salt))
-			return make(res)(age, true, req.secure, encrypt)
+			make(res)(age, true, req.secure, encode64(salt))
+			return make_(res)(age, true, req.secure, encrypt)
 		
 		-- age -ve means delete
 		, delete = \res ->
-			make_s(res)(-100)
 			make(res)(-100)
+			make_(res)(-100)
 	}
 

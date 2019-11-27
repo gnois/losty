@@ -15,7 +15,7 @@ return function(name, secret, key)
     if not secret then
         error("session secret required", 2)
     end
-    local name_s = name .. "_"
+    local name_ = name .. "_"
     local salt = rnd.bytes(8)
     local encrypt = function(value)
         local k = hmac(secret, salt)
@@ -24,8 +24,8 @@ return function(name, secret, key)
         local a = aes:new(k, salt)
         return encode64(a:encrypt(d)) .. "|" .. encode64(h)
     end
-    local decrypt = function(txt, s)
-        if txt and s then
+    local decrypt = function(s, txt)
+        if s and txt then
             local x = str.split(txt, "|")
             if x and x[1] and x[2] then
                 local d = decode64(x[1])
@@ -45,18 +45,18 @@ return function(name, secret, key)
         end
     end
     local make = function(res)
-        return res.cookie(name, true, nil, "/")
+        return res.cookie(name, false, nil, "/")
     end
-    local make_s = function(res)
-        return res.cookie(name_s, false, nil, "/")
+    local make_ = function(res)
+        return res.cookie(name_, true, nil, "/")
     end
     return {read = function(req)
-        return decrypt(req.cookies[name], req.cookies[name_s])
+        return decrypt(req.cookies[name], req.cookies[name_])
     end, create = function(req, res, age)
-        make_s(res)(age, true, req.secure, encode64(salt))
-        return make(res)(age, true, req.secure, encrypt)
+        make(res)(age, true, req.secure, encode64(salt))
+        return make_(res)(age, true, req.secure, encrypt)
     end, delete = function(res)
-        make_s(res)(-100)
         make(res)(-100)
+        make_(res)(-100)
     end}
 end
