@@ -15,8 +15,6 @@ return function(database, user, password, host, port, pool)
         , port = port
         , pool = pool
     })
-    db.convert_null = true
-    db.NULL = ngx.null
     local interpolate = function(query, ...)
         local args = {...}
         local i = 0

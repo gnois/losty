@@ -10,8 +10,10 @@ return \database, user, password, host, port, pool ->
 	
 	var db = pgmoon.new({database = database, user = user, password = password, host = host, port = port, pool = pool})
 	-- use ngx.null instead of nil
-	db.convert_null = true
-	db.NULL = ngx.null
+	
+	-- nil works better in conditional expr
+	--db.convert_null = true
+	--db.NULL = ngx.null
 	
 	-- To list all pgsql operators
 	-- psql 
