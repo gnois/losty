@@ -1,9 +1,8 @@
 Losty = [*L*uaty](https://github.com/gnois/luaty) + [*O*penRe*sty*](http://openresty.org)
 
-Losty is a practically simple web framework running atop OpenResty with minimal dependencies.
+Losty is a simple web framework running atop OpenResty with minimal dependencies. 
 
-It is similar with middleware based frameworks like Sinatra or Koa.js, but using Lua specific features and includes utilities like:
-
+It has built in
 - request router
 - request body parsers
 - content-negotiation
@@ -36,10 +35,10 @@ opm get gnois/losty
 
 Usage
 -----
-Create nginx.conf and app.lt under yourapp/ folder:
+Create nginx.conf and app.lt under proj/ folder:
 
 ```
-|-- yourapp/
+|-- proj/
      |-- nginx.conf
      |-- app.lt
      |-- ...
@@ -54,9 +53,6 @@ Create nginx.conf and app.lt under yourapp/ folder:
 
 app.lt 
 ```
-require('resty.core')
-collectgarbage("collect")
-
 var web = require('losty.web')
 var view = require('losty.view')
 
@@ -144,9 +140,9 @@ http {
 }
 ```
 
-3. Compile your app.lt to app.lua and start nginx with prefix as yourapp/ folder
+3. Compile your app.lt to app.lua and start nginx with prefix as proj/ folder
 ```
- > cd yourapp/
+ > cd proj/
  > luaty app.lt app.lua
  > nginx -p . -c nginx.conf
 ```
@@ -155,14 +151,60 @@ http {
 Introduction
 -------
 
-Losty makes use of Lua first class function everywhere. Functions taking a request and a response object are called handlers, and can be easily composed and reused.
+Losty makes use of Lua first class function everywhere. 
+HTTP requests to a URL are matched to a route which invokes handler functions that processes that request. 
 
-A HTTP request that arrives in [content_by_lua](https://github.com/openresty/lua-nginx-module#content_by_lua) directive first reaches the Losty router that matches a route pattern, and then the dispatcher that bubbles the request/response object down and up the stack of registered handlers for the route.
+A handler takes a request and a response table, and optionally more arguments. It may return a response body directly, or choose to preprocess, calls the next handler, then postprocess its response before returning to its caller.
 
-Response headers, status and body are buffered using
+
+Handlers
+--------
+Losty handlers are functions having the general structure below:
+
+```
+var handler = \req, res, ... ->
+	if do_verify(...)
+		return req.next(y, z)  -- invoke next handler
+	res.status = 400  -- short circuit and return
+```
+
+
+Once a route is matched, the Losty dispatcher invokes the first handler with a request and response table. 
+The first handler may optionally invoke the next handler in the array of handlers, passing its own parameters, and processing its result.
+
+Values passed to req.next() will appear as function arguments in the following handlers, as y, z in the above example. 
+
+
+For example, here is a handler for http POST, PUT or DELETE request:
+```
+var form = \req, res ->
+	var val, fail = body.buffered(req)
+	if val or req.method == 'DELETE'
+		return req.next(val)
+	res.status = 400 -- bad request
+	return { fail = fail or req.method .. " should have request body" }
+```
+
+Here is another handler that opens and passes a postgresql database connection to the next handler, then closes the connection and returning the result of the next handler.
+```
+var pg = require('losty.sql.pg')
+
+var database = \req, res ->
+	var db = pg(databasename, username, password)
+	db.connect()
+	var out = req.next(db)
+	db.disconnect()
+	return out
+```
+
+
+
+Response Table
+----------
+
+Response headers, status 
 ```
 res.headers[Name] = value
-res.body = 'body'
 res.status = 200
 ```
 and finally set into `ngx.headers`, `ngx.status` and calling `ngx.print(body)` and `ngx.eof()` after the last handler.
@@ -181,44 +223,6 @@ If the response body is large, or may not be available all at once, we can assig
 
 
 
-Handlers
---------
-Losty handlers are functions having the general structure below:
-
-```
-\req, res, w, x, ... ->
-	var ok = some_operation(...)
-	if ok
-		req.next(y, z)
-	else
-		-- skip the following handlers
-		res.status = 400
-```
-Values passed to req.next() will appear as function arguments in the following handlers, as w, x in the above example. 
-
-
-
-For example, here is a handler for http POST, PUT or DELETE request:
-```
-var form = \req, res ->
-	var val, fail = body.buffered(req)
-	if val or req.method == 'DELETE'
-		return req.next(val)
-	res.status = 400 -- bad request
-	return { fail = fail or req.method .. " should have request body" }
-```
-
-Here is another handler to open a database connection, and pass on the connection, then returning the return value of the next handler after closing the connection.
-```
-var pg = require('losty.sql.pg')
-
-var database = \req, res ->
-	var db = pg(databasename, username, password)
-	db.connect()
-	var out = req.next(db)
-	db.disconnect()
-	return out
-```
 
 The above handlers can be used like this:
 

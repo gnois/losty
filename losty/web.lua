@@ -13,7 +13,15 @@ local HTML = "text/html"
 local JSON = "application/json"
 return function()
     local rtr = router()
-    local route = function(root)
+    local check_path = function(p, which)
+        if string.sub(p, 1, 1) ~= "/" then
+            error(which .. " path " .. p .. " should start with '/'")
+        end
+    end
+    local route = function(prefix)
+        if prefix then
+            check_path(prefix, "prefix")
+        end
         local r = {}
         for _, method in pairs({
             "get"
@@ -24,11 +32,9 @@ return function()
             , "options"
         }) do
             r[method] = function(path, f, ...)
-                if string.sub(path, 1, 1) ~= "/" then
-                    error("routed path " .. path .. " should start with '/'")
-                end
-                if root then
-                    path = root .. path
+                check_path(path, "route")
+                if prefix then
+                    path = prefix .. path
                 end
                 rtr.set(string.upper(method), path, f, ...)
             end
