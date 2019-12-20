@@ -12,26 +12,15 @@ math.randomseed(ngx.time())
 var HTML = "text/html"
 var JSON = "application/json"
 
--- each web instance has a different router 
 return ->
-
-	var rtr = router()
-	
-	var check_path = \p, which ->
-		if string.sub(p, 1, 1) ~= '/'
-			error(which .. " path " .. p .. " should start with '/'")
-					
+	var rt = router()
 	var route = \prefix ->
-		if prefix
-			check_path(prefix, "prefix")
-
 		var r = {}
-		for _, method in pairs({'get', 'post', 'put', 'delete', 'patch', 'options'}) -- 'trace', 'connect'
+		for _, method in ipairs({'get', 'post', 'put', 'delete', 'patch', 'options'}) -- 'trace', 'connect'
 			r[method] = \path, f, ... ->
-				check_path(path, "route")
 				if prefix
 					path = prefix .. path
-				rtr.set(string.upper(method), path, f, ...)
+				rt.set(string.upper(method), path, f, ...)
 		return r
 
 
@@ -47,9 +36,9 @@ return ->
 		-- so that we don't need to register HEAD path
 		if method == 'HEAD'
 			method = 'GET'
-		var handlers, params = rtr.match(method, req.uri)
+		var handlers, matches = rt.match(method, req.uri)
 		if handlers
-			req.params = params
+			req.match = matches
 			var ok, trace = xpcall( ->
 				body = dispatch(handlers, req, res)
 			, \err ->

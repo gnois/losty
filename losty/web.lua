@@ -12,18 +12,10 @@ math.randomseed(ngx.time())
 local HTML = "text/html"
 local JSON = "application/json"
 return function()
-    local rtr = router()
-    local check_path = function(p, which)
-        if string.sub(p, 1, 1) ~= "/" then
-            error(which .. " path " .. p .. " should start with '/'")
-        end
-    end
+    local rt = router()
     local route = function(prefix)
-        if prefix then
-            check_path(prefix, "prefix")
-        end
         local r = {}
-        for _, method in pairs({
+        for _, method in ipairs({
             "get"
             , "post"
             , "put"
@@ -32,11 +24,10 @@ return function()
             , "options"
         }) do
             r[method] = function(path, f, ...)
-                check_path(path, "route")
                 if prefix then
                     path = prefix .. path
                 end
-                rtr.set(string.upper(method), path, f, ...)
+                rt.set(string.upper(method), path, f, ...)
             end
         end
         return r
@@ -50,9 +41,9 @@ return function()
         if method == "HEAD" then
             method = "GET"
         end
-        local handlers, params = rtr.match(method, req.uri)
+        local handlers, matches = rt.match(method, req.uri)
         if handlers then
-            req.params = params
+            req.match = matches
             local ok, trace = xpcall(function()
                 body = dispatch(handlers, req, res)
             end, function(err)
