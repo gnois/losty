@@ -2,6 +2,8 @@ Losty = [*L*uaty](https://github.com/gnois/luaty) + [*O*penRe*sty*](http://openr
 
 Losty is a simple web framework running atop OpenResty with minimal dependencies. 
 
+Instead of objects and methods, Losty makes use of Lua first class function almost everywhere, from handling request, generating HTML to performing input validation. In a similar vein like Luaty to Lua, Losty adds helpers on OpenResty without obscuring much of its API that you are already familiar with.
+
 It has built in
 - request router
 - request body parsers
@@ -13,6 +15,10 @@ It has built in
 - SQL operation helpers
 - input validation helpers
 - table, string and functional helpers
+
+
+Disclaimer: Losty is not well tested. 
+Bug reports and contributions are very much appreciated and welcomed.
 
 
 
@@ -33,9 +39,10 @@ Use OpenResty Package Manager (opm):
 opm get gnois/losty
 ```
 
-Usage
------
-Create nginx.conf and app.lt under proj/ folder:
+
+Quickstart
+------
+Create app.lt and nginx.conf under proj/ folder:
 
 ```
 |-- proj/
@@ -56,8 +63,7 @@ app.lt
 var web = require('losty.web')
 var view = require('losty.view')
 
-var server = web()
-var w = server.route()
+var w = web.route()
 
 var template = ->
 	return html({
@@ -87,8 +93,8 @@ var not_found = page({
 	, message = 'Nothing here'
 })
 
-w.get('/', \req, res->
-	res.ok(page({
+w.get('/', \q, r->
+	return page({
 		title = 'Hi'
 		, message = 'Losty is live!'
 	}))
@@ -140,7 +146,7 @@ http {
 }
 ```
 
-3. Compile your app.lt to app.lua and start nginx with prefix as proj/ folder
+3. (Optional if you are using Luaty) Compile your app.lt to app.lua and start nginx with prefix as proj/ folder
 ```
  > cd proj/
  > luaty app.lt app.lua
@@ -148,105 +154,161 @@ http {
 ```
 
 
-Introduction
+
+Guide
 -------
+As seen from the Quickstart, Losty matches HTTP requests to user defined routes, which associates one or more handler functions that can process the request. 
 
-Losty makes use of Lua first class function everywhere. 
-HTTP requests to a URL are matched to a route which invokes handler functions that processes that request. 
-
-A handler takes a request and a response table, and optionally more arguments. It may return a response body directly, or choose to preprocess, calls the next handler, then postprocess its response before returning to its caller.
-
-
-Handlers
---------
-Losty handlers are functions having the general structure below:
-
+A shorter example looks like:
 ```
-var handler = \req, res, ... ->
+var web = require('losty.web')
+var w = web.route('/page')
+
+w.get('/:%d+', \q, r, ... ->
 	if do_verify(...)
-		return req.next(y, z)  -- invoke next handler
-	res.status = 400  -- short circuit and return
+		return q.next('world')  -- invoke next handler
+	r.status = 400  -- short circuit and return
+, \q, r, y ->
+    r.status = 200
+    return "Hello, " .. y
 ```
 
+Handler
+---------
+A handler function takes a request (q) and a response (r) table, and optionally more arguments. 
 
-Once a route is matched, the Losty dispatcher invokes the first handler with a request and response table. 
-The first handler may optionally invoke the next handler in the array of handlers, passing its own parameters, and processing its result.
+When a route is matched with the request URL, Losty dispatcher invokes the first handler, which may call the next handler with q.next() passing more arguments, as `y` in the above example, or return a response body directly.
 
-Values passed to req.next() will appear as function arguments in the following handlers, as y, z in the above example. 
-
-
-For example, here is a handler for http POST, PUT or DELETE request:
+Here is a handler for http POST, PUT or DELETE request:
 ```
-var form = \req, res ->
-	var val, fail = body.buffered(req)
-	if val or req.method == 'DELETE'
-		return req.next(val)
-	res.status = 400 -- bad request
-	return { fail = fail or req.method .. " should have request body" }
+var form = \q, r ->
+	var val, fail = body.buffered(q)
+	if val or q.method == 'DELETE'
+		return q.next(val)
+	r.status = 400 -- bad request
+	return { fail = fail or q.method .. " should have request body" }
 ```
 
-Here is another handler that opens and passes a postgresql database connection to the next handler, then closes the connection and returning the result of the next handler.
+Here is another handler that opens a postgresql database connection and passes it to the next handler, then closes the connection and returning the received result.
 ```
 var pg = require('losty.sql.pg')
 
-var database = \req, res ->
+var database = \q, r ->
 	var db = pg(databasename, username, password)
 	db.connect()
-	var out = req.next(db)
+	var out = q.next(db)
 	db.disconnect()
 	return out
 ```
+
+The above handlers can be used like this:
+
+```
+w.post('/path', \_, r ->
+	r.headers["Content-Type"] = "application/json"
+	q.next()
+
+, form, database, \q, r, body, db ->
+	-- use body and db here
+	db.insert(...)
+	r.status = 201
+)
+```
+Notice how handlers are chained, and the form body and db are passed as arguments to the following handlers.
+
+Other frameworks normally use a context table that get extended with keys and passed across handlers, but Losty passes them as cumulative function arguments.
+Here are some considerations for both designs.
+
+* Arguments are easily visible. Handlers are sometimes copied or moved around, and listing arguments deliberately reduces mistakes.
+* Arguments (un)packing is slow, but may not be significant if number of handlers are few.
+* Renaming keys in context table is errorprone. All handlers that reference them have to be changed. There is a possibility of reusing an old key or overwriting the same key.
+* The position of the arguments need to be followed when moving handlers around.
+* Switching to a context table is easy for Losty; just append keys to the q or r table. But the reverse is not.
 
 
 
 Response Table
 ----------
 
-Response headers, status 
+Inside handlers, the response table is a thin helper used to set HTTP headers and cookies, and wraps `ngx.status`. Setting `ngx.status` directly also works as expected. 
 ```
-res.headers[Name] = value
-res.status = 200
+r.headers[Name] = value
+r.status = 200
 ```
-and finally set into `ngx.headers`, `ngx.status` and calling `ngx.print(body)` and `ngx.eof()` after the last handler.
 
-This means that code below will not produce desired effect because `ngx.say` or `ngx.print` is not yet being called:
+Cookies
+-----
+Cookies are created with response table, using a 2 step process. 
 ```
-res.body = 'Hello world'
-ngx.flush()
-ngx.eof() 
-```
-The recommended way is simply not calling `ngx.flush` and `ngx.eof`, unless you want to short circuit Losty dispatcher and return control to nginx immediately. In such case, you may also use `return ngx.exit(status)`. This is useful for example to use error_page directive instead of using Losty generated error page.
-
-If the response body is large, or may not be available all at once, we can assign a function to `res.body`, and Losty will convert the function into a coroutine and keeps resuming it until it is done. That function would use `coroutine.yield()` to return the next available response, which would be sent via `ngx.print()` immediately.
-
-
-
-
-
-
-The above handlers can be used like this:
+var ck = r.cookie(Name, true, nil, '/')
+var data = ck(nil, true, r.secure, value)
 
 ```
-w.post('/path', \_, res ->
-	res.headers["Content-Type"] = "application/json"
-	req.next()
+1. r.cookie is called with name, and optional httponly, domain and path. These 4 parameters are used to identify cookie for deletion later, if needed. 
+2. r.cookie returns a callable table, which can be called to specify age, samesite, secure and cookie value.
+- The cookie value can be:
+  * nil if cookie is to be deleted
+  * a simple string, treated as is
+  * an encoding function, such as json.encode(), which encodes the callable table as a cookie key value object
 
-, form, database, \req, res, body, db ->
-	-- use body and db here
-	db.insert(...)
-	res.status = 201
-)
+Response headers including cookies are accumulated and finally set into `ngx.headers`. Setting `ngx.headers` directly prior to the last handler return, shd also work as expected.
+
+
+However, it is not recommended to call `ngx.flush()` or `ngx.eof()` in handlers, unless you want to short circuit Losty dispatcher and return control to nginx immediately. In such case, you may also use `return ngx.exit(status)`. This is useful for example to use error_page directive in nginx.conf instead of using Losty generated error page.
+
+If the response body is large, or may not be available all at once, we can return a function from the handler, and Losty will call the function as a coroutine and resume it until it is done. That function would use `coroutine.yield()` to return the response when it becomes available.
+
+
+
+Routes
+-------
+Routes are defined using HTTP methods, like get() for GET or post() for POST.
+Route paths are strings that begins with '/', followed by multiple segments separated by '/' as well. A trailing slash is ignored.
+A segment that begins with : specifies a capturing lua pattern. Captured values are stored in q.match array of request table.
+A pattern cannot contain /, which is always a path separator
+
+There is no named capture like in other frameworks, due to possible conflicting paths like:
 ```
-Notice how handlers are chained, and the body and db are accumulated and passed as arguments to the following handlers.
+  /page/:id
+  /page/:user
+```
+where :user may never be matched, and q.match.user is always nil
 
-Other frameworks normally use a context table that get extended with keys and passed among handlers, but Losty passes them as function arguments.
-Here are some considerations for both designs.
+Hence, q.match is not a keyed table, but an array instead, which also enables multiple captures within one segment.
+eg: 
+```
+/page/%w-(%d)-(%d)
+```
 
-* Arguments are easily visible. Handlers are sometimes copied or moved around, and listing arguments deliberately reduces mistakes.
-* Arguments (un)packing is slow, but may not be significant if number of handlers are limited.
-* Renaming keys in context table is errorprone. All handlers that reference them have to be changed. There is a possibility of reusing an old key or overwriting the same key.
-* The position of the arguments need to be followed when moving handlers around.
-* Switching to a context table is easy for Losty, but the reverse is not. Just append keys to the req or res table. Or use req.next(ctx) in the first handler and in the following handlers, extend ctx and call req.next() without argument.
+There is no way to specify optional last segment, to avoid possible conflicts
+```
+  /page/:?  <- 
+  /page
+```
+Specify both routes instead, with and without the optional segment
+
+The match pattern does not allow `%c, %s`, and obviously `/`
+
+For routes registered in specified order below:
+```
+1. /page/:%a+
+2. /page/:.*
+3. /page/:%d+
+4. /page/near
+5. /:p(%a+)/:%d(%d)
+```
+Requests below are matched:
+```
+/page/near  -> 4
+/page/last  -> 1,  q.match = {'last'}
+/page/:id   -> 2,  q.match = {':id'}
+/page/123   -> 2 due to precedence, q.match = {'123'}
+/past/56    -> 5,  q.match = {'past', 'ast', '56', '6'}
+```
+Notice the last route receives multiple captures within a single segment
+
+
+server.route() may be called multiple times, each taking an optional path prefix for grouping purpose.
 
 
 
@@ -404,7 +466,7 @@ Generally, Losty view templates are shorter than its HTML counterpart, like Luat
 Unfortunately the <table> tag and the table library in Lua have the same name. Hence, functions like `table.remove()`, `table.insert()` and `table.concat()` are exposed as just `remove()`, `insert()` and `concat()` without qualifying with the name `table`.
 
 Finally, to get your HTML string generated, call Losty `view()` function with your view template as first parameter, followed by the needed key/value table. 
-A third boolean parameter prevents `<!DOCTYPE html>` being prepended to the result if truthy, and a fourth boolean parameter decides whether to error out if an invalid HTML5 tag is used.
+A third boolean parameter prevents `<!DOCTYPE html>` being prepended to the result if truthy, and a fourth boolean parameter turns on assertion if an invalid HTML5 tag is used.
 
 
 
@@ -412,6 +474,6 @@ A third boolean parameter prevents `<!DOCTYPE html>` being prepended to the resu
 
 Credits
 -------
-This project has taken ideas and codes from respectable projects such as Lapis, Kong router, lua-resty-* from Bungle, and helpful examples from OpenResty and around the web.
+This project has taken ideas and codes from respectable projects such as Lapis, Mashape router, lua-resty-session, and helpful examples from OpenResty and around the web.
 Of course it wouldn't exist without the magnificent OpenResty in the first place.
 

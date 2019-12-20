@@ -22,13 +22,13 @@ local dump = function(value)
                 local accum = {}
                 local len = 1
                 for k, v in pairs(val) do
-                    accum[len] = string.rep(" ", depth * 4) .. "[" .. tostring(k) .. "] = " .. dmp(v, depth)
+                    accum[len] = string.rep(" ", depth * 3) .. "[" .. tostring(k) .. "] = " .. dmp(v, depth)
                     len = len + 1
                 end
                 lines = accum
             end
             seen[val] = false
-            return "{\n" .. table.concat(lines) .. string.rep(" ", (depth - 1) * 4) .. "\n}\n"
+            return "{\n" .. table.concat(lines) .. "\n" .. string.rep(" ", (depth - 1) * 3) .. "}\n"
         else
             return tostring(val) .. "\n"
         end
