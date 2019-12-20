@@ -1,64 +1,286 @@
--- stolen from mashape router
--- use nginx location for complex routes
+-- modified from mashape router
+--``
+We use only url chars that has meaning or unsafe: /, ?, #, :, <>, {}
 
-return ->
-	var COLON = string.byte(':', 1)
-	var LEAF = "~"
+Description:
+Router must be deterministic, and shd check for most errors during registration
+
+Precedence when multiple possible matches
+1. Exact match
+2. Pattern match, by order of registration
+
+
+A segment that begins with : specifies a capturing lua pattern
+A pattern cannot contain /, which is always a path separator
+
+There is no named capture like in other frameworks, bcoz for conflicting paths like
+  /page/:id
+  /page/:user
+:user may never be matched, and req.match.user is always nil
+
+So, req.match cannot be keyed table, but is an array, which allows multiple captures within one segment also
+eg: /page/%w-(%d)-(%d)
+
+-----------
+Possible TODO: (nice to have)
+Allow named capture, eg:  /page/date:%w+(%d+)  <->  /page/nov2019
+gives  req.match.date = {'nov2019', '2019'}
+-----------
+
+There is no way to specify optional last segment, to avoid possible conflicts
+  /page/:?  <- 
+  /page
+specify both routes instead, with and without the optional segment
+
+The match pattern does not allow %c, %s, and obviously /
+
+
+--``
+
+var str_sub = string.sub
+var str_find = string.find
+var str_match = string.match
+
+var COLON = ":"
+var LEAF = "#"
+
+var router = ->
 	var tree = {}
-	var K = {}
 
 	var resolve
-	resolve = \path, node, params ->
+	resolve = \path, nodes, matches, m ->
 		var _, token
-		_, _, token, path = string.find(path, "([^/]+)(.*)")
+		_, _, token, path = str_find(path, "([^/]+)(.*)")
 		if not token
-			return node[LEAF], params
-		--print(token, ' -> ', path)
-		for child_token, child_node in pairs(node) 
-			if child_token == token 
-				var func, bindings = resolve(path, child_node, params)
-				if func
-					return func, bindings 
+			return nodes[LEAF], matches
 
-		for child_token, child_node in pairs(node) 
-			if string.byte(child_token, 1) == COLON  -- token begins with ':'
-				var name = string.sub(child_token, 2)
-				var value = params[name]
-				params[name] = token or value -- store the value in params, resolve tail path
-				var func, bindings = resolve(path, child_node, params)
+		-- exact match
+		var child = nodes[token]
+		if child
+			var func, bindings = resolve(path, child, matches, m)
+			if func
+				return func, bindings
+		
+		-- pattern match
+		var pattern
+		var toklen = #token
+		for __, node in ipairs(nodes)
+			pattern, child = next(node)
+			-- save the index in case backtrack
+			var prev = m
+			if (\s, e, ... ->
+				-- print(pattern, token, s, e, ...)
+				if s == 1 and e == toklen
+					matches[m] = token
+					m = m + 1
+					for ___, v in ipairs({...})
+						matches[m] = v
+						m = m + 1
+					return true
+			)(str_find(token, pattern))
+				var func, bindings = resolve(path, child, matches, m)
 				if func
 					return func, bindings
-				params[name] = value -- reset the params table.
+			m = prev
 		return false
 
-	var install = \node, path, ... ->
-		for token in string.gmatch(path, "[^/]+")
-			node[token] = node[token] or {}
-			node = node[token]
-		var old = node[LEAF]
-		if nil == old
-			node[LEAF] = {...}
-		else
-			for _, f in ipairs({...})
-				old[#old + 1] = f
-			node[LEAF] = old
+
+	var check = \pattern ->
+		if not str_find(pattern, '[%.%%]') and not str_find(pattern, '%b[]')
+			return false, "'" .. pattern .. "' does not have pattern"
+
+		if str_find(pattern, '[:#]')
+			return false, "'" .. pattern .. "' may not match any url"
+
+		for _, c in ipairs({'%%c', '%%s'})
+			if str_find(pattern, c)
+				return false, "'" .. str_sub(c, 2) .. "' may not match any url"
+
+		-- let lua check malformed pattern
+		return pcall(str_find, pattern, pattern)
 
 	
-	K.match = \method, path ->
-		var node = tree[method]
-		if not node
-			return nil, string.format("Unknown method: %s", method)
-		-- remove query string
-		path = string.gsub(path, "%?.*", "")
-		var func, params = resolve(path, node, {})
-		if not func
-			return nil, string.format("Could not resolve %s %s", method, path)
-		return func, params
+	-- find similar node in array part
+	-- else create new
+	var find_create = \nodes, token ->
+		var x
+		for _, n in ipairs(nodes)
+			x = n[token]
+			if x
+				break
+		if not x
+			x = {}
+			table.insert(nodes, {[token] = x})
+		return x
 
-	K.set = \method, path, ... ->
-		assert(path and #path > 0)
-		if not tree[method]
-			tree[method] = {} 
-		install(tree[method], path, ...)
-				
-	return K
+
+	var install = \nodes, path, ... ->
+		for token in string.gmatch(path, "[^/]+")
+			if COLON == str_sub(token, 1, 1)
+				-- remove outermost capturing parenthesis. capture it ourselves
+				if str_match(token, ":%b()") == token
+					token = str_sub(token, 3, -2)
+				else
+					token = str_sub(token, 2)
+				var ok, err = check(token)
+				if not ok
+					error(err .. " in " .. path)
+
+				nodes = find_create(nodes, token)
+			else
+				nodes[token] = nodes[token] or {}
+				nodes = nodes[token]
+
+		var old = nodes[LEAF]
+		if not old
+			old = {...}
+		else  -- append to existing array
+			var o = #old
+			for n, f in ipairs({...})
+				old[o + n] = f
+		nodes[LEAF] = old
+
+
+	var invalid = \path ->
+		if not path or #path < 1
+			return "is empty"
+		if not str_sub(path, 1, 1) == '/'
+			return "does not start with '/'"
+		if str_find(path, '%s')
+			return "has space"
+		if str_find(path, '//')
+			return "has empty segment"
+
+
+	return {
+		match = \method, path ->
+			var nodes = tree[method]
+			if not nodes
+				return nil, "unmatched method: " .. (method or "")
+			-- remove query string
+			path = string.gsub(path, "%?.*", "")
+			var arr, matches = resolve(path, nodes, {}, 1)
+			if not arr
+				return nil, "unmatched path: " .. (path or "")
+			return arr, matches
+
+		, set = \method, path, ... ->
+			var err = invalid(path)
+			if err
+				error("route '" .. path .. "' " .. err)
+			if not tree[method]
+				tree[method] = {}
+			install(tree[method], path, ...)
+			return tree[method]
+	}
+
+return router
+
+
+--```
+--------------------------------------- Tests ---------------------------------------------
+
+var tbl = require('losty.tbl')
+
+var test_invalid = ->
+	var r = router()
+	var G = "GET"
+	var c = \...->
+		var ok, err = pcall(...)
+		assert(not ok) 
+		print(err)
+	
+	c(r.set, G, "//", 1)
+	c(r.set, G, "/favicon ico", 2)
+
+	c(r.set, G, "/:page", 1)
+	c(r.set, G, "/:page%", 1)
+	c(r.set, G, "/:page:", 1)
+
+	c(r.set, G, "/::%wage", 1)
+	c(r.set, G, "/:%wage/:.*#", 1)
+	c(r.set, G, "/:page+", 1)
+	c(r.set, G, "/:[page", 1)
+
+test_invalid()
+
+
+
+var test = ->
+	var r = router()
+	var G = "GET"
+	
+	r.set(G, "/", 1)
+	r.set(G, "/favicon.ico", 2)
+
+	r.set(G, "/page", 10)
+	r.set(G, "/page/", 11)  -- last backslash ignored. accumulate
+
+	r.set(G, "/page/near", 12)
+	
+	-- precedence
+	r.set(G, "/page/:%a+", 22)
+	r.set(G, "/page/:%a+", 23)
+	r.set(G, "/page/:.*", 24)
+	r.set(G, "/page/:%d+", 25)
+
+	r.set(G, "/page/:%d+/:.+", 30)
+	r.set(G, "/page/:%d+/related", 32)
+	r.set(G, "/page/:(%d+)/related", 33)  -- outer capture parenthesis removed
+	
+	r.set(G, "/page/:.*/:^[+-]?/:%d*$", 50)
+	
+	r.set(G, "/:page%?", 60)
+	r.set(G, "/:p(%a+)/:%d(%d)", 61)
+	
+	tbl.show(r.set(G, "/:page%w*", 71))
+	tbl.show(r.set(G, "/:page%w*-(%d)", 72))
+
+	var res = {
+		{"/", 1}
+		, {"/favicon.ico", 2}
+		
+		, {"/page", {10, 11}}
+		, {"/page/", {10, 11}}  -- backslash ignored
+		, {"/page/near", 12}
+		, {"/page/neared", {22, 23}, {'neared'}}
+		, {"/page/@peter", 24, {'@peter'}}
+		, {"/page/:id", 24, {':id'}}
+		, {"/page/123", 24, {'123'}}  -- precedence, matches .* instead of %d+
+		, {"/page/123/456", 30, {'123', '456'}}
+		, {"/page/111/edit", 30, {'111', 'edit'}}
+		, {"/page/22//related", {32, 33}, {'22'}}  -- exact match takes precedence, double slash treated as single slash
+		, {"/page/sept/-/4/", 50, {'sept', '-', '4'}}
+		, {"/pages100", 71, {'pages100'}}
+		, {"/pages200-2", 72, {'pages200-2', '2'}}
+		, {"/past/56", 61, {'past', 'ast', '56', '6'}}
+	}
+	
+	var eq = \n, t1, t2 ->
+		if n and t1 and t2
+			for i = 1, n
+				if t1[i] ~= t2[i]
+					var msg = '[' .. i .. ']: '
+					return false, msg .. (tostring(t1[i]) or 'nil') .. ' != ' .. (tostring(t2[i]) or 'nil')
+			return true
+		return false, n .. ': ' .. type(t1) .. ' != ' .. type(t2)
+
+	for _, p in ipairs(res)
+		print(p[1])
+		var prm = p[2]
+		var arr, matches = r.match(G, p[1])
+		assert(arr or not prm, matches)
+		if arr or prm
+			if type(prm) ~= 'table'
+				prm = {prm}
+			assert(eq(math.max(#prm, #arr), prm, arr))
+
+			if matches and p[3]
+				tbl.show(matches)
+				assert(eq(math.max(#p[3], #matches), p[3], matches))
+	
+	print('\nOK')
+test()
+
+
+---```
