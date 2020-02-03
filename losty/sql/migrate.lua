@@ -50,7 +50,7 @@ return function(db)
             if str.ends(fname, ".sql") then
                 local file, err = io.open(fname, "r")
                 if not file then
-                    error(err)
+                    error(c.red .. err .. c.reset)
                 end
                 local nested = 0
                 local lines, l, i = {}, 1, 1
@@ -88,9 +88,9 @@ return function(db)
             else
                 local msg = fname .. " is empty."
                 if e then
-                    error(msg)
+                    error(c.red .. msg .. c.reset)
                 end
-                print(msg)
+                print(c.yellow .. msg .. c.reset)
             end
         end
         print(c.green, "Migration successful.", c.reset)

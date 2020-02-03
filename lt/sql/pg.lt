@@ -6,11 +6,9 @@ var sql = require('losty.sql.base')
 
 -- Remember to call setup_hstore() 
 
-return \database, user, password, host, port, pool ->
+return \database, user, password, host, port, pool, dbg ->
 	
 	var db = pgmoon.new({database = database, user = user, password = password, host = host, port = port, pool = pool})
-	-- use ngx.null instead of nil
-	
 	-- nil works better in conditional expr
 	--db.convert_null = true
 	--db.NULL = ngx.null
@@ -60,7 +58,9 @@ return \database, user, password, host, port, pool ->
 		if n ~= i
 			ngx.log(ngx.ERR, "Trying to match ", i ," placeholders to ", n ," arguments for query `", str, "`")
 
-		-- ngx.log(ngx.NOTICE, q)
+		if dbg
+			ngx.log(ngx.NOTICE, q)
+
 		var result, err, partial, count = db.query(@, q)
 		-- a real error has nil result, and err is a string
 		-- err can be the number of queries, 0 if all are comments, which is not an error

@@ -48,7 +48,7 @@ return \db ->
 			if str.ends(fname, '.sql')
 				var file, err = io.open(fname, "r")
 				if not file
-					error(err)
+					error(c.red .. err .. c.reset)
 				
 				var nested = 0
 				var lines, l, i = {}, 1, 1
@@ -88,8 +88,8 @@ return \db ->
 			else
 				var msg = fname .. " is empty."
 				if e
-					error(msg)
-				print(msg)
+					error(c.red .. msg .. c.reset)
+				print(c.yellow .. msg .. c.reset)
 
 		print(c.green, "Migration successful.", c.reset)
 		-- so that subsequent lua code know

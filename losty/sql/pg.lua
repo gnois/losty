@@ -6,7 +6,7 @@ local parrays = require("pgmoon.arrays")
 local pjson = require("pgmoon.json")
 local phstore = require("pgmoon.hstore")
 local sql = require("losty.sql.base")
-return function(database, user, password, host, port, pool)
+return function(database, user, password, host, port, pool, dbg)
     local db = pgmoon.new({
         database = database
         , user = user
@@ -52,6 +52,9 @@ return function(database, user, password, host, port, pool)
         local q, i = interpolate(str, ...)
         if n ~= i then
             ngx.log(ngx.ERR, "Trying to match ", i, " placeholders to ", n, " arguments for query `", str, "`")
+        end
+        if dbg then
+            ngx.log(ngx.NOTICE, q)
         end
         local result, err, partial, count = db:query(q)
         if nil == result and not tonumber(err) then
