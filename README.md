@@ -1,8 +1,8 @@
 Losty = [*L*uaty](https://github.com/gnois/luaty) + [*O*penRe*sty*](http://openresty.org)
 
-Losty is a simple web framework running atop OpenResty with minimal dependencies. 
+Losty is a simple web framework written in [Luaty](https://github.com/gnois/luaty) that runs in OpenResty with minimal dependencies. It adds helpers on OpenResty without obscuring much of its API that you are already familiar with.
 
-Instead of objects and methods, Losty makes use of Lua first class function almost everywhere, from handling request, generating HTML to performing input validation. In a similar vein like Luaty to Lua, Losty adds helpers on OpenResty without obscuring much of its API that you are already familiar with.
+Instead of objects and methods, Losty makes use of Lua first class function almost everywhere, from handling request, generating HTML to performing input validation. 
 
 It has built in
 - request router
@@ -17,7 +17,6 @@ It has built in
 - table, string and functional helpers
 
 
-Disclaimer: Losty is not well tested. 
 Bug reports and contributions are very much appreciated and welcomed.
 
 
@@ -28,7 +27,6 @@ Required:
 [OpenResty](http://openresty.org)
 
 Optional:
-- [Luaty](https://github.com/gnois/luaty) to compile to Lua
 - [pgmoon](https://github.com/leafo/pgmoon) if using PostgreSQL (For MySQL, OpenResty comes with lua-resty-mysql)
 
 
@@ -42,12 +40,12 @@ opm get gnois/losty
 
 Quickstart
 ------
-Create app.lt and nginx.conf under proj/ folder:
+Create app.lua and nginx.conf under proj/ folder:
 
 ```
 |-- proj/
      |-- nginx.conf
-     |-- app.lt
+     |-- app.lua
      |-- ...
      |-- static/
           |-- 404.html
@@ -58,14 +56,15 @@ Create app.lt and nginx.conf under proj/ folder:
 ```
 
 
-app.lt 
+app.lua
 ```
-var web = require('losty.web')
-var view = require('losty.view')
+local server = require('losty.web')
+local view = require('losty.view')
 
-var w = web.route()
+local web = server()
+local w = web.route()
 
-var template = ->
+function template()
 	return html({
 		head({
 			meta('[charset=UTF-8]')
@@ -83,30 +82,33 @@ var template = ->
 			})
 		})
 	})
+end
 
-var page = \args ->
+function page(args)
 	args.copyright = 'My website'
 	return view(template, args)
+end
 
-var not_found = page({
+local not_found = page({
 	title = '404 Not Found'
 	, message = 'Nothing here'
 })
 
-w.get('/', \q, r->
+w.get('/', function(q, r)
 	return page({
 		title = 'Hi'
 		, message = 'Losty is live!'
 	}))
-)
+end)
 
 -- list of custom error pages
-var errors = {
+local errors = {
 	[404] = not_found()
 }
 
-return ->
-	server.run(errors)
+return function()
+	web.run(errors)
+end
 ```
 
 
@@ -122,9 +124,7 @@ http {
 
 	server {
 		listen 80;
-		listen [::]:80;
 		server_name domain.com;
-
 		access_log off;
 		
 		root static/;
@@ -146,11 +146,9 @@ http {
 }
 ```
 
-3. (Optional if you are using Luaty) Compile your app.lt to app.lua and start nginx with prefix as proj/ folder
+3. Start nginx with prefix as proj/ folder
 ```
- > cd proj/
- > luaty app.lt app.lua
- > nginx -p . -c nginx.conf
+ > nginx -p proj/ -c nginx.conf
 ```
 
 
@@ -158,20 +156,6 @@ http {
 Guide
 -------
 As seen from the Quickstart, Losty matches HTTP requests to user defined routes, which associates one or more handler functions that can process the request. 
-
-A shorter example looks like:
-```
-var web = require('losty.web')
-var w = web.route('/page')
-
-w.get('/:%d+', \q, r, ... ->
-	if do_verify(...)
-		return q.next('world')  -- invoke next handler
-	r.status = 400  -- short circuit and return
-, \q, r, y ->
-    r.status = 200
-    return "Hello, " .. y
-```
 
 Handler
 ---------
@@ -181,49 +165,51 @@ When a route is matched with the request URL, Losty dispatcher invokes the first
 
 Here is a handler for http POST, PUT or DELETE request:
 ```
-var form = \q, r ->
-	var val, fail = body.buffered(q)
-	if val or q.method == 'DELETE'
+function form(q, r)
+	local val, fail = body.buffered(q)
+	if val or q.method == 'DELETE' then
 		return q.next(val)
+	end
 	r.status = 400 -- bad request
 	return { fail = fail or q.method .. " should have request body" }
+end
 ```
 
 Here is another handler that opens a postgresql database connection and passes it to the next handler, then closes the connection and returning the received result.
 ```
-var pg = require('losty.sql.pg')
+local pg = require('losty.sql.pg')
 
-var database = \q, r ->
-	var db = pg(databasename, username, password)
+function database(q, r)
+	local db = pg(databasename, username, password)
 	db.connect()
-	var out = q.next(db)
+	local out = q.next(db)
 	db.disconnect()
 	return out
+end
 ```
 
 The above handlers can be used like this:
 
 ```
-w.post('/path', \_, r ->
+w.post('/path', function(_, r)
 	r.headers["Content-Type"] = "application/json"
 	q.next()
-
-, form, database, \q, r, body, db ->
+end
+, form, database, function(q, r, body, db)
 	-- use body and db here
 	db.insert(...)
 	r.status = 201
-)
+end)
 ```
-Notice how handlers are chained, and the form body and db are passed as arguments to the following handlers.
+Notice how handlers are chained, and the form `body` and `db` are passed as arguments to the following handlers.
 
-Other frameworks normally use a context table that get extended with keys and passed across handlers, but Losty passes them as cumulative function arguments.
-Here are some considerations for both designs.
+Other frameworks normally use a context table that is extended with keys and passed across handlers, but Losty passes them as cumulative function arguments.
+Here are some considerations for Losty's design.
 
-* Arguments are easily visible. Handlers are sometimes copied or moved around, and listing arguments deliberately reduces mistakes.
-* Arguments (un)packing is slow, but may not be significant if number of handlers are few.
-* Renaming keys in context table is errorprone. All handlers that reference them have to be changed. There is a possibility of reusing an old key or overwriting the same key.
-* The position of the arguments need to be followed when moving handlers around.
-* Switching to a context table is easy for Losty; just append keys to the q or r table. But the reverse is not.
+* Arguments are easily visible.
+* Arguments (un)packing is slower, but may not be significant if there are only a handful of handlers.
+* Renaming keys in context table may overwrite another key of the same name. And all handlers that reference them have to be changed.
+* Switching to a context table is easy for Losty; just append keys to the request or response table. But the reverse is not.
 
 
 
@@ -240,13 +226,13 @@ Cookies
 -----
 Cookies are created with response table, using a 2 step process. 
 ```
-var ck = r.cookie(Name, true, nil, '/')
-var data = ck(nil, true, r.secure, value)
+local ck = r.cookie(Name, true, nil, '/')   -- step 1
+local data = ck(nil, true, r.secure, value) -- step 2
 
 ```
-1. r.cookie is called with name, and optional httponly, domain and path. These 4 parameters are used to identify cookie for deletion later, if needed. 
-2. r.cookie returns a callable table, which can be called to specify age, samesite, secure and cookie value.
-- The cookie value can be:
+1. r.cookie is called with a name, and optional httponly, domain and path. These 4 parameters are used to identify cookie for deletion later, if needed. 
+2. r.cookie returns a callable table, which can be optionally called to specify age, samesite, secure and cookie value.
+- The cookie value is optional. It can be:
   * nil if cookie is to be deleted
   * a simple string, treated as is
   * an encoding function, such as json.encode(), which encodes the callable table as a cookie key value object
@@ -265,7 +251,6 @@ Routes
 Routes are defined using HTTP methods, like get() for GET or post() for POST.
 Route paths are strings that begins with '/', followed by multiple segments separated by '/' as well. A trailing slash is ignored.
 A segment that begins with : specifies a capturing lua pattern. Captured values are stored in q.match array of request table.
-A pattern cannot contain /, which is always a path separator
 
 There is no named capture like in other frameworks, due to possible conflicting paths like:
 ```
@@ -277,17 +262,17 @@ where :user may never be matched, and q.match.user is always nil
 Hence, q.match is not a keyed table, but an array instead, which also enables multiple captures within one segment.
 eg: 
 ```
-/page/%w-(%d)-(%d)
+/page/:%w-(%d)-(%d)
 ```
 
 There is no way to specify optional last segment, to avoid possible conflicts
 ```
-  /page/:?  <- 
+  /page/:?  <- not valid
   /page
 ```
 Specify both routes instead, with and without the optional segment
 
-The match pattern does not allow `%c, %s`, and obviously `/`
+The match pattern does not allow `%c, %s`, and obviously `/`, which is always a path separator.
 
 For routes registered in specified order below:
 ```
@@ -297,7 +282,7 @@ For routes registered in specified order below:
 4. /page/near
 5. /:p(%a+)/:%d(%d)
 ```
-Requests below are matched:
+Requests below are matched.
 ```
 /page/near  -> 4
 /page/last  -> 1,  q.match = {'last'}
@@ -305,10 +290,11 @@ Requests below are matched:
 /page/123   -> 2 due to precedence, q.match = {'123'}
 /past/56    -> 5,  q.match = {'past', 'ast', '56', '6'}
 ```
-Notice the last route receives multiple captures within a single segment
+Notice that paths are match in order of declaration, and non-pattern path gets a higher precedence. 
+And that the last route receives multiple captures within a single segment.
 
 
-server.route() may be called multiple times, each taking an optional path prefix for grouping purpose.
+server.route(prefix) may be called multiple times, each taking an path prefix for grouping purpose.
 
 
 
@@ -327,16 +313,16 @@ CREATE TABLE user (
 	, email text NOT NULL
 )
 ```
-Lets create another table using Luaty:
+Lets create another table:
 
 friends.lt
 ```
 return {
-	`CREATE TABLE friend (
+	"CREATE TABLE friend (
 		id int NOT NULL REFERENCES users
 		, userid int NOT NULL REFERENCES users
 		, UNIQUE (id, userid)
-	)`
+	)"
 }
 ```
 
@@ -355,13 +341,14 @@ Lets create a function to insert a user:
 
 user.lt
 ```
-var db = require("losty.sql.pg")("dbname", "user", "password")
+local db = require("losty.sql.pg")("dbname", "user", "password")
 
-var insert = \name, email ->
+function insert(name, email)
 	db.connect()
-	var r, err = db.insert("user (name, email) VALUES (:?, :?) RETURNING id", name, email)
+	local r, err = db.insert("user (name, email) VALUES (:?, :?) RETURNING id", name, email)
 	db.disconnect()
 	return r and r.id, err
+end
 ```
 
 Note that db.connect() must be called inside a function (not at top level), else the error `cannot yield across C-call boundary` will occur.
@@ -384,7 +371,7 @@ Generating HTML
 Unlike templating libraries that embed control flow inside HTML constructs, Losty goes the other way round by generating HTML with Lua, with full language features at your disposal. In Javascript, it is like JSX vs hyperscript on steroids, where the HTML tags become functions themselves, thanks to Lua metatable.
 
 ```
-var tmpl = \args ->
+function tmpl(args)
 	html({
 		head({
 			meta('[charset=UTF-8]')
@@ -403,14 +390,14 @@ var tmpl = \args ->
 			})
 		})
 	})
+end
 
-
-var view = require('losty.view')
-var output = view(tmpl, {title='Sample', copyright='company'})
+local view = require('losty.view')
+local output = view(tmpl, {title='Sample', copyright='company'})
 
 ```
 
-HTML generation starts with a view template function that may take an argument, which should be a key/value table. It should return one or more strings. 
+HTML generation starts with a view template function that may take an argument, which should be a key/value table. It should return a string or an array of strings.
 
 For example, within a view template function,
 ```
@@ -423,7 +410,7 @@ returns this string
 In fact, you could quote and use the 2nd string and the resulting HTML will be the same, as demonstrated in the style() tag in the example above. That means you can copy existing HTML code and quote it as Lua strings, and interleave with Losty HTML tag functions as needed. 
 
 As you know there are void and normal HTML elements. Void elements such as `<br>`, `<hr>`, `<img>`, `<link>` etc cannot have children element, while normal elements like `<div>`, `<p>` can. 
-So the below gives errors because hr() cannot have children.
+So the below gives errors because `hr()` cannot have children.
 ```
 hr(hr())
 hr({div(), span()})
@@ -443,7 +430,7 @@ Here is the result
 <div class="foo" title="bar"></div>
 ```
 
-Notice that if two or more arguments are given, and if the first argument is a string or a key/value table, then it is treated as attribute. Using string as attribute requires special syntax. They can be listed in square brackets, or preceded with dot to indicate classname, or hash to indicate id, or can be combined. Otherwise attributes can be listed as a key/value table.
+Notice that if two or more arguments are given, and if the first argument is a string or a key/value table, then it is treated as attribute. Using string as attribute requires special syntax. They can each be listed in square brackets, or preceded with dot to indicate classname, or hash to indicate id, as seen above.
 
 
 This works as expected, without attributes
@@ -461,16 +448,15 @@ Gives
 <strong>Home</strong>
 ```
 
-Generally, Losty view templates are shorter than its HTML counterpart, like Luaty to Lua.
+Generally, Losty view templates are shorter than its HTML counterpart.
 
-Unfortunately the <table> tag and the table library in Lua have the same name. Hence, functions like `table.remove()`, `table.insert()` and `table.concat()` are exposed as just `remove()`, `insert()` and `concat()` without qualifying with the name `table`.
+Unfortunately the `<table>` tag and the table library in Lua have the same name. Hence, functions like `table.remove()`, `table.insert()` and `table.concat()` are exposed as just `remove()`, `insert()` and `concat()` without qualifying with the name `table`.
 
-Finally, to get your HTML string generated, call Losty `view()` function with your view template as first parameter, followed by the needed key/value table. 
+Finally, to get your HTML string generated, call Losty `view()` function with your view template as first parameter, followed by the needed key/value table as argument. 
 A third boolean parameter prevents `<!DOCTYPE html>` being prepended to the result if truthy, and a fourth boolean parameter turns on assertion if an invalid HTML5 tag is used.
 
 
 
- 
 
 Credits
 -------
