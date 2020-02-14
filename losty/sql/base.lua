@@ -1,6 +1,7 @@
 --
 -- Generated from base.lt
 --
+local map = {select = "SELECT ", insert = "INSERT INTO ", update = "UPDATE ", delete = "DELETE FROM "}
 return function(db, run, keepalive)
     local began = false
     local K = {run = run}
@@ -38,46 +39,20 @@ return function(db, run, keepalive)
         end
         return false
     end
-    K.call = function(proc, ...)
-        local e, err = run("SELECT * FROM " .. proc, ...)
-        if e then
-            return e[1], err
+    for k, v in pairs(map) do
+        K[k] = function(sql, ...)
+            return run(v .. sql, ...)
         end
     end
-    K.exec = function(proc, ...)
-        local e, err = run("SELECT * FROM " .. proc, ...)
-        return e, err
+    local one = function(query, ...)
+        local res, err, partial, count = run(query, ...)
+        local result = res and res[1]
+        return result, err, partial, count
     end
-    K.one = function(sql, ...)
-        local e, err = run("SELECT " .. sql, ...)
-        if e then
-            return e[1], err
+    for k, v in pairs(map) do
+        K[k .. "1"] = function(sql, ...)
+            return one(v .. sql, ...)
         end
-    end
-    K.select = function(sql, ...)
-        local e, err = run("SELECT " .. sql, ...)
-        return e, err
-    end
-    K.insert = function(sql, ...)
-        local e, err = run("INSERT INTO " .. sql, ...)
-        if e then
-            return e[1], err
-        end
-        return nil, err
-    end
-    K.update = function(sql, ...)
-        local e, err = run("UPDATE " .. sql, ...)
-        if e then
-            return e[1], err
-        end
-        return nil, err
-    end
-    K.delete = function(sql, ...)
-        local e, err = run("DELETE FROM " .. sql, ...)
-        if e then
-            return e[1], err
-        end
-        return nil, err
     end
     return K
 end

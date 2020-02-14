@@ -48,7 +48,7 @@ K.migrate = \db, migrations ->
 
 	
 K.migrate = \db, migrations ->
-	assert('table' == type(migrations), "migration schemas must be an array of { sql, sql } where sql are strings")
+	assert('table' == type(migrations), "migration schemas must be an array of {sql, ...} where sql are strings")
 	
 	var ok = true
 	var err

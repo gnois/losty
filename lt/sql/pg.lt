@@ -59,7 +59,8 @@ return \database, user, password, host, port, pool, dbg ->
 			ngx.log(ngx.ERR, "Trying to match ", i ," placeholders to ", n ," arguments for query `", str, "`")
 
 		if dbg
-			ngx.log(ngx.NOTICE, q)
+			--ngx.log(ngx.NOTICE, q)  -- this one does not show on screen
+			print(q)
 
 		var result, err, partial, count = db.query(@, q)
 		-- a real error has nil result, and err is a string

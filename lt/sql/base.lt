@@ -1,3 +1,10 @@
+var map = {
+	select = "SELECT "
+	, insert = "INSERT INTO "
+	, update = "UPDATE "
+	, delete = "DELETE FROM "
+}
+
 
 return \db, run, keepalive ->
 	var began = false
@@ -40,45 +47,21 @@ return \db, run, keepalive ->
 			return true
 		return false
 
-	-- for stored proc that insert/update/delete or select that returns 1 row
-	K.call = \proc, ... ->
-		var e, err = run("SELECT * FROM " .. proc, ...)
-		if e
-			return e[1], err
+	-- query returns multiple rows
+	-- caller to test for result[1]
+	for k, v in pairs(map)
+		K[k] = \sql, ... ->
+			return run(v .. sql, ...)
 
-	-- for stored proc that return multiple rows
-	K.exec = \proc, ... ->
-		var e, err = run("SELECT * FROM " .. proc, ...)
-		return e, err
-
-	-- for select that returns 1 row
-	K.one = \sql, ... ->
-		var e, err = run("SELECT " .. sql, ...)
-		if e
-			return e[1], err
-
-	-- select that returns multiple rows
-	-- caller to test for e[1]
-	K.select = \sql, ... ->
-		var e, err = run("SELECT " .. sql, ...)
-		return e, err
-
-	K.insert = \sql, ... ->
-		var e, err = run("INSERT INTO " .. sql, ...)
-		if e
-			return e[1], err
-		return nil, err
-		
-	K.update = \sql, ... ->
-		var e, err = run("UPDATE " .. sql, ...)
-		if e
-			return e[1], err
-		return nil, err
-
-	K.delete = \sql, ... ->
-		var e, err = run("DELETE FROM " .. sql, ...)
-		if e
-			return e[1], err
-		return nil, err
+	-- query returns only one row
+	-- caller can index result if not nil
+	var one = \query, ... ->
+		var res, err, partial, count = run(query, ...)
+		var result = res and res[1]
+		return result, err, partial, count
+	
+	for k, v in pairs(map)
+		K[k .. '1'] = \sql, ... ->
+			return one(v .. sql, ...)
 
 	return K

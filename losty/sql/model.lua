@@ -6,7 +6,7 @@ local c = require("losty.exec")
 local tbl = require("losty.tbl")
 local K = {}
 K.migrate = function(db, migrations)
-    assert("table" == type(migrations), "migration schemas must be an array of { sql, sql } where sql are strings")
+    assert("table" == type(migrations), "migration schemas must be an array of {sql, ...} where sql are strings")
     local ok = true
     local err
     db.connect()
