@@ -46,7 +46,7 @@ local dual = function(vary)
         end
     end
 end
-local header = function(req, res)
+local html = function(req, res)
     res.headers["Content-Type"] = HTML
     res.nocache()
     return req.next()
@@ -59,6 +59,6 @@ local form = function(req, res)
     res.status = 400
     return {fail = fail or req.method .. " should have request body"}
 end
-return {header = header, form = form, html = function(vary, ...)
-    return dual(vary)(header, ...), reject
+return {html = html, form = form, dual = function(vary, ...)
+    return dual(vary)(html, ...), reject
 end, json = dual(false)(reject), reject = reject}

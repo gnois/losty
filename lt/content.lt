@@ -37,11 +37,10 @@ var dual = \vary ->
 			-- See http://stackoverflow.com/questions/1975416/what-is-the-function-of-the-vary-accept-http-header
 			var pref = choose(req.headers["Accept"], {HTML, JSON})
 			if tostring(pref[1]) == JSON
+				-- handler shd call   json.encode_empty_table_as_object(true/false)
 				var out = req.next()
-				--var tbl = require('losty.tbl')
-				--print(tbl.dump(out))
+				--require('losty.tbl').show(out)
 				res.headers["Content-Type"] = JSON
-				--json.encode_empty_table_as_object(false)
 				-- just throw if error
 				out = json.encode(out)
 
@@ -75,7 +74,7 @@ var dual = \vary ->
 --   https://devcenter.heroku.com/articles/increasing-application-performance-with-http-cache-headers
 
 -- add necessary headers
-var header = \req, res ->
+var html = \req, res ->
 	-- see nginx_gzip.conf, gzip_vary on;
 	-- res.headers["Vary"] = "Accept-Encoding"
 	res.headers["Content-Type"] = HTML
@@ -99,13 +98,13 @@ var form = \req, res ->
 
 
 return {
-	header = header
+	html = html
 	, form = form
 	-- vary: false - no Vary header, true - url generates text/html and application/json response depending on Accept headers
 	-- takes a list of handlers, to preload json (for the sake of Google SEO)
 	-- Note that reject will only be called if html() is at the last parameter, meaning no more json handler
 	-- See /join to understand usage of dual result based on Accept type
-	, html = \vary, ... -> return dual(vary)(header, ...), reject
+	, dual = \vary, ... -> return dual(vary)(html, ...), reject
 	, json = dual(false)(reject)
 	, reject = reject
 }

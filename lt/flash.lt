@@ -22,9 +22,7 @@ var encode = \obj ->
 
 var decode = \str ->
 	if str
-		print(str)
 		str = ngx.decode_base64(str)
-		print(str)
 		return json.decode(str)
 
 

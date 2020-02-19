@@ -21,9 +21,7 @@ local encode = function(obj)
 end
 local decode = function(str)
     if str then
-        print(str)
         str = ngx.decode_base64(str)
-        print(str)
         return json.decode(str)
     end
 end

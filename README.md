@@ -1,6 +1,6 @@
 Losty = [*L*uaty](https://github.com/gnois/luaty) + [*O*penRe*sty*](http://openresty.org)
 
-Losty is a simple web framework written in [Luaty](https://github.com/gnois/luaty) that runs in OpenResty with minimal dependencies. It adds helpers on OpenResty without obscuring much of its API that you are already familiar with.
+Losty is a simple web framework written in [Luaty](https://github.com/gnois/luaty) that runs on OpenResty with minimal dependencies. It adds helpers on OpenResty without obscuring its API that you are familiar with.
 
 Instead of objects and methods, Losty makes use of Lua first class function almost everywhere, from handling request, generating HTML to performing input validation. 
 
@@ -15,7 +15,6 @@ It has built in
 - SQL operation helpers
 - input validation helpers
 - table, string and functional helpers
-
 
 Bug reports and contributions are very much appreciated and welcomed.
 
@@ -146,22 +145,22 @@ http {
 }
 ```
 
-3. Start nginx with prefix as proj/ folder
+Start nginx with prefix as proj/ folder
 ```
  > nginx -p proj/ -c nginx.conf
 ```
+
+That's it.
 
 
 
 Guide
 -------
-As seen from the Quickstart, Losty matches HTTP requests to user defined routes, which associates one or more handler functions that can process the request. 
+As seen from the Quickstart, Losty matches HTTP requests to user defined routes, which associates one or more handler functions that process the request. 
 
 Handler
 ---------
 A handler function takes a request (q) and a response (r) table, and optionally more arguments. 
-
-When a route is matched with the request URL, Losty dispatcher invokes the first handler, which may call the next handler with q.next() passing more arguments, as `y` in the above example, or return a response body directly.
 
 Here is a handler for http POST, PUT or DELETE request:
 ```
@@ -174,8 +173,10 @@ function form(q, r)
 	return { fail = fail or q.method .. " should have request body" }
 end
 ```
+When a route is matched with the requested URL, Losty dispatcher invokes the first handler, which may call the next handler with q.next() passing more arguments, like `val` in the above example, or simply return a response body.
 
-Here is another handler that opens a postgresql database connection and passes it to the next handler, then closes the connection and returning the received result.
+
+Here is another handler that opens a postgresql database connection and passes it to the next handler, then closes the connection and returns the received result.
 ```
 local pg = require('losty.sql.pg')
 
@@ -188,7 +189,7 @@ function database(q, r)
 end
 ```
 
-The above handlers can be used like this:
+The above handlers can be chained like this:
 
 ```
 w.post('/path', function(_, r)
@@ -201,15 +202,18 @@ end
 	r.status = 201
 end)
 ```
-Notice how handlers are chained, and the form `body` and `db` are passed as arguments to the following handlers.
+Notice how the form `body` and `db` are passed as arguments to the following handlers.
+
+If the response body is large, or may not be available all at once, we can return a function from the handler, and Losty will call the function as a coroutine and resume it until it is done. That function would use `coroutine.yield()` to return the response when it becomes available.
+
+
 
 Other frameworks normally use a context table that is extended with keys and passed across handlers, but Losty passes them as cumulative function arguments.
 Here are some considerations for Losty's design.
 
 * Arguments are easily visible.
 * Arguments (un)packing is slower, but may not be significant if there are only a handful of handlers.
-* Renaming keys in context table may overwrite another key of the same name. And all handlers that reference them have to be changed.
-* Switching to a context table is easy for Losty; just append keys to the request or response table. But the reverse is not.
+* Switching to a context table is easy for Losty; just append keys to the reques (q) or response (r) table. But the reverse is not.
 
 
 
@@ -219,30 +223,31 @@ Response Table
 Inside handlers, the response table is a thin helper used to set HTTP headers and cookies, and wraps `ngx.status`. Setting `ngx.status` directly also works as expected. 
 ```
 r.headers[Name] = value
-r.status = 200
+r.status = 201
+print(ngx.status)  -- shows 201
 ```
 
 Cookies
 -----
-Cookies are created with response table, using a 2 step process. 
+Cookies are created using the response table:
 ```
 local ck = r.cookie(Name, true, nil, '/')   -- step 1
-local data = ck(nil, true, r.secure, value) -- step 2
+local data = ck(nil, true, r.secure, value) -- step 2 (optional)
 
 ```
 1. r.cookie is called with a name, and optional httponly, domain and path. These 4 parameters are used to identify cookie for deletion later, if needed. 
-2. r.cookie returns a callable table, which can be optionally called to specify age, samesite, secure and cookie value.
+2. r.cookie returns a callable table, which is the cookie key/value object. It can optionally be called to specify age, samesite, secure and cookie value.
 - The cookie value is optional. It can be:
   * nil if cookie is to be deleted
   * a simple string, treated as is
-  * an encoding function, such as json.encode(), which encodes the callable table as a cookie key value object
+  * an encoding function, such as json.encode(), which encodes the callable table as a cookie key/value object
 
 Response headers including cookies are accumulated and finally set into `ngx.headers`. Setting `ngx.headers` directly prior to the last handler return, shd also work as expected.
 
 
-However, it is not recommended to call `ngx.flush()` or `ngx.eof()` in handlers, unless you want to short circuit Losty dispatcher and return control to nginx immediately. In such case, you may also use `return ngx.exit(status)`. This is useful for example to use error_page directive in nginx.conf instead of using Losty generated error page.
-
-If the response body is large, or may not be available all at once, we can return a function from the handler, and Losty will call the function as a coroutine and resume it until it is done. That function would use `coroutine.yield()` to return the response when it becomes available.
+Note
+--------
+It is not recommended to call `ngx.flush()` or `ngx.eof()` in handlers, unless you want to short circuit Losty dispatcher and return control to nginx immediately. In such case, you may also use `return ngx.exit(status)`. This is useful for example to use error_page directive in nginx.conf instead of using Losty generated error page.
 
 
 
@@ -290,9 +295,9 @@ Requests below are matched.
 /page/123   -> 2 due to precedence, q.match = {'123'}
 /past/56    -> 5,  q.match = {'past', 'ast', '56', '6'}
 ```
-Notice that paths are match in order of declaration, and non-pattern path gets a higher precedence. 
-And that the last route receives multiple captures within a single segment.
+Notice the last route receives multiple captures within a single segment.
 
+Path matching is deterministic. They are matched in order of declaration, and non-pattern path gets a higher precedence. 
 
 server.route(prefix) may be called multiple times, each taking an path prefix for grouping purpose.
 
