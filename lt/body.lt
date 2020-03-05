@@ -79,36 +79,38 @@ case key
 	false: one body ended, val is nil
 	nil: all body ended. val is err or nil
 --``
+
+var yield = coroutine.yield
+
+var parser =  ->
+	var input, err = upload.new(@, 8192)
+	if input
+		input.set_timeout(@, 1000) -- 1 sec
+		var t, data
+		do
+			t, data, err = input.read(@)
+			if t
+				if 'header' == t
+					var name, value = unpack(data)
+					if name == 'Content-Disposition'
+						var params = content_disposition(value)
+						if params
+							for _, v in ipairs(params)
+								yield(v[1], v[2])
+					else
+						yield(string.lower(name), value)
+				else if 'body' == t
+					yield(true, data)
+				else if 'part_end' == t
+					yield(false, nil)
+			else
+				err = err or "Fail to parse upload data"
+		until not t or t == 'eof'
+	return nil, err
+
+
 K.multipart = \req ->
-	var yield = coroutine.yield
-	
-	var parse = coroutine.create( ->
-		var input, err = upload.new(@, 8192)
-		if input
-			input.set_timeout(@, 1000) -- 1 sec
-			var t, data
-			do
-				t, data, err = input.read(@)
-				if t
-					if 'header' == t
-						var name, value = unpack(data)
-						if name == 'Content-Disposition'
-							var params = content_disposition(value)
-							if params
-								for _, v in ipairs(params)
-									yield(v[1], v[2])
-						else
-							yield(string.lower(name), value)
-					else if 'body' == t
-						yield(true, data)
-					else if 'part_end' == t
-						yield(false, nil)
-				else
-					err = err or "Fail to parse upload data"
-			until not t or t == 'eof'
-		
-		return nil, err
-	)
+	var parse = coroutine.create(parser)
 	return ->
 		var ctype = req.headers["Content-Type"]
 		if ctype and string.match(ctype, "multipart")

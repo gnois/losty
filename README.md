@@ -1,6 +1,6 @@
 Losty = [*L*uaty](https://github.com/gnois/luaty) + [*O*penRe*sty*](http://openresty.org)
 
-Losty is a simple web framework written in [Luaty](https://github.com/gnois/luaty) that runs on OpenResty with minimal dependencies. It adds helpers on OpenResty without obscuring its API that you are familiar with.
+Losty is a simple web framework that runs on OpenResty with minimal dependencies. It adds helpers on OpenResty without obscuring its API that you are familiar with.
 
 Instead of objects and methods, Losty makes use of Lua first class function almost everywhere, from handling request, generating HTML to performing input validation. 
 
@@ -16,6 +16,8 @@ It has built in
 - input validation helpers
 - table, string and functional helpers
 
+
+Losty is written in [Luaty](https://github.com/gnois/luaty) and compiled to Lua.
 Bug reports and contributions are very much appreciated and welcomed.
 
 
@@ -192,17 +194,18 @@ end
 The above handlers can be chained like this:
 
 ```
-w.post('/path', function(_, r)
+w.post('/path', function(q, r)
 	r.headers["Content-Type"] = "application/json"
-	q.next()
+	return q.next()
 end
 , form, database, function(q, r, body, db)
 	-- use body and db here
 	db.insert(...)
 	r.status = 201
+	return json.encode({ok = true})
 end)
 ```
-Notice how the form `body` and `db` are passed as arguments to the following handlers.
+Notice how the form `body` and `db` are appended and passed as arguments to the following handlers.
 
 If the response body is large, or may not be available all at once, we can return a function from the handler, and Losty will call the function as a coroutine and resume it until it is done. That function would use `coroutine.yield()` to return the response when it becomes available.
 
@@ -262,7 +265,7 @@ There is no named capture like in other frameworks, due to possible conflicting 
   /page/:id
   /page/:user
 ```
-where :user may never be matched, and q.match.user is always nil
+where :user may never be matched, and `q.match['user']` is always nil
 
 Hence, q.match is not a keyed table, but an array instead, which also enables multiple captures within one segment.
 eg: 

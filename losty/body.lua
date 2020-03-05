@@ -76,40 +76,41 @@ K.buffered = function(req)
     end
     return nil, "Missing content-type"
 end
-K.multipart = function(req)
-    local yield = coroutine.yield
-    local parse = coroutine.create(function()
-        local input, err = upload:new(8192)
-        if input then
-            input:set_timeout(1000)
-            local t, data
-            repeat
-                t, data, err = input:read()
-                if t then
-                    if "header" == t then
-                        local name, value = unpack(data)
-                        if name == "Content-Disposition" then
-                            local params = content_disposition(value)
-                            if params then
-                                for _, v in ipairs(params) do
-                                    yield(v[1], v[2])
-                                end
+local yield = coroutine.yield
+local parser = function()
+    local input, err = upload:new(8192)
+    if input then
+        input:set_timeout(1000)
+        local t, data
+        repeat
+            t, data, err = input:read()
+            if t then
+                if "header" == t then
+                    local name, value = unpack(data)
+                    if name == "Content-Disposition" then
+                        local params = content_disposition(value)
+                        if params then
+                            for _, v in ipairs(params) do
+                                yield(v[1], v[2])
                             end
-                        else
-                            yield(string.lower(name), value)
                         end
-                    elseif "body" == t then
-                        yield(true, data)
-                    elseif "part_end" == t then
-                        yield(false, nil)
+                    else
+                        yield(string.lower(name), value)
                     end
-                else
-                    err = err or "Fail to parse upload data"
+                elseif "body" == t then
+                    yield(true, data)
+                elseif "part_end" == t then
+                    yield(false, nil)
                 end
-            until not t or t == "eof"
-        end
-        return nil, err
-    end)
+            else
+                err = err or "Fail to parse upload data"
+            end
+        until not t or t == "eof"
+    end
+    return nil, err
+end
+K.multipart = function(req)
+    local parse = coroutine.create(parser)
     return function()
         local ctype = req.headers["Content-Type"]
         if ctype and string.match(ctype, "multipart") then
