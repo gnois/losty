@@ -1,3 +1,8 @@
+--``
+IMPORTANT: See https://stackoverflow.com/questions/18584525/server-sent-events-and-browser-limits
+...  Chrome limits SSE connections to 4-5, while Opera doesn't. Firefox, on the other hand, after 4-5 simultaneous connections, refuses to load any other page
+``
+
 var semaphore = require('ngx.semaphore')
 var choose = require('losty.accept')
 

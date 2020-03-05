@@ -8,8 +8,11 @@ var read_uid = ->
 		-- find the first =
 		var ind = string.find(str, '=')
 		if ind > 0
-			return string.sub(str, ind+1)
-	ngx.log(ngx.ERR, "req.id_xxx() functions requires nginx directive `userid on;`")
+			var uid = string.sub(str, ind+1)
+			if string.len(uid) == 32  -- check in case fake?
+				return uid
+	-- no need to log
+	--ngx.log(ngx.ERR, "req.id_xxx() functions requires nginx directive `userid on;`")
 
 -- convert an int32 into a 4-byte lua string
 var binary = \v ->
@@ -22,7 +25,7 @@ var binary = \v ->
 -- returns 16 bytes of binary string
 var read_uid_binary = ->
 	var uid = read_uid()
-	if uid and string.len(uid) > 1
+	if uid
 		-- split into four int32
 		var a = tonumber(string.sub(uid, 1, 8), 16)
 		var b = tonumber(string.sub(uid, 9, 16), 16)
@@ -55,6 +58,58 @@ var read_uid_binary = ->
 		return bytes16
 
 
+-- from https://github.com/hamishforbes/lua-resty-iputils
+var split_octets = \input ->
+	var pos = 0
+	var prev = 0
+	var octs = {}
+
+	for i= 1, 4
+		pos = string.find(input, ".", prev, true)
+		if pos
+			if i == 4
+				-- Should not have a match after 4 octets
+				return nil, "Invalid IP"
+			octs[i] = string.sub(input, prev, pos - 1)
+			
+		else if i == 4
+			-- Last octet, get everything to the end
+			octs[i] = string.sub(input, prev, -1)
+			break
+		else
+			return nil, "Invalid IP"
+		prev = pos + 1
+
+	return octs
+
+
+var unsign = \bin ->
+	if bin < 0
+		return 4294967296 + bin
+	return bin
+
+
+var ip2bin = \ip ->
+	if type(ip) ~= "string"
+		return nil, "IP must be a string"
+
+	var octets = split_octets(ip)
+	if not octets or #octets ~= 4
+		return nil, "Invalid IP"
+
+	-- Return the binary representation of an IP and a table of binary octets
+	var bin_octets = {}
+	var bin_ip = 0
+
+	for i, octet in ipairs(octets)
+		var bin_octet = tonumber(octet)
+		if not bin_octet or bin_octet < 0 or bin_octet > 255
+			return nil, "Invalid octet: " .. tostring(octet)
+
+		bin_octets[i] = bin_octet
+		bin_ip = bit.bor(bit.lshift(bin_octet, 8*(4-i)), bin_ip)
+
+	return unsign(bin_ip), bin_octets
 
 --
 -- See http://nginx.org/en/docs/http/ngx_http_core_module.html, section 'Embedded Variables'
@@ -66,18 +121,28 @@ var basic = {
 	, method = -> return ngx.req.get_method() or ngx.var.request_method
 	, at = -> return ngx.req.start_time()
 	, version = -> return ngx.req.http_version()
+	-- querystring
 	, args = -> return ngx.req.get_uri_args() --flatten(ngx.req.get_uri_args())
-	, scheme = -> return ngx.var.scheme or 'http'
-	, query = -> return ngx.var.query_string
+	, query = -> return ngx.var.query_string  -- raw query string
+	
 	, host = -> return ngx.var.host or ngx.var.server_name
 	, url = -> return ngx.unescape_uri(ngx.var.request_uri)
+	, scheme = -> return ngx.var.scheme or 'http'
+
 	-- without query string
 	, uri = -> return ngx.var.uri or ''
 	, full_uri = \t ->
 		return t.scheme .. '://' .. t.host .. t.uri
-	, remote_addr = \t ->
-		var ip = t.headers["X-Real-IP"] or t.headers["X-Forwarded-For"] or t.headers["X-Client-IP"] or ngx.var.remote_addr
-		return ip
+
+	-- if using ngx_http_realip_module, dont call this
+	, ip = \t ->
+		return t.headers["X-Real-IP"] or t.headers["X-Forwarded-For"] or t.headers["X-Client-IP"] or t.remote_addr
+	, ip_binary = \t ->
+		return ip2bin(t.ip)
+	, remote_addr = ->
+		return ngx.var.remote_addr
+	, binary_remote_addr = ->
+		return ngx.var.binary_remote_addr
 	, remote_port = -> return ngx.var.remote_port
 	-- with query string
 	, secure = \t ->

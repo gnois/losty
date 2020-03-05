@@ -8,10 +8,12 @@ local read_uid = function()
     if str then
         local ind = string.find(str, "=")
         if ind > 0 then
-            return string.sub(str, ind + 1)
+            local uid = string.sub(str, ind + 1)
+            if string.len(uid) == 32 then
+                return uid
+            end
         end
     end
-    ngx.log(ngx.ERR, "req.id_xxx() functions requires nginx directive `userid on;`")
 end
 local binary = function(v)
     local int32 = ffi.typeof("int32_t")
@@ -20,7 +22,7 @@ local binary = function(v)
 end
 local read_uid_binary = function()
     local uid = read_uid()
-    if uid and string.len(uid) > 1 then
+    if uid then
         local a = tonumber(string.sub(uid, 1, 8), 16)
         local b = tonumber(string.sub(uid, 9, 16), 16)
         local c = tonumber(string.sub(uid, 17, 24), 16)
@@ -37,6 +39,53 @@ local read_uid_binary = function()
         local bytes16 = table.concat(buff, "")
         return bytes16
     end
+end
+local split_octets = function(input)
+    local pos = 0
+    local prev = 0
+    local octs = {}
+    for i = 1, 4 do
+        pos = string.find(input, ".", prev, true)
+        if pos then
+            if i == 4 then
+                return nil, "Invalid IP"
+            end
+            octs[i] = string.sub(input, prev, pos - 1)
+        elseif i == 4 then
+            octs[i] = string.sub(input, prev, -1)
+            break
+        else
+            return nil, "Invalid IP"
+        end
+        prev = pos + 1
+    end
+    return octs
+end
+local unsign = function(bin)
+    if bin < 0 then
+        return 4294967296 + bin
+    end
+    return bin
+end
+local ip2bin = function(ip)
+    if type(ip) ~= "string" then
+        return nil, "IP must be a string"
+    end
+    local octets = split_octets(ip)
+    if not octets or #octets ~= 4 then
+        return nil, "Invalid IP"
+    end
+    local bin_octets = {}
+    local bin_ip = 0
+    for i, octet in ipairs(octets) do
+        local bin_octet = tonumber(octet)
+        if not bin_octet or bin_octet < 0 or bin_octet > 255 then
+            return nil, "Invalid octet: " .. tostring(octet)
+        end
+        bin_octets[i] = bin_octet
+        bin_ip = bit.bor(bit.lshift(bin_octet, 8 * (4 - i)), bin_ip)
+    end
+    return unsign(bin_ip), bin_octets
 end
 local basic = {
     socket = function()
@@ -57,9 +106,6 @@ local basic = {
     , args = function()
         return ngx.req.get_uri_args()
     end
-    , scheme = function()
-        return ngx.var.scheme or "http"
-    end
     , query = function()
         return ngx.var.query_string
     end
@@ -69,15 +115,26 @@ local basic = {
     , url = function()
         return ngx.unescape_uri(ngx.var.request_uri)
     end
+    , scheme = function()
+        return ngx.var.scheme or "http"
+    end
     , uri = function()
         return ngx.var.uri or ""
     end
     , full_uri = function(t)
         return t.scheme .. "://" .. t.host .. t.uri
     end
-    , remote_addr = function(t)
-        local ip = t.headers["X-Real-IP"] or t.headers["X-Forwarded-For"] or t.headers["X-Client-IP"] or ngx.var.remote_addr
-        return ip
+    , ip = function(t)
+        return t.headers["X-Real-IP"] or t.headers["X-Forwarded-For"] or t.headers["X-Client-IP"] or t.remote_addr
+    end
+    , ip_binary = function(t)
+        return ip2bin(t.ip)
+    end
+    , remote_addr = function()
+        return ngx.var.remote_addr
+    end
+    , binary_remote_addr = function()
+        return ngx.var.binary_remote_addr
     end
     , remote_port = function()
         return ngx.var.remote_port

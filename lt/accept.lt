@@ -1,4 +1,4 @@
--- stolen from
+-- translated from
 --  https://github.com/jshttp/negotiator
 require('resty.core.regex')
 var bit = require('bit')
