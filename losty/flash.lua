@@ -27,27 +27,47 @@ local decode = function(str)
 end
 local Msg = "_msg"
 local Flash = "flash"
-return function(req, res)
-    local old = req.cookies[Flash]
-    local new = res.cookies[Flash]
+local make = function(res)
+    return res.cookie(Flash, false, nil, "/")
+end
+local transfer = function(req, res, old, new)
     if not new then
-        new = res.cookie(Flash, false, nil, "/")(nil, true, req.secure, encode)
+        new = make(res)(nil, true, req.secure, encode)
     end
     if old then
-        local x = decode(old)
-        if x then
-            for k, v in pairs(x) do
-                new[k] = v
-            end
+        for k, v in pairs(old) do
+            new[k] = v
         end
     end
+    return nil, new
+end
+return function(req, res)
+    local old = req.cookies[Flash]
+    if old then
+        old = decode(old)
+    end
+    local new = res.cookies[Flash]
     local K = {set = function(key, val)
+        old, new = transfer(req, res, old, new)
         new[key] = val
     end, get = function(key)
-        return new[key]
+        if old and old[key] then
+            return old[key]
+        end
+        if new then
+            return new[key]
+        end
+    end, delete = function(key)
+        if key then
+            old, new = transfer(req, res, old, new)
+            new[key] = nil
+        else
+            make(res)(-100)
+        end
     end}
-    for _, meth in pairs({"pass", "fail", "warn", "info"}) do
+    for _, meth in ipairs({"pass", "fail", "warn", "info"}) do
         K[meth] = function(str)
+            old, new = transfer(req, res, old, new)
             if not new[Msg] then
                 new[Msg] = {}
             end

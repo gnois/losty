@@ -1,4 +1,5 @@
--- flash is for reading by js, so cannot use enc.lt
+-- flash is readable by js, so cannot use enc.lt
+
 -- vs session which is encrypted and only readable by server
 var json = require('cjson.safe')
 var tbl = require('losty.tbl')
@@ -8,7 +9,7 @@ var push = \tb, k, v ->
 	var old = tb[k]
 	if nil == old
 		old = { v }
-	else -- sometimes the browser return expired cookies?
+	else
 		if not tbl.find(old, v)
 			old[#old + 1] = v
 	tb[k] = old
@@ -29,30 +30,55 @@ var decode = \str ->
 var Msg = '_msg'
 var Flash = 'flash'
 
+
+-- removed on browser close, or manually by javascript
+var make = \res ->
+	return res.cookie(Flash, false, nil, '/')
+
+
+-- transfer old to new, and forget old, so we can call this function repeatedly
+-- remember to set old with this return value
+var transfer = \req, res, old, new ->
+	if not new
+		new = make(res)(nil, true, req.secure, encode)
+	if old
+		-- copy old to new, so that flashes is accumulated until read
+		for k, v in pairs(old)
+			new[k] = v
+	-- forget old
+	return nil, new
+
+
 return \req, res ->
 
 	var old = req.cookies[Flash]
-	var new = res.cookies[Flash]
-	if not new
-		-- removed on browser close, or manually by javascript
-		new = res.cookie(Flash, false, nil, '/')(nil, true, req.secure, encode)
-
 	if old
-		var x = decode(old)
-		if x
-			-- copy old to new, so that flashes is accumulated until read
-			for k, v in pairs(x)
-				new[k] = v
+		old = decode(old)
+	var new = res.cookies[Flash]
 
 	var K = {
 		set = \key, val ->
+			old, new = transfer(req, res, old, new)
 			new[key] = val
+
+		-- idempotent
 		, get = \key ->
-			return new[key]
+			if old and old[key]
+				return old[key]
+			if new
+				return new[key]
+
+		, delete = \key ->
+			if key 
+				old, new = transfer(req, res, old, new)
+				new[key] = nil
+			else
+				make(res)(-100)
 	}
 	
-	for _, meth in pairs({'pass', 'fail', 'warn', 'info'})
+	for _, meth in ipairs({'pass', 'fail', 'warn', 'info'})
 		K[meth] = \str ->
+			old, new = transfer(req, res, old, new)
 			if not new[Msg]
 				new[Msg] = {}
 			push(new[Msg], meth, str)
