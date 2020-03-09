@@ -25,7 +25,6 @@ local decode = function(str)
         return json.decode(str)
     end
 end
-local Msg = "_msg"
 local Flash = "flash"
 local make = function(res)
     return res.cookie(Flash, false, nil, "/")
@@ -65,14 +64,5 @@ return function(req, res)
             make(res)(-100)
         end
     end}
-    for _, meth in ipairs({"pass", "fail", "warn", "info"}) do
-        K[meth] = function(str)
-            old, new = transfer(req, res, old, new)
-            if not new[Msg] then
-                new[Msg] = {}
-            end
-            push(new[Msg], meth, str)
-        end
-    end
     return K
 end

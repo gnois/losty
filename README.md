@@ -1,8 +1,7 @@
 Losty = [*L*uaty](https://github.com/gnois/luaty) + [*O*penRe*sty*](http://openresty.org)
 
-Losty is a simple web framework that runs on OpenResty with minimal dependencies. It adds helpers on OpenResty without obscuring its API that you are familiar with.
-
-Instead of objects and methods, Losty makes use of Lua first class function almost everywhere, from handling request, generating HTML to performing input validation. 
+Losty is a functional style web framework that runs on OpenResty with minimal dependencies. 
+By composing functions almost everywhere, it adds helpers on OpenResty without obscuring its API that you are familiar with.
 
 It has built in
 - request router

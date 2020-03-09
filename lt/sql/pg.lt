@@ -31,7 +31,7 @@ return \database, user, password, host, port, pool, dbg ->
 
 			i = i + 1
 			var a = args[i]
-			if a and a ~= ngx.null
+			if a ~= nil and a ~= ngx.null
 				var ty = type(a)
 				if 'table' == ty
 					if x == 'a'

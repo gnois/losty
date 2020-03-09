@@ -24,7 +24,7 @@ return function(database, user, password, host, port, pool, dbg)
             end
             i = i + 1
             local a = args[i]
-            if a and a ~= ngx.null then
+            if a ~= nil and a ~= ngx.null then
                 local ty = type(a)
                 if "table" == ty then
                     if x == "a" then
