@@ -28,7 +28,7 @@ K.migrate = function(db, migrations)
     end
     return true
 end
-K.seed = function(db, fn)
+K.exec = function(db, fn)
     assert("function" == type(fn), "seed must take a function which accepts a database handle")
     db.connect()
     local ok, trace = xpcall(fn, function(err)
@@ -36,7 +36,6 @@ K.seed = function(db, fn)
     end, db)
     if not ok then
         print(c.syan, trace, c.reset)
-        print(c.onred, c.white, c.bright, "  Transaction not committed  ", c.reset)
         db.disconnect()
         return false
     end

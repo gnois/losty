@@ -70,7 +70,7 @@ K.migrate = \db, migrations ->
 	return true
 
 
-K.seed = \db, fn ->
+K.exec = \db, fn ->
 	assert('function' == type(fn), "seed must take a function which accepts a database handle")
 	
 	db.connect()
@@ -83,7 +83,7 @@ K.seed = \db, fn ->
 
 	if not ok
 		print(c.syan, trace, c.reset)
-		print(c.onred, c.white, c.bright, "  Transaction not committed  ", c.reset)
+		--print(c.onred, c.white, c.bright, "  Transaction not committed  ", c.reset)
 		--db.rollback()
 		db.disconnect()
 		return false

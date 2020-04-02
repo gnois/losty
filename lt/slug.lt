@@ -1,3 +1,4 @@
+-- see the comprehensive https://github.com/cocur/slugify Resources folder
 var set = require('losty.set')
 var to = require('losty.to')
 

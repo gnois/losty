@@ -215,7 +215,7 @@ Here are some considerations for Losty's design.
 
 * Arguments are easily visible.
 * Arguments (un)packing is slower, but may not be significant if there are only a handful of handlers.
-* Switching to a context table is easy for Losty; just append keys to the reques (q) or response (r) table. But the reverse is not.
+* Switching to a context table is easy for Losty; just append keys to the request (q) or response (r) table. But the reverse is not.
 
 
 
