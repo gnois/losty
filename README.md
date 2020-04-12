@@ -17,7 +17,7 @@ It has built in
 
 
 Losty is written in [Luaty](https://github.com/gnois/luaty) and compiled to Lua.
-Bug reports and contributions are very much appreciated and welcomed.
+Bug reports and contributions are very much welcomed and appreciated.
 
 
 
@@ -364,9 +364,18 @@ db.disconnect() calls keepalive() under the hood, which puts the connection back
 The `:?` are placeholders, where `?` is a default modifier that converts Lua table and string to PostgreSQL JSON and quoted string respectively. The values in `name` and `email` will be interpolated into the placeholders, before sending to the database.
 
 Other placeholder modifiers exist to customize the conversion from Lua to PostgreSQL data types:
-* `:a` Lua table => PostgreSQL arrays
-* `:h` Lua table => PostgreSQL hstore
-* `:b` Lua string => PostgreSQL bytea
+For Lua table 
+* `:r`  [row constant type](https://www.postgresql.org/docs/11/rowtypes.html)
+* `:a`  [arrays](https://www.postgresql.org/docs/11/arrays.html)
+* `:h`  [hstore](https://www.postgresql.org/docs/11/hstore.html)
+* `:?`  JSON
+
+For Lua scalar value
+* `:b`  bytea
+* `:?`  escaped literal
+* `:)` or `:]`  verbatim, only comments transformed, and semicolon and either `)` or `]` closing char stripped
+
+
 
 The query result is accessible from the first return value object if it succeeds, or the second string if failed. Please refer to pgmoon or lua-resty-mysql documentation on the full explanation of return values.
 

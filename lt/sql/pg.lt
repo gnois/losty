@@ -1,8 +1,9 @@
 var pgmoon = require('pgmoon')
-var parrays = require('pgmoon.arrays')
+var parrays = require('pgmoon.arrays')  -- encode_array()  cannot handle empty array and array of row types 
 var pjson = require('pgmoon.json')
 var phstore = require('pgmoon.hstore')
 var sql = require('losty.sql.base')
+var str_gsub = string.gsub
 
 -- Remember to call setup_hstore() 
 
@@ -13,44 +14,87 @@ return \database, user, password, host, port, pool, dbg ->
 	--db.convert_null = true
 	--db.NULL = ngx.null
 	
+
+	var escape = \str, mode ->
+		-- transform comments, strip semicolon
+		var s = str_gsub(str, "/%*", "/ *")
+		s = str_gsub(s, "%*/", "* /")
+		s = str_gsub(s, "%-%-", "- -")
+		s = str_gsub(s, ";", "")
+		return str_gsub(s, mode, "")
+	
+	-- make composite value, probably inside array like ARRAY['(,,"",)', '(,,,"")']
+	-- https://www.postgresql.org/docs/11/rowtypes.html
+	-- https://www.postgresql.org/docs/11/sql-expressions.html#SQL-SYNTAX-ROW-CONSTRUCTORS
+	var encode_row
+	encode_row = \t ->
+		var out = {}
+		for i, v in ipairs(t)
+			var o
+			if v == ngx.null
+				o = ''  -- null is bare
+			else
+				var ty = type(v)
+				if 'table' == ty
+					o = encode_row(v)
+				else if 'string' == ty and 0 == string.len(v)
+					o = '""'
+				else
+					o = escape(v, "'")  -- unquote to bare!
+			out[i] = o
+		return "'(" .. table.concat(out, ",") .. ")'"
+
+
+	-- mode must be a char
+	var encode = \mode, v ->
+		if v == nil or v == ngx.null
+			return "NULL"
+
+		var ty = type(v)
+		if 'table' == ty
+			if mode == 'r'
+				return encode_row(v)
+			else if mode == 'a'
+				return parrays.encode_array(v)
+			else if mode == 'h'
+				return phstore.encode_hstore(v)
+			else if mode == '?'
+				return pjson.encode_json(v)
+
+		else if 'number' == ty or 'string' == ty or 'boolean' == ty
+			if mode == 'b'
+				return db.encode_bytea(@, v)
+			else if mode == '?'
+				return db.escape_literal(@, v)
+			else if mode == ')' or mode == ']'    -- this allow SQL injection and inputs like   date 'today' + interval '1 month'. Use with care!!
+				return escape(v, "%" .. mode)
+
+		return nil, "Invalid placeholder `:" .. mode .. "` for a " .. ty
+
+
 	-- To list all pgsql operators
 	-- psql 
 	-- \do ?
 	-- \do ??
 	-- \do ???
 	-- why not named parameter :var: inside query ? coz Luaty can no longer check use of undeclared variable
-	
 	-- Only nil, boolean, number, string and table acceptable as arguments for placeholder
 	var interpolate = \query, ... ->
 		var args = {...}
 		var i = 0
-		return (string.gsub(query, "(:?):([a-z%?])", \c, x ->
+		return (str_gsub(query, "(:?):([a-z%?%)%]])", \c, mode ->
 			-- if using [^:] instead of (:?), we will miss :? at the beginning of a line
 			if c == ':'  -- return verbatim
-				return '::' .. x
+				return '::' .. mode
 
 			i = i + 1
-			var a = args[i]
-			if a ~= nil and a ~= ngx.null
-				var ty = type(a)
-				if 'table' == ty
-					if x == 'a'
-						return parrays.encode_array(a)
-					else if x == 'h'
-						return phstore.encode_hstore(a)
-					else if x ~= '?'
-						ngx.log(ngx.ERR, "Invalid query placeholder `:", x, "` for table value at position ", i)
-					return pjson.encode_json(a)
-				
-				else if 'number' == ty or 'string' == ty or 'boolean' == ty
-					if x == 'b'
-						return db.encode_bytea(@, a)
-					else if x ~= '?'
-						ngx.log(ngx.ERR, "Invalid query placeholder `:", x, "` for scalar value at position ", i)
-					return db.escape_literal(@, a)
-
-			return "NULL"
+			var s, err = encode(mode, args[i])
+			if s
+				return s
+			ngx.log(ngx.ERR, err .. " at position ", i)
+			
 		)), i
+
 
 	var run = \str, ... ->
 		var n = select("#", ...)
@@ -73,17 +117,21 @@ return \database, user, password, host, port, pool, dbg ->
 	var keepalive = \timeout ->
 		db.keepalive(@, timeout)
 		
-	var K = sql(db, run, keepalive)
+	var K = sql(db, run)
+	
+	K.encode = encode
 
 	K.hstore = ->
 		db.setup_hstore(@)
 
 	-- returns variadic arguments that are interpolated
-	K.variadic = \modifier, ... ->
+	-- eg: variadic("?", 'a', 'b', 'c') gives a string "'a','b','c'"
+	K.variadic = \mode, ... ->
 		var n = select("#", ...)
 		if n > 0
-			var places = string.rep(", " .. modifier, n - 1)
-			return interpolate(modifier .. places, ...)
+			var places = string.rep(", " .. mode, n - 1)
+			return (interpolate(mode .. places, ...))  -- () parenthesis to remove other returns
+			
 
 	-- must only connect() inside a function, not at top level
 	-- else Error: cannot yield across C-call boundary
@@ -91,7 +139,7 @@ return \database, user, password, host, port, pool, dbg ->
 		assert(db.connect(@))
 		--db.query(@, "SET TIME ZONE 'UTC';")
 
-	-- closes the connection, vs K.disconnect() which keepalive the connection and rollback uncommitted transaction
+	-- closes the connection, vs disconnect() which keepalive the connection and rollback uncommitted transaction
 	K.close = ->
 		db.disconnect(@)
 		
@@ -105,7 +153,45 @@ return \database, user, password, host, port, pool, dbg ->
 	
 	K.unsubscribe = \channel ->
 		return db.query(@, 'UNLISTEN ' .. channel)
-		
+
+
+	var tx = 0
+	var sp_name = ->
+		var id = ngx.worker.pid()
+		return 'SP' .. tx .. '_' .. id
+
+	-- timeout = 0 means wont timeout in the pool
+	K.disconnect = \timeout ->
+		if tx > 0
+			db.query(@, 'ROLLBACK')
+			tx = 0
+		keepalive(timeout)
+
+	K.begin = ->
+		var cmd = tx < 1 and 'BEGIN' or 'SAVEPOINT ' .. sp_name()
+		tx = tx + 1
+		if dbg
+			print(cmd)
+		db.query(@, cmd)
+		return tx
+
+	K.commit = ->
+		assert(tx > 0, "no transaction or savepoint to commit")
+		tx = tx - 1
+		var cmd = tx < 1 and 'COMMIT' or 'RELEASE SAVEPOINT ' .. sp_name()
+		if dbg
+			print(cmd)
+		db.query(@, cmd)
+		return tx
+
+	K.rollback = ->
+		assert(tx > 0, "no transaction or savepoint to rollback")
+		tx = tx - 1
+		var cmd = tx < 1 and 'ROLLBACK' or 'ROLLBACK TO SAVEPOINT ' .. sp_name()
+		if dbg
+			print(cmd)
+		db.query(@, cmd)
+		return tx
 
 	return K
 
