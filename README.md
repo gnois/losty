@@ -11,9 +11,10 @@ It has built in
 - slug generation for url
 - DSL for HTML generation
 - Server Side Event (SSE) support
-- SQL operation helpers
 - input validation helpers
 - table, string and functional helpers
+- SQL operation and seeding helpers
+- (SQL) testing helper
 
 
 Losty is written in [Luaty](https://github.com/gnois/luaty) and compiled to Lua.
@@ -333,7 +334,7 @@ return {
 }
 ```
 
-We can then migrate the tables into PostgreSQL using `resty` below:
+We can then migrate the tables into PostgreSQL using [`resty cli`](https://github.com/openresty/resty-cli) as below:
 ```
 resty -I ../ -e 'require("losty.sql.migrate")(require("losty.sql.pg")("dbname", "user", "password", host, port))' users.sql friends
 ```
@@ -471,6 +472,40 @@ Unfortunately the `<table>` tag and the table library in Lua have the same name.
 Finally, to get your HTML string generated, call Losty `view()` function with your view template as first parameter, followed by the needed key/value table as argument. 
 A third boolean parameter prevents `<!DOCTYPE html>` being prepended to the result if truthy, and a fourth boolean parameter turns on assertion if an invalid HTML5 tag is used.
 
+
+(SQL) testing or seeding helpers
+--------------------------
+There is a simple unit testing helper for exercising your SQL or Lua functionalities.
+
+```
+local setup = require('losty.test')
+local pg = require('losty.sql.pg')
+
+local sql = pg(databasename, username, password, true)
+setup(sql, function(test, a, p, q)
+	-- Note that sql can be nil, and q is optional, so that we only test Lua functions and not SQL operations
+	
+	p('user test')
+	q.begin() 
+	
+	local uid
+	test("can create user", function()
+		local u = user.add(q, "belly@email.com", 'Passw0rd')
+		a(u and u.user_id, u)  -- works like assert
+		uid = u.user_id
+	end, true) -- true means commit to database, until end of parent scope, which can decide whether to commit or rollback
+
+	test("can match user", function()
+		local i = q.s1([[* from find_user(:?, :?)]], "belly@email.com", 'Passw0rd')
+		a(i and i.user_id == uid, i)
+	end)
+
+	q.rollback() -- use q.commit() if seeding database
+end)
+
+```
+When run using `resty cli`, the test above produces summary of tests passed/failed.
+To seed the database, omit the q.begin() and q.rollback() statements, and pass `true` as the last argument to test()
 
 
 

@@ -1,0 +1,90 @@
+-- turn off pgmoon using lpeg warning
+-- _G write guard:12: writing a global lua variable ('lpeg') which may lead to race conditions between concurrent requests, so prefer the use of 'local' variables
+setmetatable(_G, {__newindex = \t, n, v -> rawset(t, n, v)})
+
+var c = require('losty.exec')
+var tbl = require('losty.tbl')
+
+-- dump value into string, used by chk()
+var s = \... ->
+	var args = {...}
+	var n = select("#", ...)
+	var out = {}
+	for i = 1, n
+		var x = args[i]
+		if x == nil
+			out[i] = "<nil>"
+		if type(x) == 'table'
+			out[i] = tbl.dump(x)
+		else
+			out[i] = tostring(x)
+	return table.concat(out, ' ')
+
+var setup = \db ->
+	if db
+		var map = {
+			s = "select"
+			, i = "insert"
+			, u = "update"
+			, d = "delete"
+		}
+		var q = db
+		-- add shorter function names
+		for k, v in pairs(map)
+			q[k] = db[v]
+			q[k..'1'] = db[v..'1']
+		return q
+
+
+
+-- make short key names for db access
+return \db, func ->
+
+	var q = setup(db)
+
+	-- shorthand to print value
+	var prn = \... -> print(s(...))
+
+	var tests = 0
+	var fails = 0
+	-- works like assert, but not terminating
+	var chk = \ok, ... ->
+		tests = tests + 1
+		if ok
+			print(c.green .. "ok" .. c.reset)
+		else
+			fails = fails + 1
+			print(c.red .. "fail: " .. s(...) .. c.reset)
+
+	var groups = 0
+	var passes = 0
+	var test = \desc, fn, commit ->  -- keep the data if commit
+		groups = groups + 1
+		tests = 0
+		fails = 0
+
+		print(c.white .. '                                         ' .. c.bright .. c.onblue .. '[[[  ' .. (desc or '--') .. ' ]]]' .. c.reset)
+		if q q.begin()
+		var _, err = xpcall(fn, \err -> return debug.traceback(err, 2))
+		if err
+			if q q.rollback()
+			print(c.red, "\n                TEST ERROR: " .. err .. "\n" .. c.reset)
+			fails = fails + 1
+		else
+			if q
+				if commit
+					q.commit()
+				else
+					q.rollback()
+			print((fails > 0 and c.red or c.green) .. '                     ------------------- ' .. tests .. " tests: " .. tests - fails .. " passed, " .. fails .. " failed ------------\n" .. c.reset)
+
+		if fails == 0
+			passes = passes + 1
+
+
+	if q q.connect()
+	func(test, chk, prn, q)
+	if q q.disconnect()
+
+	var color = groups - passes > 0 and c.magenta or c.yellow
+	print(color .. '                                     === ' .. groups .. " groups: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
