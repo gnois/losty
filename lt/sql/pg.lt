@@ -22,6 +22,8 @@ return \database, user, password, host, port, pool, dbg ->
 		s = str_gsub(s, "%-%-", "- -")
 		s = str_gsub(s, ";", "")
 		return str_gsub(s, mode, "")
+		
+	
 	
 	-- make composite value, probably inside array like ARRAY['(,,"",)', '(,,,"")']
 	-- https://www.postgresql.org/docs/11/rowtypes.html
@@ -37,12 +39,15 @@ return \database, user, password, host, port, pool, dbg ->
 				var ty = type(v)
 				if 'table' == ty
 					o = encode_row(v)
-				else if 'string' == ty and 0 == string.len(v)
-					o = '""'
+				else if 'string' == ty
+					if 0 == string.len(v)
+						o = '""'
+					else
+						o = str_gsub(v, ",", "\\,")
 				else
-					o = escape(v, "'")  -- unquote to bare!
+					o = tostring(v) or ''
 			out[i] = o
-		return "'(" .. table.concat(out, ",") .. ")'"
+		return "(" .. table.concat(out, ",") .. ")"
 
 
 	-- mode must be a char
@@ -53,7 +58,7 @@ return \database, user, password, host, port, pool, dbg ->
 		var ty = type(v)
 		if 'table' == ty
 			if mode == 'r'
-				return encode_row(v)
+				return db.escape_literal(@, encode_row(v))
 			else if mode == 'a'
 				return parrays.encode_array(v)
 			else if mode == 'h'

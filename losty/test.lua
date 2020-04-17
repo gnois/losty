@@ -41,6 +41,7 @@ return function(db, func)
     end
     local tests = 0
     local fails = 0
+    local errors = 0
     local chk = function(ok, ...)
         tests = tests + 1
         if ok then
@@ -67,8 +68,8 @@ return function(db, func)
             if q then
                 q.rollback()
             end
-            print(c.red, "\n                TEST ERROR: " .. err .. "\n" .. c.reset)
-            fails = fails + 1
+            print(c.red, "\nERROR: " .. err .. "\n" .. c.reset)
+            errors = errors + 1
         else
             if q then
                 if commit then
@@ -77,11 +78,19 @@ return function(db, func)
                     q.rollback()
                 end
             end
-            print((fails > 0 and c.red or c.green) .. "                     ------------------- " .. tests .. " tests: " .. tests - fails .. " passed, " .. fails .. " failed ------------\n" .. c.reset)
         end
-        if fails == 0 then
+        if fails == 0 and errors == 0 then
             passes = passes + 1
         end
+        local msg = tests .. " tests: " .. tests - fails - errors .. " passed"
+        if errors > 0 then
+            msg = msg .. ", " .. errors .. " errors"
+        end
+        if fails > 0 then
+            msg = msg .. ", " .. fails .. " failed"
+        end
+        local color = fails + errors > 0 and c.cyan or c.green
+        print(color .. "                                         ---------- " .. msg .. " ----------\n" .. c.reset)
     end
     if q then
         q.connect()
@@ -91,5 +100,5 @@ return function(db, func)
         q.disconnect()
     end
     local color = groups - passes > 0 and c.magenta or c.yellow
-    print(color .. "                                     === " .. groups .. " groups: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
+    print(color .. "                                         === " .. groups .. " groups: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
 end

@@ -34,15 +34,19 @@ return function(database, user, password, host, port, pool, dbg)
                 local ty = type(v)
                 if "table" == ty then
                     o = encode_row(v)
-                elseif "string" == ty and 0 == string.len(v) then
-                    o = "\"\""
+                elseif "string" == ty then
+                    if 0 == string.len(v) then
+                        o = "\"\""
+                    else
+                        o = str_gsub(v, ",", "\\,")
+                    end
                 else
-                    o = escape(v, "'")
+                    o = tostring(v) or ""
                 end
             end
             out[i] = o
         end
-        return "'(" .. table.concat(out, ",") .. ")'"
+        return "(" .. table.concat(out, ",") .. ")"
     end
     local encode = function(mode, v)
         if v == nil or v == ngx.null then
@@ -51,7 +55,7 @@ return function(database, user, password, host, port, pool, dbg)
         local ty = type(v)
         if "table" == ty then
             if mode == "r" then
-                return encode_row(v)
+                return db:escape_literal(encode_row(v))
             elseif mode == "a" then
                 return parrays.encode_array(v)
             elseif mode == "h" then

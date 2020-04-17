@@ -47,6 +47,7 @@ return \db, func ->
 
 	var tests = 0
 	var fails = 0
+	var errors = 0
 	-- works like assert, but not terminating
 	var chk = \ok, ... ->
 		tests = tests + 1
@@ -68,18 +69,25 @@ return \db, func ->
 		var _, err = xpcall(fn, \err -> return debug.traceback(err, 2))
 		if err
 			if q q.rollback()
-			print(c.red, "\n                TEST ERROR: " .. err .. "\n" .. c.reset)
-			fails = fails + 1
+			print(c.red, "\nERROR: " .. err .. "\n" .. c.reset)
+			errors = errors + 1
 		else
 			if q
 				if commit
 					q.commit()
 				else
 					q.rollback()
-			print((fails > 0 and c.red or c.green) .. '                     ------------------- ' .. tests .. " tests: " .. tests - fails .. " passed, " .. fails .. " failed ------------\n" .. c.reset)
 
-		if fails == 0
+		if fails == 0 and errors == 0
 			passes = passes + 1
+					
+		var msg = tests .. " tests: " .. tests - fails - errors .. " passed"
+		if errors > 0
+			msg = msg .. ", " .. errors .. " errors"
+		if fails > 0
+			msg = msg .. ", " .. fails .. " failed"
+		var color = fails + errors > 0 and c.cyan or c.green
+		print(color .. "                                         ---------- " .. msg .. " ----------\n" .. c.reset)
 
 
 	if q q.connect()
@@ -87,4 +95,4 @@ return \db, func ->
 	if q q.disconnect()
 
 	var color = groups - passes > 0 and c.magenta or c.yellow
-	print(color .. '                                     === ' .. groups .. " groups: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
+	print(color .. '                                         === ' .. groups .. " groups: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
