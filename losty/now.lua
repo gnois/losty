@@ -11,8 +11,8 @@ ffi.cdef([[
 	
 	int gettimeofday(struct timeval* t, void* tzp);
 ]])
-local tmv = ffi.new("timeval")
 return function()
+    local tmv = ffi.new("timeval")
     ffi.C.gettimeofday(tmv, nil)
-    return tonumber(tmv.tv_sec) * 1000000 + tonumber(tmv.tv_usec)
+    return tonumber(tmv.tv_sec), tonumber(tmv.tv_usec)
 end

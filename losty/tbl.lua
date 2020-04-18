@@ -8,10 +8,14 @@ local dump = function(value)
         if not depth then
             depth = 0
         end
+        if val == nil then
+            return "nil\n"
+        end
+        if val == ngx.null then
+            return "<ngx.null>\n"
+        end
         local t = type(val)
-        if t == "string" then
-            return "\"" .. val .. "\""
-        elseif t == "table" then
+        if t == "table" then
             if seen[val] then
                 return "recursive(" .. tostring(val) .. ")...\n"
             end
@@ -29,9 +33,11 @@ local dump = function(value)
             end
             seen[val] = false
             return "{\n" .. table.concat(lines) .. "\n" .. string.rep(" ", (depth - 1) * 3) .. "}\n"
-        else
-            return tostring(val) .. "\n"
         end
+        if t == "string" then
+            return "\"" .. val .. "\""
+        end
+        return tostring(val) .. "\n"
     end
     return dmp(value)
 end

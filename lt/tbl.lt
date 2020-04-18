@@ -4,10 +4,13 @@ var dump = \value ->
 	dmp = \val, depth ->
 		if not depth
 			depth = 0
+		if val == nil
+			return "nil\n"
+		if val == ngx.null
+			return "<ngx.null>\n"
+			
 		var t = type(val)
-		if t == "string"
-			return '"' .. val .. '"'
-		else if t == "table"
+		if t == "table"
 			if seen[val]
 				return "recursive(" .. tostring(val) .. ")...\n"
 			
@@ -24,8 +27,10 @@ var dump = \value ->
 			
 			seen[val] = false
 			return "{\n" .. table.concat(lines) .. "\n" .. string.rep(" ", (depth - 1) * 3) .. "}\n"
-		else
-			return tostring(val) .. "\n"
+		if t == "string"
+			return '"' .. val .. '"'
+		return tostring(val) .. "\n"
+
 	return dmp(value)
 
 

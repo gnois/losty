@@ -14,8 +14,9 @@ local s = function(...)
         local x = args[i]
         if x == nil then
             out[i] = "<nil>"
-        end
-        if type(x) == "table" then
+        elseif x == ngx.null then
+            out[i] = "<ngx.null>"
+        elseif type(x) == "table" then
             out[i] = tbl.dump(x)
         else
             out[i] = tostring(x)
@@ -57,6 +58,7 @@ return function(db, func)
         groups = groups + 1
         tests = 0
         fails = 0
+        errors = 0
         print(c.white .. "                                         " .. c.bright .. c.onblue .. "[[[  " .. (desc or "--") .. " ]]]" .. c.reset)
         if q then
             q.begin()
@@ -82,7 +84,7 @@ return function(db, func)
         if fails == 0 and errors == 0 then
             passes = passes + 1
         end
-        local msg = tests .. " tests: " .. tests - fails - errors .. " passed"
+        local msg = tests .. " checks: " .. tests - fails - errors .. " passed"
         if errors > 0 then
             msg = msg .. ", " .. errors .. " errors"
         end
@@ -100,5 +102,5 @@ return function(db, func)
         q.disconnect()
     end
     local color = groups - passes > 0 and c.magenta or c.yellow
-    print(color .. "                                         === " .. groups .. " groups: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
+    print(color .. "                                         === " .. groups .. " test cases: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
 end

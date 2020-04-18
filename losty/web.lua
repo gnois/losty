@@ -8,8 +8,9 @@ local router = require("losty.router")
 local dispatch = require("losty.dispatch")
 local req = require("losty.req")
 local res = require("losty.res")
-ngx.update_time()
-math.randomseed(ngx.time())
+local now = require("losty.now")
+local sec, usec = now()
+math.randomseed(sec / usec * 123456789)
 local HTML = "text/html"
 local JSON = "application/json"
 return function()

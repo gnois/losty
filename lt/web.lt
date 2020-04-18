@@ -5,10 +5,12 @@ var router = require('losty.router')
 var dispatch = require('losty.dispatch')
 var req = require('losty.req')
 var res = require('losty.res')
+var now = require('losty.now')
 
 -- run once, for later math.random
-ngx.update_time()  -- ngx.time maybe cached and stay the same for multiple worker process
-math.randomseed(ngx.time())
+var sec, usec = now()
+math.randomseed(sec / usec * 123456789) -- ngx.time() maybe cached and stay the same for multiple worker process
+
 
 var HTML = "text/html"
 var JSON = "application/json"

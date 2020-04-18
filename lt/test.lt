@@ -14,7 +14,9 @@ var s = \... ->
 		var x = args[i]
 		if x == nil
 			out[i] = "<nil>"
-		if type(x) == 'table'
+		else if x == ngx.null
+			out[i] = "<ngx.null>"
+		else if type(x) == 'table'
 			out[i] = tbl.dump(x)
 		else
 			out[i] = tostring(x)
@@ -63,6 +65,7 @@ return \db, func ->
 		groups = groups + 1
 		tests = 0
 		fails = 0
+		errors = 0
 
 		print(c.white .. '                                         ' .. c.bright .. c.onblue .. '[[[  ' .. (desc or '--') .. ' ]]]' .. c.reset)
 		if q q.begin()
@@ -81,7 +84,7 @@ return \db, func ->
 		if fails == 0 and errors == 0
 			passes = passes + 1
 					
-		var msg = tests .. " tests: " .. tests - fails - errors .. " passed"
+		var msg = tests .. " checks: " .. tests - fails - errors .. " passed"
 		if errors > 0
 			msg = msg .. ", " .. errors .. " errors"
 		if fails > 0
@@ -95,4 +98,4 @@ return \db, func ->
 	if q q.disconnect()
 
 	var color = groups - passes > 0 and c.magenta or c.yellow
-	print(color .. '                                         === ' .. groups .. " groups: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
+	print(color .. '                                         === ' .. groups .. " test cases: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
