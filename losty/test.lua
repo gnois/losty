@@ -59,7 +59,11 @@ return function(db, func)
         tests = 0
         fails = 0
         errors = 0
-        print(c.white .. "                                         " .. c.bright .. c.onblue .. "[[[  " .. (desc or "--") .. " ]]]" .. c.reset)
+        local title = groups .. ". [[ " .. (desc or "?? no name ??") .. " ]]"
+        if commit then
+            title = title .. c.cyan .. " - WITH COMMIT"
+        end
+        print(c.blue .. c.bright .. "                                         " .. title .. c.reset)
         if q then
             q.begin()
         end

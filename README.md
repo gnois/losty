@@ -1,4 +1,4 @@
-Losty = [*L*uaty](https://github.com/gnois/luaty) + [*O*penRe*sty*](http://openresty.org)
+## Losty = [*L*uaty](https://github.com/gnois/luaty) + [*O*penRe*sty*](http://openresty.org)
 
 Losty is a functional style web framework that runs on OpenResty with minimal dependencies. 
 By composing functions almost everywhere, it adds helpers on OpenResty without obscuring its API that you are familiar with.
@@ -21,147 +21,66 @@ Losty is written in [Luaty](https://github.com/gnois/luaty) and compiled to Lua.
 Bug reports and contributions are very much welcomed and appreciated.
 
 
+## Dependency
 
-Dependency
-------
 Required:
 [OpenResty](http://openresty.org)
 
 Optional:
-- [pgmoon](https://github.com/leafo/pgmoon) if using PostgreSQL (For MySQL, OpenResty comes with lua-resty-mysql)
+- [pgmoon](https://github.com/leafo/pgmoon) if using PostgreSQL 
 
 
-Installation
------
-Use OpenResty Package Manager (opm):
+## Installation
+
+Use [opm](https://opm.openresty.org):
 ```
 opm get gnois/losty
 ```
 
 
-Quickstart
-------
-Create app.lua and nginx.conf under proj/ folder:
-
-```
-|-- proj/
-     |-- nginx.conf
-     |-- app.lua
-     |-- ...
-     |-- static/
-          |-- 404.html
-          |-- 5xx.html
-          |-- robots.txt
-          |-- xx.css
-          |-- xx.js
-```
-
-
-app.lua
-```
-local server = require('losty.web')
-local view = require('losty.view')
-
-local web = server()
-local w = web.route()
-
-function template()
-	return html({
-		head({
-			meta('[charset=UTF-8]')
-			, title(args.title)
-			, style({'.center { text-align: center; }'})
-		})
-		, body({
-			div('.center', {
-				h1(args.title)
-				, div(args.message)
-			})
-			, footer({
-				hr()
-				, div('.center', '&copy' .. args.copyright)
-			})
-		})
-	})
-end
-
-function page(args)
-	args.copyright = 'My website'
-	return view(template, args)
-end
-
-local not_found = page({
-	title = '404 Not Found'
-	, message = 'Nothing here'
-})
-
-w.get('/', function(q, r)
-	return page({
-		title = 'Hi'
-		, message = 'Losty is live!'
-	}))
-end)
-
--- list of custom error pages
-local errors = {
-	[404] = not_found()
-}
-
-return function()
-	web.run(errors)
-end
-```
-
+## Quickstart
 
 nginx.conf
 ```
+events {
+	worker_connections 4096;
+}
 http {
-	lua_code_cache on;  # turn off in development
-	
-	# preload
-	init_by_lua_block {
-		require("app")
-	}
-
 	server {
 		listen 80;
-		server_name domain.com;
-		access_log off;
-		
-		root static/;
-		error_page 404 404.html;
-		error_page 500 501 502 503 5xx.html;
 
-		location = /robots.txt {
-			root static;
-		}
-
-		# dynamic content
 		location / {
-			access_log on;
 			content_by_lua_block {
-				require("app")()
+				local server = require("losty.web")
+				local web = server()
+				local w = web.route()
+
+				w.get('/', function(q, r)
+					r.status = 200
+					r.headers["content-type"] = "text/plain"
+					return "Hello world!"
+				end)
+
+				web.run()
 			}
+			
 		}
 	}
 }
 ```
 
-Start nginx with prefix as proj/ folder
-```
- > nginx -p proj/ -c nginx.conf
-```
-
-That's it.
+See [losty-starters](https://github.com/gnois/losty-starters) repo for more examples.
 
 
+## Guide
 
-Guide
--------
-As seen from the Quickstart, Losty matches HTTP requests to user defined routes, which associates one or more handler functions that process the request. 
+Losty matches HTTP requests to user defined routes, which associates one or more handler functions that process the request. 
+Similar to frameworks like Koajs, 
+handlers need to be invoked downstream, and then control flows back upstream.
 
-Handler
----------
+
+### Handler
+
 A handler function takes a request (q) and a response (r) table, and optionally more arguments. 
 
 Here is a handler for http POST, PUT or DELETE request:
@@ -169,7 +88,8 @@ Here is a handler for http POST, PUT or DELETE request:
 function form(q, r)
 	local val, fail = body.buffered(q)
 	if val or q.method == 'DELETE' then
-		return q.next(val)
+		q.body = val
+		return q.next()
 	end
 	r.status = 400 -- bad request
 	return { fail = fail or q.method .. " should have request body" }
@@ -197,9 +117,8 @@ The above handlers can be chained like this:
 w.post('/path', function(q, r)
 	r.headers["Content-Type"] = "application/json"
 	return q.next()
-end
-, form, database, function(q, r, body, db)
-	-- use body and db here
+end, form, database, function(q, r, db)
+	-- use q.body and db here
 	db.insert(...)
 	r.status = 201
 	return json.encode({ok = true})
@@ -220,21 +139,20 @@ Here are some considerations for Losty's design.
 
 
 
-Response Table
-----------
+### Response Table
 
 Inside handlers, the response table is a thin helper used to set HTTP headers and cookies, and wraps `ngx.status`. Setting `ngx.status` directly also works as expected. 
 ```
 r.headers[Name] = value
 r.status = 201
-print(ngx.status)  -- shows 201
+assert(ngx.status == 201)
 ```
 
-Cookies
------
+#### Cookies
+
 Cookies are created using the response table:
 ```
-local ck = r.cookie(Name, true, nil, '/')   -- step 1
+local ck = r.cookie('biscuit', true, nil, '/')   -- step 1
 local data = ck(nil, true, r.secure, value) -- step 2 (optional)
 
 ```
@@ -248,17 +166,17 @@ local data = ck(nil, true, r.secure, value) -- step 2 (optional)
 Response headers including cookies are accumulated and finally set into `ngx.headers`. Setting `ngx.headers` directly prior to the last handler return, shd also work as expected.
 
 
-Note
---------
+#### Note
+
 It is not recommended to call `ngx.flush()` or `ngx.eof()` in handlers, unless you want to short circuit Losty dispatcher and return control to nginx immediately. In such case, you may also use `return ngx.exit(status)`. This is useful for example to use error_page directive in nginx.conf instead of using Losty generated error page.
 
 
 
-Routes
--------
+### Routes
+
 Routes are defined using HTTP methods, like get() for GET or post() for POST.
 Route paths are strings that begins with '/', followed by multiple segments separated by '/' as well. A trailing slash is ignored.
-A segment that begins with : specifies a capturing lua pattern. Captured values are stored in q.match array of request table.
+A segment that begins with : specifies a capturing lua pattern. Captured values are stored in `match` array of request table (q).
 
 There is no named capture like in other frameworks, due to possible conflicting paths like:
 ```
@@ -306,9 +224,9 @@ server.route(prefix) may be called multiple times, each taking an path prefix fo
 
 
 
-SQL Operations
----------
-Losty provides wrappers for MySQL and PostgreSQL drivers and a basic migration utility. There is no ORM layer, because no ORM is able to fully abstract the features of SQL.
+### SQL Operations
+
+Losty provides wrappers for MySQL and PostgreSQL drivers and a basic migration utility. There is no ORM layer. (It's much more worthwhile to just learn SQL)
 
 As an example, suppose we want to use an existing PostgreSQL database.
 Lets create a new table with SQL file:
@@ -319,18 +237,18 @@ CREATE TABLE user (
 	id serial PRIMARY KEY
 	, name text NOT NULL
 	, email text NOT NULL
-)
+);
 ```
-Lets create another table:
+Lets create another table with a Lua file:
 
-friends.lt
+friends.lua
 ```
 return {
 	"CREATE TABLE friend (
 		id int NOT NULL REFERENCES users
 		, userid int NOT NULL REFERENCES users
 		, UNIQUE (id, userid)
-	)"
+	);"
 }
 ```
 
@@ -342,12 +260,12 @@ resty -I ../ -e 'require("losty.sql.migrate")(require("losty.sql.pg")("dbname", 
 The database server host and port are optional, and defaults to '127.0.0.1' and 5432 respectively.
 Losty migration accepts both SQL and Lua source files, and a .lua file extension is optional.
 
-A Lua source should return an array of strings, which are SQL commands. Each array item is sent to the database server in separate batch. This allows us to programatically generate SQL with Lua. 
+A Lua source should return an array of strings, which are SQL commands. Each array item is sent to the database server in separate batch. This means we can programatically generate SQL with Lua. 
 An SQL file uses `----` as batch separator. Separating SQL commands into batches are helpful in case an error occurs, without which it's harder to locate the line of error.
 
 Lets create a function to insert a user:
 
-user.lt
+user.lua
 ```
 local db = require("losty.sql.pg")("dbname", "user", "password")
 
@@ -377,14 +295,13 @@ For Lua scalar value
 * `:)` or `:]`  verbatim, only comments transformed, and semicolon and either `)` or `]` closing char stripped
 
 
-
-The query result is accessible from the first return value object if it succeeds, or the second string if failed. Please refer to pgmoon or lua-resty-mysql documentation on the full explanation of return values.
-
+Please refer to [pgmoon](https://github.com/leafo/pgmoon) or [lua-resty-mysql](https://github.com/openresty/lua-resty-mysql) documentation on interpreting query return values.
 
 
 
-Generating HTML
----------------
+
+### Generating HTML
+
 Unlike templating libraries that embed control flow inside HTML constructs, Losty goes the other way round by generating HTML with Lua, with full language features at your disposal. In Javascript, it is like JSX vs hyperscript on steroids, where the HTML tags become functions themselves, thanks to Lua metatable.
 
 ```
@@ -473,8 +390,8 @@ Finally, to get your HTML string generated, call Losty `view()` function with yo
 A third boolean parameter prevents `<!DOCTYPE html>` being prepended to the result if truthy, and a fourth boolean parameter turns on assertion if an invalid HTML5 tag is used.
 
 
-(SQL) testing or seeding helpers
---------------------------
+### (SQL) testing or seeding helpers
+
 There is a simple unit testing helper for exercising your SQL or Lua functionalities.
 
 ```
@@ -509,8 +426,8 @@ To seed the database, omit the q.begin() and q.rollback() statements, and pass `
 
 
 
-Credits
--------
+### Credits
+
 This project has taken ideas and codes from respectable projects such as Lapis, Mashape router, lua-resty-session, and helpful examples from OpenResty and around the web.
 Of course it wouldn't exist without the magnificent OpenResty in the first place.
 
