@@ -51,6 +51,7 @@ return \db, func ->
 	var fails = 0
 	var errors = 0
 	-- works like assert, but not terminating
+	-- fits nicely with functions returning nil, err
 	var chk = \ok, ... ->
 		tests = tests + 1
 		if ok
@@ -67,10 +68,10 @@ return \db, func ->
 		fails = 0
 		errors = 0
 
-		var title = groups .. ". [[ " .. (desc or "?? no name ??") .. " ]]"
+		var title = c.bright .. c.cyan .. groups .. ". " .. c.blue .. "[[ " .. (desc or "?? no name ??") .. " ]]"
 		if commit
 			title = title .. c.cyan .. " - WITH COMMIT"
-		print(c.blue .. c.bright .. "                                         " .. title .. c.reset)
+		print("                                         " .. title .. c.reset)
 		if q q.begin()
 		var _, err = xpcall(fn, \err -> return debug.traceback(err, 2))
 		if err
@@ -101,4 +102,4 @@ return \db, func ->
 	if q q.disconnect()
 
 	var color = groups - passes > 0 and c.magenta or c.yellow
-	print(color .. '                                         === ' .. groups .. " test cases: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
+	print(color .. '                                         === ' .. groups .. " cases: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)

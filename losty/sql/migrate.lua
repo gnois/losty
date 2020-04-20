@@ -3,8 +3,31 @@
 --
 local to = require("losty.to")
 local str = require("losty.str")
+local tbl = require("losty.tbl")
 local c = require("losty.exec")
-local model = require("losty.sql.model")
+local migrate = function(db, migrations)
+    assert("table" == type(migrations), "migration schemas must be an array of {sql, ...} where sql are strings")
+    local ok = true
+    local err
+    db.connect()
+    for _, v in ipairs(migrations) do
+        local sql = to.trimmed(v)
+        if #sql > 0 then
+            ok, err = db.run(sql)
+            if tonumber(err) then
+                print(c.onblue, c.yellow, c.bright, "        ==> ", err .. " query ok", c.reset)
+            else
+                print(c.onred, c.white, c.bright, "        >>>> ", tbl.dump(err), c.reset)
+                break
+            end
+        end
+    end
+    db.disconnect()
+    if not ok and err ~= 0 then
+        return false
+    end
+    return true
+end
 local usage = function()
     io.stderr:write([==[
 Usage: 
@@ -82,7 +105,7 @@ return function(db)
                 scripts = require(file)
             end
             if #scripts > 0 then
-                if not model.migrate(db, scripts) then
+                if not migrate(db, scripts) then
                     error(c.red .. " Error in " .. fname .. c.reset)
                 end
             else

@@ -1,7 +1,82 @@
 var to = require('losty.to')
 var str = require('losty.str')
+var tbl = require('losty.tbl')
 var c = require('losty.exec')
-var model = require('losty.sql.model')
+
+--```
+var migrate = \db, migrations ->
+	assert('table' == type(migrations), "migration schemas must be a table of { [index] = [[sql]] } where index is sortable")
+	
+	db.connect()
+	var e = db.one("from pg_class where relname = 'migrations'")
+	if not e or not e[1]
+		print("Creating migration index table...")
+		e = db.run("CREATE TABLE migrations (index varchar(16) primary key)")
+		if not e
+			db.disconnect()
+			return false
+
+	var exists = {}
+	e = db.select("index FROM migrations")
+	if e 
+		for _, row in ipairs(e)
+			exists[row.index] = true
+
+	var tuples = {}
+	for k, v in pairs(migrations) do
+		table.insert(tuples, { k, v })
+	table.sort(tuples, \a, b -> return a[1] < b[1])
+
+	for _, v in ipairs(tuples)
+		var index, sql = tostring(v[1]), v[2]
+		if not exists[index]
+			print("Migrating ", index)
+			var ok, err = db.run(sql)
+			if ok 
+				db.insert("migrations (index) VALUES (:?)", index)
+			else
+				print(err)
+				break
+		else
+			print(index, " already migrated")
+	
+	db.disconnect()
+	return true
+
+--```
+
+
+var migrate = \db, migrations ->
+	assert('table' == type(migrations), "migration schemas must be an array of {sql, ...} where sql are strings")
+	
+	var ok = true
+	var err
+	db.connect()
+	for _, v in ipairs(migrations)
+		var sql = to.trimmed(v)
+		if #sql > 0
+			ok, err = db.run(sql)
+			if tonumber(err) -- err is 0 when no statement to execute, maybe bcoz all are comments
+				print(c.onblue, c.yellow, c.bright, "        ==> ", err .. ' query ok', c.reset)
+			else
+				print(c.onred, c.white, c.bright, "        >>>> ", tbl.dump(err), c.reset)
+				break
+			
+
+	db.disconnect()
+	if not ok and err ~= 0
+		return false
+	return true
+
+
+
+
+
+
+
+
+
+
 
 var usage = ->
 	io.stderr.write(@, ```
@@ -83,7 +158,7 @@ return \db ->
 				scripts = require(file)
 			
 			if #scripts > 0
-				if not model.migrate(db, scripts)
+				if not migrate(db, scripts)
 					error(c.red .. " Error in " .. fname .. c.reset)
 			else
 				var msg = fname .. " is empty."

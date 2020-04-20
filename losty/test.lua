@@ -59,11 +59,11 @@ return function(db, func)
         tests = 0
         fails = 0
         errors = 0
-        local title = groups .. ". [[ " .. (desc or "?? no name ??") .. " ]]"
+        local title = c.bright .. c.cyan .. groups .. ". " .. c.blue .. "[[ " .. (desc or "?? no name ??") .. " ]]"
         if commit then
             title = title .. c.cyan .. " - WITH COMMIT"
         end
-        print(c.blue .. c.bright .. "                                         " .. title .. c.reset)
+        print("                                         " .. title .. c.reset)
         if q then
             q.begin()
         end
@@ -106,5 +106,5 @@ return function(db, func)
         q.disconnect()
     end
     local color = groups - passes > 0 and c.magenta or c.yellow
-    print(color .. "                                         === " .. groups .. " test cases: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
+    print(color .. "                                         === " .. groups .. " cases: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
 end
