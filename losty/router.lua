@@ -49,7 +49,7 @@ local router = function()
     end
     local check = function(pattern)
         if not str_find(pattern, "[%.%%]") and not str_find(pattern, "%b[]") then
-            return false, "'" .. pattern .. "' does not have pattern"
+            return false, "'" .. pattern .. "' is not a pattern"
         end
         if str_find(pattern, "[:#]") then
             return false, "'" .. pattern .. "' may not match any url"

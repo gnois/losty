@@ -164,20 +164,21 @@ var basic = {
 
 
 
-return setmetatable({
-	cookies = setmetatable({}, {
-		__index = \_, name ->
-			var v = ngx.var['cookie_' .. name]
-			return v and ngx.unescape_uri(v)
+return ->
+	return setmetatable({
+		cookies = setmetatable({}, {
+			__index = \_, name ->
+				var v = ngx.var['cookie_' .. name]
+				return v and ngx.unescape_uri(v)
+		})
+	}, {
+		__metatable = false
+		
+		, __index = \tbl, key ->
+			var f = basic[key]
+			if f
+				var v = f(tbl)
+				-- memoize
+				tbl[key] = v
+				return v
 	})
-}, {
-	__metatable = false
-	
-	, __index = \tbl, key ->
-		var f = basic[key]
-		if f
-			var v = f(tbl)
-			-- memoize
-			tbl[key] = v
-			return v
-})

@@ -87,7 +87,7 @@ var router = ->
 
 	var check = \pattern ->
 		if not str_find(pattern, '[%.%%]') and not str_find(pattern, '%b[]')
-			return false, "'" .. pattern .. "' does not have pattern"
+			return false, "'" .. pattern .. "' is not a pattern"
 
 		if str_find(pattern, '[:#]')
 			return false, "'" .. pattern .. "' may not match any url"

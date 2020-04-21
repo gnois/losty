@@ -61,7 +61,7 @@ var headers = setmetatable({
 -- it cannot be deleted from browser if any of these mismatch
 -- domain shd be nil, to exclude subdomain. if specified, subdomains are always included
 -- https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie
-var jar = {}
+var jar
 var cookie = \name, httponly, domain, path ->
 	if not name
 		error("cookie must have a name")
@@ -143,67 +143,70 @@ var bake = \c ->
 
 
 
-return setmetatable({
-	headers = headers
-	, cookie = cookie
-	, cookies = jar
+return ->
+	jar = {}
 	
-	-- shortcut header functions
-	-- no caching
-	, nocache = ->
-		headers["Cache-Control"] = "no-cache"   -- no-store ? github.com does not have max-age=0, s-maxage=0, must-revalidate, proxy-revalidate
+	return setmetatable({
+		headers = headers
+		, cookie = cookie
+		, cookies = jar
 		
-	-- caching headers (in seconds)
-	, cache = \sec ->
-		-- should check if status equals 200, 201, 204, 206, 301, 302, 303, 304, or 307
-		if ngx.status < 400
-			-- http://nginx.org/en/docs/http/ngx_http_headers_module.html#expires
-			headers["Cache-Control"] = "max-age=" .. sec     -- 'public' by default
-			-- http://www.freshblurbs.com/blog/2015/12/12/http-cache-restful-apis.html
-			-- headers["Expires"] = ngx.http_time(ngx.time() + sec)
+		-- shortcut header functions
+		-- no caching
+		, nocache = ->
+			headers["Cache-Control"] = "no-cache"   -- no-store ? github.com does not have max-age=0, s-maxage=0, must-revalidate, proxy-revalidate
+			
+		-- caching headers (in seconds)
+		, cache = \sec ->
+			-- should check if status equals 200, 201, 204, 206, 301, 302, 303, 304, or 307
+			if ngx.status < 400
+				-- http://nginx.org/en/docs/http/ngx_http_headers_module.html#expires
+				headers["Cache-Control"] = "max-age=" .. sec     -- 'public' by default
+				-- http://www.freshblurbs.com/blog/2015/12/12/http-cache-restful-apis.html
+				-- headers["Expires"] = ngx.http_time(ngx.time() + sec)
 
-	--``
-	See 
-	https://en.wikipedia.org/wiki/HTTP_302, first paragraph
-	https://en.wikipedia.org/wiki/HTTP_303
-	http://stackoverflow.com/questions/5129076/after-a-post-should-i-do-a-302-or-a-303-redirect
-	
-	, redirect = \url, permanent ->
-		if permanent
-			ngx.status = ngx.HTTP_MOVED_PERMANENTLY
-		else
-			ngx.status = ngx.HTTP_MOVED_TEMPORARILY
-		headers['Location'] = url
-	--``
+		--``
+		See 
+		https://en.wikipedia.org/wiki/HTTP_302, first paragraph
+		https://en.wikipedia.org/wiki/HTTP_303
+		http://stackoverflow.com/questions/5129076/after-a-post-should-i-do-a-302-or-a-303-redirect
+		
+		, redirect = \url, permanent ->
+			if permanent
+				ngx.status = ngx.HTTP_MOVED_PERMANENTLY
+			else
+				ngx.status = ngx.HTTP_MOVED_TEMPORARILY
+			headers['Location'] = url
+		--``
 
-	, redirect = \url, same_method ->
-		if same_method   -- if request method is POST, use POST again to get the new resource
-			ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
-		else -- always use GET to get the new resource
-			ngx.status = ngx.HTTP_SEE_OTHER
-		headers['Location'] = url
+		, redirect = \url, same_method ->
+			if same_method   -- if request method is POST, use POST again to get the new resource
+				ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
+			else -- always use GET to get the new resource
+				ngx.status = ngx.HTTP_SEE_OTHER
+			headers['Location'] = url
 
 
-	, send = ->
-		var arr, n = {}, 0
-		for _, c in pairs(jar)
-			n = n + 1
-			arr[n] = bake(c)
-		if n > 0
-			headers['Set-Cookie'] = arr
-		ngx.send_headers()
+		, send = ->
+			var arr, n = {}, 0
+			for _, c in pairs(jar)
+				n = n + 1
+				arr[n] = bake(c)
+			if n > 0
+				headers['Set-Cookie'] = arr
+			ngx.send_headers()
 
-}, {
-	__metatable = false
-	
-	, __index = \_, k ->
-		if 'status' == k
-			return ngx.status
+	}, {
+		__metatable = false
+		
+		, __index = \_, k ->
+			if 'status' == k
+				return ngx.status
 
-	, __newindex = \_, k, v ->
-		if 'status' == k
-			ngx.status = v
-})
+		, __newindex = \_, k, v ->
+			if 'status' == k
+				ngx.status = v
+	})
 
 
 

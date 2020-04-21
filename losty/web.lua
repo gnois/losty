@@ -6,9 +6,9 @@ local status = require("losty.status")
 local accept = require("losty.accept")
 local router = require("losty.router")
 local dispatch = require("losty.dispatch")
+local now = require("losty.now")
 local req = require("losty.req")
 local res = require("losty.res")
-local now = require("losty.now")
 local sec, usec = now()
 math.randomseed(sec / usec * 123456789)
 local HTML = "text/html"
@@ -38,57 +38,59 @@ return function()
         return method == "HEAD" or code == 204 or code == 205 or code == 304
     end
     local run = function(errors)
+        local q = req()
+        local r = res()
         local body
-        local method = req.method
+        local method = q.method
         if method == "HEAD" then
             method = "GET"
         end
-        local handlers, matches = rt.match(method, req.uri)
+        local handlers, matches = rt.match(method, q.uri)
         if handlers then
-            req.match = matches
+            q.match = matches
             local ok, trace = xpcall(function()
-                body = dispatch(handlers, req, res)
+                body = dispatch(handlers, q, r)
             end, function(err)
                 return debug.traceback(err, 2)
             end)
             if ok then
-                if res.status == 0 then
+                if r.status == 0 then
                     error("response status required", 2)
                 end
-                if res.status >= 200 and res.status < 300 or body then
-                    if not must_no_body(req.method, res.status) and not res.headers["Content-Type"] then
+                if r.status >= 200 and r.status < 300 or body then
+                    if not must_no_body(q.method, r.status) and not r.headers["Content-Type"] then
                         error("Content-Type header required", 2)
                     end
                 end
             else
-                res.status = 500
+                r.status = 500
                 ngx.log(ngx.ERR, trace)
             end
         else
-            res.status = 404
+            r.status = 404
         end
-        if not body and res.status >= 400 then
-            local pref = accept(req.headers["Accept"], {HTML, JSON})
+        if not body and r.status >= 400 then
+            local pref = accept(q.headers["Accept"], {HTML, JSON})
             local ctype = tostring(pref[1])
-            if req.method ~= "HEAD" then
+            if q.method ~= "HEAD" then
                 if ctype == JSON then
-                    body = json.encode({fail = status(res.status)})
+                    body = json.encode({fail = status(r.status)})
                 else
                     if errors == true then
-                        ngx.exit(res.status)
+                        ngx.exit(r.status)
                     elseif errors then
-                        body = errors[res.status]
+                        body = errors[r.status]
                     end
                     if not body then
                         ctype = "text/plain"
-                        body = status(res.status)
+                        body = status(r.status)
                     end
                 end
             end
-            res.headers["Content-Type"] = ctype
+            r.headers["Content-Type"] = ctype
         end
-        res.send()
-        if body and not must_no_body(req.method, res.status) then
+        r.send()
+        if body and not must_no_body(q.method, r.status) then
             if "function" == type(body) then
                 local co = coroutine.create(body)
                 repeat

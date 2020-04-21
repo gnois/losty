@@ -33,7 +33,7 @@ end, __newindex = function(_, k, v)
         push(ngx.header, k, v)
     end
 end})
-local jar = {}
+local jar
 local cookie = function(name, httponly, domain, path)
     if not name then
         error("cookie must have a name")
@@ -98,43 +98,46 @@ local bake = function(c)
     end
     return table.concat(z, ";")
 end
-return setmetatable({
-    headers = headers
-    , cookie = cookie
-    , cookies = jar
-    , nocache = function()
-        headers["Cache-Control"] = "no-cache"
-    end
-    , cache = function(sec)
-        if ngx.status < 400 then
-            headers["Cache-Control"] = "max-age=" .. sec
+return function()
+    jar = {}
+    return setmetatable({
+        headers = headers
+        , cookie = cookie
+        , cookies = jar
+        , nocache = function()
+            headers["Cache-Control"] = "no-cache"
         end
-    end
-    , redirect = function(url, same_method)
-        if same_method then
-            ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
-        else
-            ngx.status = ngx.HTTP_SEE_OTHER
+        , cache = function(sec)
+            if ngx.status < 400 then
+                headers["Cache-Control"] = "max-age=" .. sec
+            end
         end
-        headers["Location"] = url
-    end
-    , send = function()
-        local arr, n = {}, 0
-        for _, c in pairs(jar) do
-            n = n + 1
-            arr[n] = bake(c)
+        , redirect = function(url, same_method)
+            if same_method then
+                ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
+            else
+                ngx.status = ngx.HTTP_SEE_OTHER
+            end
+            headers["Location"] = url
         end
-        if n > 0 then
-            headers["Set-Cookie"] = arr
+        , send = function()
+            local arr, n = {}, 0
+            for _, c in pairs(jar) do
+                n = n + 1
+                arr[n] = bake(c)
+            end
+            if n > 0 then
+                headers["Set-Cookie"] = arr
+            end
+            ngx.send_headers()
         end
-        ngx.send_headers()
-    end
-}, {__metatable = false, __index = function(_, k)
-    if "status" == k then
-        return ngx.status
-    end
-end, __newindex = function(_, k, v)
-    if "status" == k then
-        ngx.status = v
-    end
-end})
+    }, {__metatable = false, __index = function(_, k)
+        if "status" == k then
+            return ngx.status
+        end
+    end, __newindex = function(_, k, v)
+        if "status" == k then
+            ngx.status = v
+        end
+    end})
+end
