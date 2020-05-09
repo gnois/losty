@@ -25,6 +25,14 @@ K.exec = \cmd ->
 	return false, cmd .. " failed, exit code: " .. tostring(code)
 
 
+-- usage:
+-- var file, err = io.open(script_path() .. "file.txt", "r")
+-- if file ...
+K.script_path = ->
+	var path = string.sub(debug.getinfo(2, "S").source, 2)
+	return string.match(path, "(.*/)")
+
+
 var colors = {
 	reset = 0
 	, clear = 0

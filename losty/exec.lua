@@ -16,6 +16,10 @@ K.exec = function(cmd)
     end
     return false, cmd .. " failed, exit code: " .. tostring(code)
 end
+K.script_path = function()
+    local path = string.sub(debug.getinfo(2, "S").source, 2)
+    return string.match(path, "(.*/)")
+end
 local colors = {
     reset = 0
     , clear = 0
