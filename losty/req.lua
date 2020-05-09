@@ -149,11 +149,12 @@ local basic = {
         return ngx.encode_base64(t.id_binary)
     end
 }
+local cookies = setmetatable({}, {__index = function(_, name)
+    local v = ngx.var["cookie_" .. name]
+    return v and ngx.unescape_uri(v)
+end})
 return function()
-    return setmetatable({cookies = setmetatable({}, {__index = function(_, name)
-        local v = ngx.var["cookie_" .. name]
-        return v and ngx.unescape_uri(v)
-    end})}, {__metatable = false, __index = function(tbl, key)
+    return setmetatable({cookies = cookies}, {__metatable = false, __index = function(tbl, key)
         local f = basic[key]
         if f then
             local v = f(tbl)

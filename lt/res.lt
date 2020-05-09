@@ -54,6 +54,44 @@ var headers = setmetatable({
 })
 
 
+-- shortcut header functions
+
+-- no caching
+var nocache = ->
+	headers["Cache-Control"] = "no-cache"   -- no-store ? github.com does not have max-age=0, s-maxage=0, must-revalidate, proxy-revalidate
+	
+-- set status and caching (in seconds)
+var cache = \status, sec ->
+	ngx.status = status
+	-- should check if status equals 200, 201, 204, 206, 301, 302, 303, 304, or 307
+	if status < 400
+		-- http://nginx.org/en/docs/http/ngx_http_headers_module.html#expires
+		headers["Cache-Control"] = "max-age=" .. sec     -- 'public' by default
+		-- http://www.freshblurbs.com/blog/2015/12/12/http-cache-restful-apis.html
+		-- headers["Expires"] = ngx.http_time(ngx.time() + sec)
+
+--``
+See 
+https://en.wikipedia.org/wiki/HTTP_302, first paragraph
+https://en.wikipedia.org/wiki/HTTP_303
+http://stackoverflow.com/questions/5129076/after-a-post-should-i-do-a-302-or-a-303-redirect
+
+var redirect = \url, permanent ->
+	if permanent
+		ngx.status = ngx.HTTP_MOVED_PERMANENTLY
+	else
+		ngx.status = ngx.HTTP_MOVED_TEMPORARILY
+	headers['Location'] = url
+--``
+
+var redirect = \url, same_method ->
+	if same_method   -- if request method is POST, use POST again to get the new resource
+		ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
+	else -- always use GET to get the new resource
+		ngx.status = ngx.HTTP_SEE_OTHER
+	headers['Location'] = url
+
+
 -- see http://www.nczonline.net/blog/2009/05/05/http-cookies-explained/ section 'Cookie maintenance and lifecycle'
 -- https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
 
@@ -143,58 +181,29 @@ var bake = \c ->
 
 
 
+-- send headers
+var send = ->
+	var arr, n = {}, 0
+	for _, c in pairs(jar)
+		n = n + 1
+		arr[n] = bake(c)
+	if n > 0
+		headers['Set-Cookie'] = arr
+	ngx.send_headers()
+
+
+
 return ->
 	jar = {}
 	
 	return setmetatable({
 		headers = headers
+		, nocache = nocache
+		, cache = cache
 		, cookie = cookie
 		, cookies = jar
-		
-		-- shortcut header functions
-		-- no caching
-		, nocache = ->
-			headers["Cache-Control"] = "no-cache"   -- no-store ? github.com does not have max-age=0, s-maxage=0, must-revalidate, proxy-revalidate
-			
-		-- caching headers (in seconds)
-		, cache = \sec ->
-			-- should check if status equals 200, 201, 204, 206, 301, 302, 303, 304, or 307
-			if ngx.status < 400
-				-- http://nginx.org/en/docs/http/ngx_http_headers_module.html#expires
-				headers["Cache-Control"] = "max-age=" .. sec     -- 'public' by default
-				-- http://www.freshblurbs.com/blog/2015/12/12/http-cache-restful-apis.html
-				-- headers["Expires"] = ngx.http_time(ngx.time() + sec)
-
-		--``
-		See 
-		https://en.wikipedia.org/wiki/HTTP_302, first paragraph
-		https://en.wikipedia.org/wiki/HTTP_303
-		http://stackoverflow.com/questions/5129076/after-a-post-should-i-do-a-302-or-a-303-redirect
-		
-		, redirect = \url, permanent ->
-			if permanent
-				ngx.status = ngx.HTTP_MOVED_PERMANENTLY
-			else
-				ngx.status = ngx.HTTP_MOVED_TEMPORARILY
-			headers['Location'] = url
-		--``
-
-		, redirect = \url, same_method ->
-			if same_method   -- if request method is POST, use POST again to get the new resource
-				ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
-			else -- always use GET to get the new resource
-				ngx.status = ngx.HTTP_SEE_OTHER
-			headers['Location'] = url
-
-
-		, send = ->
-			var arr, n = {}, 0
-			for _, c in pairs(jar)
-				n = n + 1
-				arr[n] = bake(c)
-			if n > 0
-				headers['Set-Cookie'] = arr
-			ngx.send_headers()
+		, redirect = redirect
+		, send = send
 
 	}, {
 		__metatable = false

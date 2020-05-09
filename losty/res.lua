@@ -33,6 +33,23 @@ end, __newindex = function(_, k, v)
         push(ngx.header, k, v)
     end
 end})
+local nocache = function()
+    headers["Cache-Control"] = "no-cache"
+end
+local cache = function(status, sec)
+    ngx.status = status
+    if status < 400 then
+        headers["Cache-Control"] = "max-age=" .. sec
+    end
+end
+local redirect = function(url, same_method)
+    if same_method then
+        ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
+    else
+        ngx.status = ngx.HTTP_SEE_OTHER
+    end
+    headers["Location"] = url
+end
 local jar
 local cookie = function(name, httponly, domain, path)
     if not name then
@@ -98,39 +115,27 @@ local bake = function(c)
     end
     return table.concat(z, ";")
 end
+local send = function()
+    local arr, n = {}, 0
+    for _, c in pairs(jar) do
+        n = n + 1
+        arr[n] = bake(c)
+    end
+    if n > 0 then
+        headers["Set-Cookie"] = arr
+    end
+    ngx.send_headers()
+end
 return function()
     jar = {}
     return setmetatable({
         headers = headers
+        , nocache = nocache
+        , cache = cache
         , cookie = cookie
         , cookies = jar
-        , nocache = function()
-            headers["Cache-Control"] = "no-cache"
-        end
-        , cache = function(sec)
-            if ngx.status < 400 then
-                headers["Cache-Control"] = "max-age=" .. sec
-            end
-        end
-        , redirect = function(url, same_method)
-            if same_method then
-                ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
-            else
-                ngx.status = ngx.HTTP_SEE_OTHER
-            end
-            headers["Location"] = url
-        end
-        , send = function()
-            local arr, n = {}, 0
-            for _, c in pairs(jar) do
-                n = n + 1
-                arr[n] = bake(c)
-            end
-            if n > 0 then
-                headers["Set-Cookie"] = arr
-            end
-            ngx.send_headers()
-        end
+        , redirect = redirect
+        , send = send
     }, {__metatable = false, __index = function(_, k)
         if "status" == k then
             return ngx.status

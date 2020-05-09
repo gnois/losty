@@ -163,17 +163,18 @@ var basic = {
 }
 
 
+var cookies = setmetatable({}, {
+	__index = \_, name ->
+		var v = ngx.var['cookie_' .. name]
+		return v and ngx.unescape_uri(v)
+})
+
 
 return ->
 	return setmetatable({
-		cookies = setmetatable({}, {
-			__index = \_, name ->
-				var v = ngx.var['cookie_' .. name]
-				return v and ngx.unescape_uri(v)
-		})
+		cookies = cookies
 	}, {
 		__metatable = false
-		
 		, __index = \tbl, key ->
 			var f = basic[key]
 			if f

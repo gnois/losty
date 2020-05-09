@@ -1,6 +1,31 @@
 var bit = require('bit')
 
+-- Returns an array of strings, each of which is a substring of s
+-- formed by splitting on boundaries formed by `pattern`.
+var split = \str, pattern, plain ->
+	var arr = {}
+	if pattern and #pattern > 0
+		var pos = 1
+		for st, sp in -> return string.find(str, pattern, pos, plain)
+			table.insert(arr, string.sub(str, pos, st-1))
+			pos = sp + 1
+		table.insert(arr, string.sub(str, pos))
+	return arr
+
+
 var K = {}
+
+-- simple template generation
+K.render = \str, data ->
+	-- extra parenthesis needed coz string.gsub has multiple returns
+	return (string.gsub(str, "{([_%w%.]*)}", \s ->
+		var keys = split(s, "%.")
+		var v = data[keys[1]]
+		for i = 2, #keys
+			v = v[keys[i]]
+		return v or '{'.. s ..'}'
+	))
+
 
 K.hash = \str ->
 	var hash = 0
@@ -28,17 +53,8 @@ K.starts = \str, part ->
 K.ends = \str, part ->
 	return part == '' or string.sub(str, -string.len(part)) == part
 
--- Returns an array of strings, each of which is a substring of s
--- formed by splitting on boundaries formed by `pattern`.
-K.split = \str, pattern, plain ->
-	var arr = {}
-	if pattern and #pattern > 0
-		var pos = 1
-		for st, sp in -> return string.find(str, pattern, pos, plain)
-			table.insert(arr, string.sub(str, pos, st-1))
-			pos = sp + 1
-		table.insert(arr, string.sub(str, pos))
-	return arr
+
+K.split = split
 
 -- Same as split but returns iterator instead
 K.gsplit = \str, pattern, plain ->
@@ -51,7 +67,8 @@ K.gsplit = \str, pattern, plain ->
 			if st
 				return string.sub(str, pos, st-1)
 			return string.sub(str, pos)
-	
+
+
 -- Find the last instance of a pattern in a string
 K.findlast = \str, pattern, plain ->
 	var curr = 0
