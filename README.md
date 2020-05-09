@@ -171,6 +171,26 @@ Response headers including cookies are accumulated and finally set into `ngx.hea
 It is not recommended to call `ngx.flush()` or `ngx.eof()` in handlers, unless you want to short circuit Losty dispatcher and return control to nginx immediately. In such case, you may also use `return ngx.exit(status)`. This is useful for example to use error_page directive in nginx.conf instead of using Losty generated error page.
 
 
+### Session
+
+Session is implemented via a pair of cookies, one bears the encrypted data and the other is the signature.
+
+```
+var session = require('losty.sess')
+var sess = session('somename', "This IS secret", "this-is_key")
+
+w.post('/login', function(q, r)
+	r.headers["Content-Type"] = "application/json"
+	var s = sess(q, r, 3600 * 24 * 7) -- age 7 days
+	s.data = "userid"
+	s.extra = {other = "info"}
+	r.redirect('/')
+)
+```
+
+From the example, the encrypted cookie is marked HTTPonly, while the signature cookie has the given name 'somename', and is javascript readable.
+This allows javascript to detect cookie changes, and act accordingly without additional server round trip.
+
 
 ### Routes
 

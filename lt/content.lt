@@ -10,14 +10,14 @@ var HTML = "text/html"
 var JSON = "application/json"
 
 var reject = \_, res ->
-	res.status = 406
+	res.status = ngx.HTTP_NOT_ACCEPTABLE
 	-- web.run() already provides desc for status >= 400
 
 
 -- Once a route respond differently based on HTTP Accept header, shd set Vary: Accept for all responses
 -- See https://www.fastly.com/blog/best-practices-for-using-the-vary-header
 -- This actually causes the browser to not cache the content of all responses
-var dual = \vary -> 
+var dual = \vary, as_array -> 
 	return \... ->
 		var hn = {...}
 		
@@ -37,7 +37,9 @@ var dual = \vary ->
 			-- See http://stackoverflow.com/questions/1975416/what-is-the-function-of-the-vary-accept-http-header
 			var pref = choose(req.headers["Accept"], {HTML, JSON})
 			if tostring(pref[1]) == JSON
-				-- handler shd call   json.encode_empty_table_as_object(true/false)
+				-- return object by default
+				json.encode_empty_table_as_object(not as_array)
+				-- or handlers can call   json.encode_empty_table_as_object() to override
 				var out = req.next()
 				--require('losty.tbl').show(out)
 				res.headers["Content-Type"] = JSON
@@ -58,7 +60,7 @@ var dual = \vary ->
 					-- https://en.wikipedia.org/wiki/HTTP_ETag#Strong_and_weak_validation
 					etag = 'W/"' .. etag .. '"'
 					if etag == req.headers["If-None-Match"]
-						res.status = 304
+						res.status = ngx.HTTP_NOT_MODIFIED
 						return -- no body
 					
 					res.headers["ETag"] = etag
@@ -73,13 +75,13 @@ var dual = \vary ->
 --   https://devcenter.heroku.com/articles/jax-rs-http-caching
 --   https://devcenter.heroku.com/articles/increasing-application-performance-with-http-cache-headers
 
+
 -- add necessary headers
 var html = \req, res ->
 	-- see nginx_gzip.conf, gzip_vary on;
 	-- res.headers["Vary"] = "Accept-Encoding"
 	res.headers["Content-Type"] = HTML
-	-- we don't want to go inside iframe
-	-- res.headers["X-Frame-Options"] = "deny"  -- can be set in nginx.conf   add_header X-Frame-Options "SAMEORIGIN" always;   or "deny" always;
+	-- res.headers["X-Frame-Options"] = "deny"  -- we don't want to go inside iframe, can be set in nginx.conf  add_header X-Frame-Options "SAMEORIGIN" always;   or "deny" always;
 	-- browser must not cache html. Else Login then Back button loses the credential
 	res.nocache()
 	return req.next()
@@ -92,7 +94,7 @@ var form = \req, res ->
 		return req.next(val)
 	-- http://stackoverflow.com/questions/7323958/are-put-and-post-requests-required-expected-to-have-a-request-body
 	-- js client should not PUT or POST without a body
-	res.status = 400 -- bad request
+	res.status = ngx.HTTP_BAD_REQUEST
 	return { fail = fail or req.method .. " should have request body" }
 
 
@@ -100,11 +102,13 @@ var form = \req, res ->
 return {
 	html = html
 	, form = form
-	-- vary: false - no Vary header, true - url generates text/html and application/json response depending on Accept headers
+	-- vary: false - no Vary header
+	-- url generates text/html and application/json response depending on Accept headers
 	-- takes a list of handlers, to preload json (for the sake of Google SEO)
-	-- Note that reject will only be called if html() is at the last parameter, meaning no more json handler
-	-- See /join to understand usage of dual result based on Accept type
-	, dual = \vary, ... -> return dual(vary)(html, ...), reject
-	, json = dual(false)(reject)
+	-- Note that reject will only be called if dual() is the last handler, meaning no more json handler
+	, dual = \vary, as_array, ... ->
+		return dual(vary, as_array)(html, ...), reject
+	, json = \as_array ->
+		return dual(false, as_array)(reject)
 	, reject = reject
 }

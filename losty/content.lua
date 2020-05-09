@@ -11,9 +11,9 @@ local dispatch = require("losty.dispatch")
 local HTML = "text/html"
 local JSON = "application/json"
 local reject = function(_, res)
-    res.status = 406
+    res.status = ngx.HTTP_NOT_ACCEPTABLE
 end
-local dual = function(vary)
+local dual = function(vary, as_array)
     return function(...)
         local hn = {...}
         return function(req, res, ...)
@@ -22,6 +22,7 @@ local dual = function(vary)
             end
             local pref = choose(req.headers["Accept"], {HTML, JSON})
             if tostring(pref[1]) == JSON then
+                json.encode_empty_table_as_object(not as_array)
                 local out = req.next()
                 res.headers["Content-Type"] = JSON
                 out = json.encode(out)
@@ -35,7 +36,7 @@ local dual = function(vary)
                     local etag = str.to_hex(digest)
                     etag = "W/\"" .. etag .. "\""
                     if etag == req.headers["If-None-Match"] then
-                        res.status = 304
+                        res.status = ngx.HTTP_NOT_MODIFIED
                         return 
                     end
                     res.headers["ETag"] = etag
@@ -56,9 +57,11 @@ local form = function(req, res)
     if val or req.method == "DELETE" then
         return req.next(val)
     end
-    res.status = 400
+    res.status = ngx.HTTP_BAD_REQUEST
     return {fail = fail or req.method .. " should have request body"}
 end
-return {html = html, form = form, dual = function(vary, ...)
-    return dual(vary)(html, ...), reject
-end, json = dual(false)(reject), reject = reject}
+return {html = html, form = form, dual = function(vary, as_array, ...)
+    return dual(vary, as_array)(html, ...), reject
+end, json = function(as_array)
+    return dual(false, as_array)(reject)
+end, reject = reject}
