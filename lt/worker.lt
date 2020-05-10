@@ -1,0 +1,4 @@
+-- call in init_worker_by_lua
+ngx.update_time()
+var seed = ((ngx.now() % 1) * 11111 % 1) * 11111 * ngx.worker.pid() -- shift left to take the decimals for entropy
+math.randomseed(seed)

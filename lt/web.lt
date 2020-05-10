@@ -3,106 +3,103 @@ var status = require('losty.status')
 var accept = require('losty.accept')
 var router = require('losty.router')
 var dispatch = require('losty.dispatch')
-var now = require('losty.now')
 var req = require('losty.req')
 var res = require('losty.res')
-
--- run once, for later math.random
-var sec, usec = now()
-math.randomseed(sec / usec * 123456789) -- ngx.time() maybe cached and stay the same for multiple worker process
 
 var HTML = "text/html"
 var JSON = "application/json"
 
+-- why return function? because we want to separate router if used in different nginx location block
+return ->
+	var rt = router()
 
-var rt = router()
-var route = \prefix ->
-	var r = {}
-	for _, method in ipairs({'get', 'post', 'put', 'delete', 'patch', 'options'}) -- 'trace', 'connect'
-		r[method] = \path, f, ... ->
-			if prefix
-				path = prefix .. path
-			rt.set(string.upper(method), path, f, ...)
-	return r
-
-
-var must_no_body = \method, code ->
-	return method == 'HEAD' or code == 204 or code == 205 or code == 304
+	var route = \prefix ->
+		var r = {}
+		for _, method in ipairs({'get', 'post', 'put', 'delete', 'patch', 'options'}) -- 'trace', 'connect'
+			r[method] = \path, f, ... ->
+				if prefix and prefix ~= '/'
+					path = prefix .. path
+				rt.set(string.upper(method), path, f, ...)
+		return r
 
 
--- errors will only be used for HTTP status >= 400 and 
--- can be true, nil or table indexed by HTTP status number, eg: { [400] = "<html> error message markup </html>" }
-var run = \errors ->
-	var q = req()
-	var r = res()
-	var body
-	var method = q.method
-	-- so that we don't need to register HEAD path
-	if method == 'HEAD'
-		method = 'GET'
-	var handlers, matches = rt.match(method, q.uri)
-	if handlers
-		q.match = matches
-		var ok, trace = xpcall( ->
-			body = dispatch(handlers, q, r)
-		, \err ->
-			return debug.traceback(err, 2)
-		)
+	var must_no_body = \method, code ->
+		return method == 'HEAD' or code == 204 or code == 205 or code == 304
 
-		if ok
-			-- ngx.status defaults to 0
-			if r.status == 0
-				error("response status required", 2)
-			-- status < 200 or >= 300 can have no content, so no content-type needed
-			if r.status >= 200 and r.status < 300 or body
-				if not must_no_body(q.method, r.status) and not r.headers['Content-Type']
-					error("Content-Type header required", 2)
-		else
-			r.status = 500
-			ngx.log(ngx.ERR, trace)
-	else
-		r.status = 404
 
-	-- for status 400 above without body:
-	-- 1. if json is requested, provide default response 
-	-- 2. if text/* is requested
-		-- if errors is true, fall back to nginx error_page
-		-- else if errors is table, use error[status] html
-		-- else generate text/plain error msg
-	if not body and r.status >= 400
-		var pref = accept(q.headers["Accept"], {HTML, JSON})
-		var ctype = tostring(pref[1])
-		if q.method ~= 'HEAD'
-			if ctype == JSON
-				body = json.encode({ fail = status(r.status) })
+	-- errors will only be used for HTTP status >= 400 and 
+	-- can be true, nil or table indexed by HTTP status number, eg: { [400] = "<html> error message markup </html>" }
+	var run = \errors ->
+		var q = req()
+		var r = res()
+		var body
+		var method = q.method
+		-- so that we don't need to register HEAD path
+		if method == 'HEAD'
+			method = 'GET'
+		var handlers, matches = rt.match(method, q.uri)
+		if handlers
+			q.match = matches
+			var ok, trace = xpcall( ->
+				body = dispatch(handlers, q, r)
+			, \err ->
+				return debug.traceback(err, 2)
+			)
+
+			if ok
+				-- ngx.status defaults to 0
+				if r.status == 0
+					error("response status required", 2)
+				-- status < 200 or >= 300 can have no content, so no content-type needed
+				if r.status >= 200 and r.status < 300 or body
+					if not must_no_body(q.method, r.status) and not r.headers['Content-Type']
+						error("Content-Type header required", 2)
 			else
-				if errors == true
-					ngx.exit(r.status)
-				else if errors
-					body = errors[r.status]
-			
-				if not body
-					ctype = "text/plain"
-					body = status(r.status)
-		r.headers['Content-Type'] = ctype
-
-	r.send()
-	if body and not must_no_body(q.method, r.status)
-		if 'function' == type(body)
-			var co = coroutine.create(body)
-			do
-				var ok, val = coroutine.resume(co)
-				if ok and val
-					ngx.print(val)
-					ngx.flush(true)
-			until not ok
+				r.status = 500
+				ngx.log(ngx.ERR, trace)
 		else
-			ngx.print(body)
-	ngx.eof()
+			r.status = 404
+
+		-- for status 400 above without body:
+		-- 1. if json is requested, provide default response 
+		-- 2. if text/* is requested
+			-- if errors is true, fall back to nginx error_page
+			-- else if errors is table, use error[status] html
+			-- else generate text/plain error msg
+		if not body and r.status >= 400
+			var pref = accept(q.headers["Accept"], {HTML, JSON})
+			var ctype = tostring(pref[1])
+			if q.method ~= 'HEAD'
+				if ctype == JSON
+					body = json.encode({ fail = status(r.status) })
+				else
+					if errors == true
+						ngx.exit(r.status)
+					else if errors
+						body = errors[r.status]
+				
+					if not body
+						ctype = "text/plain"
+						body = status(r.status)
+			r.headers['Content-Type'] = ctype
+
+		r.send()
+		if body and not must_no_body(q.method, r.status)
+			if 'function' == type(body)
+				var co = coroutine.create(body)
+				do
+					var ok, val = coroutine.resume(co)
+					if ok and val
+						ngx.print(val)
+						ngx.flush(true)
+				until not ok
+			else
+				ngx.print(body)
+		ngx.eof()
 
 
-return {
-	route = route
-	, run = run
-}
+	return {
+		route = route
+		, run = run
+	}
 

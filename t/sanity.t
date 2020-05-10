@@ -35,7 +35,7 @@ GET /t
 --- config
 location /t {
     content_by_lua_block {
-        local web = require('losty.web')
+        local web = require('losty.web')()
         web.run()
     }
 }
@@ -51,7 +51,7 @@ GET /t
 --- config
 location /t {
     content_by_lua_block {
-        local web = require('losty.web')
+        local web = require('losty.web')()
         local r = web.route()
         r.get('/hi', function(_, res)
             res.status = 200
@@ -69,27 +69,44 @@ location /t {
 
 
 
-=== TEST 4: make route location aware
+=== TEST 4: multiple location block and make router location aware
 --- http_config eval: $::HttpConfig
 --- config
+location / {
+    content_by_lua_block {
+        local web = require('losty.web')()
+        local w = web.route('/')
+        w.get('/hello', function(q, r)
+            r.status = 200
+            r.headers["content-type"] = "text/plain"
+            return "Hello world"
+        end)
+        w.get('/t/hi', function(q, r)
+            r.status = 200
+            r.headers["content-type"] = "text/plain"
+            return "This is hi"
+        end)
+        web.run()
+    }
+}
 location /t {
     content_by_lua_block {
-        local web = require('losty.web')
+        local web = require('losty.web')()
         local w = web.route('/t')
         w.get('/hi', function(q, r)
             r.status = 200
             r.headers["content-type"] = "text/plain"
-            return "Hello world"
+            return "Hi world"
         end)
         web.run()
     }
 }
 --- pipelined_requests eval
-["GET /t", "GET /t/hi"]
+["GET /hello", "GET /t", "GET /t/hi"]
 --- response_body eval
-["Not Found", "Hello world"]
+["Hello world", "Not Found", "Hi world"]
 --- error_code eval
-[404, 200]
+[200, 404, 200]
 
 
 
@@ -99,7 +116,7 @@ location /t {
 --- config
 location / {
     content_by_lua_block {
-        local web = require('losty.web')
+        local web = require('losty.web')()
         local w = web.route()
         w.get('/', function(_, r)
             r.status = 200

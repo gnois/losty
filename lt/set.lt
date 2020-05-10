@@ -25,8 +25,6 @@ set = \items ->
 				return set(other)
 			return set(items)
 		
-		-- before calling any()
-		--  math.randomseed(ngx.time()) called in web.web
 		, any = ->
 			var n = 0
 			var x
