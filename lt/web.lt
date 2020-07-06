@@ -22,9 +22,9 @@ return ->
 				rt.set(string.upper(method), path, f, ...)
 		return r
 
-
+	-- see https://httpstatuses.com/
 	var must_no_body = \method, code ->
-		return method == 'HEAD' or code == 204 or code == 205 or code == 304
+		return method == 'HEAD' or code < 200 or code == 204 or code == 205 or code == 304
 
 
 	-- errors will only be used for HTTP status >= 400 and 

@@ -126,10 +126,11 @@ var basic = {
 	, query = -> return ngx.var.query_string  -- raw query string
 	
 	, host = -> return ngx.var.host or ngx.var.server_name
+	-- with query string
 	, url = -> return ngx.unescape_uri(ngx.var.request_uri)
 	, scheme = -> return ngx.var.scheme or 'http'
 
-	-- without query string
+	-- without query string, and after rewrite phase
 	, uri = -> return ngx.var.uri or ''
 	, full_uri = \t ->
 		return t.scheme .. '://' .. t.host .. t.uri
@@ -144,7 +145,7 @@ var basic = {
 	, binary_remote_addr = ->
 		return ngx.var.binary_remote_addr
 	, remote_port = -> return ngx.var.remote_port
-	-- with query string
+	
 	, secure = \t ->
 		-- next version to parse
 		-- http://tools.ietf.org/html/rfc7239

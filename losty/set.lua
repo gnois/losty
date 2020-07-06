@@ -40,11 +40,7 @@ set = function(items)
             return x
         end
         , each = function()
-            local k
-            return function()
-                k = next(items, k)
-                return k
-            end
+            return next, items, nil
         end
         , length = function()
             local n = 0

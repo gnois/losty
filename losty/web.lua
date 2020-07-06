@@ -32,7 +32,7 @@ return function()
         return r
     end
     local must_no_body = function(method, code)
-        return method == "HEAD" or code == 204 or code == 205 or code == 304
+        return method == "HEAD" or code < 200 or code == 204 or code == 205 or code == 304
     end
     local run = function(errors)
         local q = req()

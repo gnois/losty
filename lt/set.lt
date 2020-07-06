@@ -35,10 +35,7 @@ set = \items ->
 			return x
 		
 		, each = ->
-			var k
-			return ->
-				k = next(items, k)
-				return k
+			return next, items, nil
 		
 		, length = ->
 			var n = 0
