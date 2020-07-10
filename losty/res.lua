@@ -99,9 +99,9 @@ local bake = function(c)
         end
     end
     local ss = c._samesite
-    if ss then
-        if "boolean" == type(ss) and ss then
-            ss = "strict"
+    if ss ~= nil then
+        if "boolean" == type(ss) then
+            ss = ss and "strict" or "none"
         end
         z[y] = "SameSite=" .. ss
         y = y + 1

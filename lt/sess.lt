@@ -67,9 +67,10 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 			return decrypt(req.cookies[name], req.cookies[name_])
 
 		-- age nil means last till browser close
+		-- samesite nil means 'lax'
 		, create = \req, res, age ->
-			make(res)(age, true, req.secure, encode64(salt))
-			return make_(res)(age, true, req.secure, encrypt)
+			make(res)(age, nil, req.secure, encode64(salt))
+			return make_(res)(age, nil, req.secure, encrypt)
 		
 		-- age -ve means delete
 		, delete = \res ->
