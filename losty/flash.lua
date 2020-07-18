@@ -31,7 +31,7 @@ local make = function(res)
 end
 local transfer = function(req, res, old, new)
     if not new then
-        new = make(res)(nil, true, req.secure, encode)
+        new = make(res)(nil, true, req.secure(), encode)
     end
     if old then
         for k, v in pairs(old) do

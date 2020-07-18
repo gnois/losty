@@ -38,7 +38,7 @@ var make = \res ->
 -- remember to set old with this return value
 var transfer = \req, res, old, new ->
 	if not new
-		new = make(res)(nil, true, req.secure, encode)
+		new = make(res)(nil, true, req.secure(), encode)
 	if old
 		-- copy old to new, so that flashes is accumulated until read
 		for k, v in pairs(old)

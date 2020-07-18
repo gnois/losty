@@ -53,11 +53,12 @@ local dual = function(...)
 end
 local form = function(req, res)
     local val, fail = body.buffered(req)
-    if val or req.method == "DELETE" then
+    local method = req.vars.request_method
+    if val or method == "DELETE" then
         return req.next(val)
     end
     res.status = ngx.HTTP_BAD_REQUEST
-    return {fail = fail or req.method .. " should have request body"}
+    return {fail = fail or method .. " should have request body"}
 end
 return {form = form, reject = reject, html = html, json = json, dual = function(...)
     return dual(html, ...), reject

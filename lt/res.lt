@@ -1,4 +1,5 @@
--- a resp is merely status and header
+-- a response is merely status and header
+
 var insert
 insert = \tb, v ->
 	if 'table' == type(v)
@@ -23,12 +24,6 @@ var push = \tb, k, v ->
 
 
 --`` unused, ngx lua will do this
-
--- underscore to dash
-var normalize = \txt ->
-	if txt
-		return string.gsub(txt, "_", "-")
-
 -- capitalize word, t.foo_bar becomes t['Foo-Bar']
 var capitalize = \txt ->
 	if txt
@@ -38,8 +33,7 @@ var capitalize = \txt ->
 -- ngx.header wrapper, store nothing
 -- headers[key] = x will append to existing header[key] array, unless x is nil
 -- for single valued header, only the last array item is sent
-var headers = setmetatable({
-}, {
+var headers = setmetatable({}, {
 	__metatable = false
 	
 	, __index = \_, k ->
@@ -75,22 +69,13 @@ See
 https://en.wikipedia.org/wiki/HTTP_302, first paragraph
 https://en.wikipedia.org/wiki/HTTP_303
 http://stackoverflow.com/questions/5129076/after-a-post-should-i-do-a-302-or-a-303-redirect
-
-var redirect = \url, permanent ->
-	if permanent
-		ngx.status = ngx.HTTP_MOVED_PERMANENTLY
-	else
-		ngx.status = ngx.HTTP_MOVED_TEMPORARILY
-	headers['Location'] = url
---``
-
+``
 var redirect = \url, same_method ->
 	if same_method   -- if request method is POST, use POST again to get the new resource
 		ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
 	else -- always use GET to get the new resource
 		ngx.status = ngx.HTTP_SEE_OTHER
 	headers['Location'] = url
-
 
 -- see http://www.nczonline.net/blog/2009/05/05/http-cookies-explained/ section 'Cookie maintenance and lifecycle'
 -- https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
@@ -119,7 +104,7 @@ var cookie = \name, httponly, domain, path ->
 		-- non identity, not needed for delete cookie: age, samesite, secure
 		-- age in secs, nil means last till browser close, -ve means delete
 		-- samesite can be bool or string [lax|strict|none]. true=strict, false=none, nil means samesite not set (defaults to 'lax' by browser)
-		-- secure is bool, use req.secure
+		-- secure is bool, use req.secure()
 		-- value can be nil, string or function. 
 		--   nil becomes empty string
 		--   if string, taken as is

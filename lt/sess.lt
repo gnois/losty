@@ -13,14 +13,6 @@ var encode64 = ngx.encode_base64
 var decode64 = ngx.decode_base64
 var hmac = ngx.hmac_sha1
 
---``
-var generate_key = \req ->
-	var addr = req.headers["CF-Connecting-IP"] or req.headers["Fastly-Client-IP"] or req.headers["Incap-Client-IP"] or req.headers["X-Real-IP"]
-	if not addr
-		addr = req.remote_addr
-	return table.concat({ req.headers["User-Agent"], req.scheme, addr })
-``
-
 
 -- size, mode, hash, rounds optional
 -- key optional
@@ -69,8 +61,9 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 		-- age nil means last till browser close
 		-- samesite nil means 'lax'
 		, create = \req, res, age ->
-			make(res)(age, nil, req.secure, encode64(salt))
-			return make_(res)(age, nil, req.secure, encrypt)
+			var secure = req.secure()
+			make(res)(age, nil, secure, encode64(salt))
+			return make_(res)(age, nil, secure, encrypt)
 		
 		-- age -ve means delete
 		, delete = \res ->

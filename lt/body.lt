@@ -10,17 +10,17 @@ var has_body = \req ->
 var urlencoded = \req ->
 	var ok, err = has_body(req)
 	if ok
-		ngx.req.read_body()
-		return ngx.req.get_post_args()
+		req.read_body()
+		return req.get_post_args()
 	return ok, err
 	
 var raw = \req ->
 	var ok, err = has_body(req)
 	if ok
-		ngx.req.read_body()
-		var data = ngx.req.get_body_data()
+		req.read_body()
+		var data = req.get_body_data()
 		if not data 
-			var file = ngx.req.get_body_file()
+			var file = req.get_body_file()
 			if file 
 				var fp
 				fp, err = io.open(file, 'r')

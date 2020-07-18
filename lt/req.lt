@@ -1,3 +1,5 @@
+-- a request wraps ngx.var and ngx.req, with helpers for userid module
+
 var bit = require('bit')
 var ffi = require('ffi')
 
@@ -36,7 +38,6 @@ var read_uid_binary = ->
 		b = bit.bswap(b)
 		c = bit.bswap(c)
 		d = bit.bswap(d)
-
 		--``
 		var printx = \x ->
 			print("0x", bit.tohex(x))
@@ -46,7 +47,6 @@ var read_uid_binary = ->
 		--printx(c)
 		--printx(d)
 		``
-		
 		var buff = {}
 		buff[1] = binary(a)
 		buff[2] = binary(b)
@@ -58,129 +58,61 @@ var read_uid_binary = ->
 		return bytes16
 
 
--- from https://github.com/hamishforbes/lua-resty-iputils
-var split_octets = \input ->
-	var pos = 0
-	var prev = 0
-	var octs = {}
 
-	for i= 1, 4
-		pos = string.find(input, ".", prev, true)
-		if pos
-			if i == 4
-				-- Should not have a match after 4 octets
-				return nil, "Invalid IP"
-			octs[i] = string.sub(input, prev, pos - 1)
-			
-		else if i == 4
-			-- Last octet, get everything to the end
-			octs[i] = string.sub(input, prev, -1)
-			break
-		else
-			return nil, "Invalid IP"
-		prev = pos + 1
-
-	return octs
-
-
-var unsign = \bin ->
-	if bin < 0
-		return 4294967296 + bin
-	return bin
-
-
-var ip2bin = \ip ->
-	if type(ip) ~= "string"
-		return nil, "IP must be a string"
-
-	var octets = split_octets(ip)
-	if not octets or #octets ~= 4
-		return nil, "Invalid IP"
-
-	-- Return the binary representation of an IP and a table of binary octets
-	var bin_octets = {}
-	var bin_ip = 0
-
-	for i, octet in ipairs(octets)
-		var bin_octet = tonumber(octet)
-		if not bin_octet or bin_octet < 0 or bin_octet > 255
-			return nil, "Invalid octet: " .. tostring(octet)
-
-		bin_octets[i] = bin_octet
-		bin_ip = bit.bor(bit.lshift(bin_octet, 8*(4-i)), bin_ip)
-
-	return unsign(bin_ip), bin_octets
-
---
--- See http://nginx.org/en/docs/http/ngx_http_core_module.html, section 'Embedded Variables'
---
--- stolen from Lapis
-var basic = {
-	socket = -> return ngx.req.socket()
-	, headers = -> return ngx.req.get_headers()
-	, method = -> return ngx.req.get_method() or ngx.var.request_method
-	, at = -> return ngx.req.start_time()
-	, version = -> return ngx.req.http_version()
-	-- querystring
-	, args = -> return ngx.req.get_uri_args() --flatten(ngx.req.get_uri_args())
-	, query = -> return ngx.var.query_string  -- raw query string
-	
-	, host = -> return ngx.var.host or ngx.var.server_name
-	-- with query string
-	, url = -> return ngx.unescape_uri(ngx.var.request_uri)
-	, scheme = -> return ngx.var.scheme or 'http'
-
-	-- without query string, and after rewrite phase
-	, uri = -> return ngx.var.uri or ''
-	, full_uri = \t ->
-		return t.scheme .. '://' .. t.host .. t.uri
-
-	-- if using ngx_http_realip_module, dont call this
-	, ip = \t ->
-		return t.headers["X-Real-IP"] or t.headers["X-Forwarded-For"] or t.headers["X-Client-IP"] or t.remote_addr
-	, ip_binary = \t ->
-		return ip2bin(t.ip)
-	, remote_addr = ->
-		return ngx.var.remote_addr
-	, binary_remote_addr = ->
-		return ngx.var.binary_remote_addr
-	, remote_port = -> return ngx.var.remote_port
-	
-	, secure = \t ->
-		-- next version to parse
-		-- http://tools.ietf.org/html/rfc7239
-		-- eg: Forwarded: for=192.0.2.43,for=198.51.100.17;by=203.0.113.60;proto=http;host=example.com
-		var scheme = t.headers["X-Forwarded-Proto"] or t.scheme
-		return scheme == 'https'
-	-- browser id. requires ngx_http_userid_module with   userid on;
+-- browser id. requires ngx_http_userid_module with   userid on;
+var userid = {
 	-- hex format
-	, id = read_uid
+	id = read_uid
 	-- 16 bytes binary string
 	, id_binary = read_uid_binary
 	-- base64 encoded string, as seen in browser cookie
 	-- if you use `userid_mark` directive, that character replaces the first `=` padding at the end of the Base64. 
 	-- U need to replace that yourself by finding the first =, then replace your mark char.
-	, id_base64 = \t ->	return ngx.encode_base64(t.id_binary)
+	, id_base64 = -> return ngx.encode_base64(read_uid_binary())
 }
 
 
+
+-- http://nginx.org/en/docs/varindex.html
+-- http://nginx.org/en/docs/http/ngx_http_core_module.html, section 'Embedded Variables'
+
 var cookies = setmetatable({}, {
-	__index = \_, name ->
+	__metatable = false
+	, __index = \_, name ->
 		var v = ngx.var['cookie_' .. name]
 		return v and ngx.unescape_uri(v)
+})
+
+var args = setmetatable({}, {
+	__metatable = false
+	, __index = \_, name ->
+		return ngx.var['arg_' .. name]
+})
+
+
+var headers = setmetatable({}, {
+	__metatable = false
+	, __index = \_, name ->
+		return ngx.var['http_' .. string.lower(string.gsub(name, "-", "_"))]
 })
 
 
 return ->
 	return setmetatable({
-		cookies = cookies
+		vars = ngx.var
+		, headers = headers
+		, cookies = cookies
+		, args = args
+		, secure = -> return ngx.var.scheme == 'https'
 	}, {
 		__metatable = false
+		
 		, __index = \tbl, key ->
-			var f = basic[key]
-			if f
-				var v = f(tbl)
+			var fn = userid[key]
+			if fn
+				var v = fn()
 				-- memoize
 				tbl[key] = v
 				return v
+			return ngx.req[key]
 	})

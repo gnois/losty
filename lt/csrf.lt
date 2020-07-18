@@ -23,7 +23,7 @@ var least = \length ->
 
 var write = \req, res ->
 	var key = least(Len)
-	make(res)(nil, true, req.secure, encode64(key))
+	make(res)(nil, true, req.secure(), encode64(key))
 	return key
 
 var read = \req ->

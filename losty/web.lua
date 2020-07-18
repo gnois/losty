@@ -38,11 +38,11 @@ return function()
         local q = req()
         local r = res()
         local body
-        local method = q.method
+        local method = q.vars.request_method
         if method == "HEAD" then
             method = "GET"
         end
-        local handlers, matches = rt.match(method, q.uri)
+        local handlers, matches = rt.match(method, q.vars.uri)
         if handlers then
             q.match = matches
             local ok, trace = xpcall(function()
@@ -55,7 +55,7 @@ return function()
                     error("response status required", 2)
                 end
                 if r.status >= 200 and r.status < 300 or body then
-                    if not must_no_body(q.method, r.status) and not r.headers["Content-Type"] then
+                    if not must_no_body(method, r.status) and not r.headers["Content-Type"] then
                         error("Content-Type header required", 2)
                     end
                 end
@@ -69,7 +69,7 @@ return function()
         if not body and r.status >= 400 then
             local pref = accept(q.headers["Accept"], {HTML, JSON})
             local ctype = tostring(pref[1])
-            if q.method ~= "HEAD" then
+            if method ~= "HEAD" then
                 if ctype == JSON then
                     body = json.encode({fail = status(r.status)})
                 else
@@ -87,7 +87,7 @@ return function()
             r.headers["Content-Type"] = ctype
         end
         r.send()
-        if body and not must_no_body(q.method, r.status) then
+        if body and not must_no_body(method, r.status) then
             if "function" == type(body) then
                 local co = coroutine.create(body)
                 repeat

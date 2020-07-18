@@ -17,7 +17,7 @@ local least = function(length)
 end
 local write = function(req, res)
     local key = least(Len)
-    make(res)(nil, true, req.secure, encode64(key))
+    make(res)(nil, true, req.secure(), encode64(key))
     return key
 end
 local read = function(req)

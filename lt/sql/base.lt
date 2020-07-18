@@ -25,7 +25,6 @@ return \db, run ->
 			return run(v .. sql, ...)
 
 	-- query returns only one row
-	-- caller can index result if not nil
 	var one = \query, ... ->
 		var res, err, partial, count = run(query, ...)
 		var result = res and res[1]

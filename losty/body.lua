@@ -13,18 +13,18 @@ end
 local urlencoded = function(req)
     local ok, err = has_body(req)
     if ok then
-        ngx.req.read_body()
-        return ngx.req.get_post_args()
+        req.read_body()
+        return req.get_post_args()
     end
     return ok, err
 end
 local raw = function(req)
     local ok, err = has_body(req)
     if ok then
-        ngx.req.read_body()
-        local data = ngx.req.get_body_data()
+        req.read_body()
+        local data = req.get_body_data()
         if not data then
-            local file = ngx.req.get_body_file()
+            local file = req.get_body_file()
             if file then
                 local fp
                 fp, err = io.open(file, "r")
