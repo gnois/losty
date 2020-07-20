@@ -7,18 +7,19 @@ return \secret ->
 		error("secret required", 2)
 
 	return {
-		sign = \fragment, length ->
-			assert(fragment)
-			var sig = enc.encode64(hmac(secret, fragment))
+		sign = \payload, length ->
+			assert(payload)
+			var sig = enc.encode64(hmac(secret, payload))
 			if length
 				assert(length > 1)
 				return string.sub(sig, 1, length)
 			return sig
-			
-		, verify = \sig, fragment, length ->
-			assert(fragment)
+		
+		-- length - (optional) limits signature length check
+		, verify = \sig, payload, length ->
+			assert(payload)
 			if sig
-				var mac = enc.encode64(hmac(secret, fragment))
+				var mac = enc.encode64(hmac(secret, payload))
 				if length
 					assert(length > 1)
 					return string.sub(sig, 1, length) == string.sub(mac, 1, length)

@@ -35,11 +35,11 @@ var capitalize = \txt ->
 -- for single valued header, only the last array item is sent
 var headers = setmetatable({}, {
 	__metatable = false
-	
+
 	, __index = \_, k ->
 		-- header is being updated, so not calling ngx.resp.get_headers()
 		return ngx.header[k]
-	
+
 	, __newindex = \_, k, v ->
 		if nil == v
 			ngx.header[k] = v
@@ -53,7 +53,7 @@ var headers = setmetatable({}, {
 -- no caching
 var nocache = ->
 	headers["Cache-Control"] = "no-cache"   -- no-store ? github.com does not have max-age=0, s-maxage=0, must-revalidate, proxy-revalidate
-	
+
 -- set status and caching (in seconds)
 var cache = \status, sec ->
 	ngx.status = status
@@ -65,7 +65,7 @@ var cache = \status, sec ->
 		-- headers["Expires"] = ngx.http_time(ngx.time() + sec)
 
 --``
-See 
+See
 https://en.wikipedia.org/wiki/HTTP_302, first paragraph
 https://en.wikipedia.org/wiki/HTTP_303
 http://stackoverflow.com/questions/5129076/after-a-post-should-i-do-a-302-or-a-303-redirect
@@ -84,10 +84,10 @@ var redirect = \url, same_method ->
 -- it cannot be deleted from browser if any of these mismatch
 -- domain shd be nil, to exclude subdomain. if specified, subdomains are always included
 -- https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie
-var jar
+var jar, order, o -- guarantee the order of cookie by creation, for encoding function that return multiple values (sess.lt)
 var cookie = \name, httponly, domain, path ->
 	if not name
-		error("cookie must have a name")
+		error("cookie must have a name", 2)
 
 	var c = {
 		_name = name
@@ -95,7 +95,7 @@ var cookie = \name, httponly, domain, path ->
 		, _domain = domain
 		, _path = path
 	}
-	
+
 	var data = setmetatable({}, {
 		__metatable = false
 		-- expose attributes
@@ -105,7 +105,7 @@ var cookie = \name, httponly, domain, path ->
 		-- age in secs, nil means last till browser close, -ve means delete
 		-- samesite can be bool or string [lax|strict|none]. true=strict, false=none, nil means samesite not set (defaults to 'lax' by browser)
 		-- secure is bool, use req.secure()
-		-- value can be nil, string or function. 
+		-- value can be nil, string or function.
 		--   nil becomes empty string
 		--   if string, taken as is
 		--   if function, shd encode the data table
@@ -116,9 +116,12 @@ var cookie = \name, httponly, domain, path ->
 			c._value = value
 			return t
 	})
-	
+
 	if jar[name]
 		ngx.log(ngx.NOTICE, "Overwriting cookie named " .. name)
+	else
+		o = o + 1
+		order[o] = name
 
 	jar[name] = data
 	return data
@@ -131,7 +134,7 @@ var bake = \c ->
 		if 'function' == type(val)
 			val = val(c)
 	val = val and ngx.escape_uri(val) or ""
-	
+
 	var z = { c._name .. "=" .. val }
 	var y = 2
 
@@ -161,18 +164,17 @@ var bake = \c ->
 		y = y + 1
 	if c._secure
 		z[y] = "Secure"
-		
+
 	return table.concat(z, ";")
 
 
 
 -- send headers
 var send = ->
-	var arr, n = {}, 0
-	for _, c in pairs(jar)
-		n = n + 1
-		arr[n] = bake(c)
-	if n > 0
+	var arr = {}
+	if o > 0
+		for n, k in ipairs(order)
+			arr[n] = bake(jar[k])
 		headers['Set-Cookie'] = arr
 	ngx.send_headers()
 
@@ -180,19 +182,25 @@ var send = ->
 
 return ->
 	jar = {}
-	
+	order, o = {}, 0
+	var cookies = setmetatable({}, {
+		__index = jar
+		, __newindex = ->
+			error("use response.cookie() to update response cookies", 2)
+	})
+
 	return setmetatable({
 		headers = headers
 		, nocache = nocache
 		, cache = cache
 		, cookie = cookie
-		, cookies = jar
+		, cookies = cookies
 		, redirect = redirect
 		, send = send
 
 	}, {
 		__metatable = false
-		
+
 		, __index = \_, k ->
 			if 'status' == k
 				return ngx.status

@@ -1,8 +1,9 @@
 -- modified from https://github.com/bungle/lua-resty-session
+-- https://medium.com/lightrail/getting-token-authentication-right-in-a-stateless-single-page-application-57d0c6474e3
 
 -- creates two cookies
--- 1. salt                  (accessible by js)
--- 2. payload | signature   (httponly)
+-- 1. signature  (readable by js)
+-- 2. payload    (httponly)
 
 var json = require('cjson.safe')
 var aes = require('resty.aes')
@@ -22,49 +23,63 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 	if not secret
 		error("session secret required", 2)
 
-	var name_ = name .. '_'
-	var salt = rnd.bytes(8)
-	
 	var encrypt = \value ->
-		-- AES salt length MUST BE MULTIPLE OF 8! else nginx gives INTERMITTENT Error 
-		-- ignoring stale global SSL error (SSL: error:06065064:digital envelope routines:EVP_DecryptFinal_ex:bad decrypt) 
-		var k = hmac(secret, salt)
-		var d = json.encode(value)
-		var h = hmac(k, table.concat({salt, d, key}))
-		var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
-		return encode64(a.encrypt(@, d)) .. '|' .. encode64(h)
+		-- AES salt length MUST BE MULTIPLE OF 8! else nginx gives intermittent error:
+		-- ignoring stale global SSL error (SSL: error:06065064:digital envelope routines:EVP_DecryptFinal_ex:bad decrypt)
+		var salt = rnd.bytes(8)
+		var d, err = json.encode(value)
+		if d
+			var k = hmac(secret, salt)
+			var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
+			var sig = hmac(k, table.concat({salt, d, key}))
+			var data = a.encrypt(@, d)
+			return encode64(data) .. '|' .. encode64(salt), encode64(sig)
+		return '', err
 
-	var decrypt = \s, txt ->
-		if s and txt
-			var x = str.split(txt, '|')
+	var decrypt = \payload, sig ->
+		if payload and sig
+			var x = str.split(payload, '|')
 			if x and x[1] and x[2]
-				var d = decode64(x[1])
-				var h = decode64(x[2])
-				if d and h
-					s = decode64(s)
-					var k = hmac(secret, s)
-					var a = aes.new(@, k, s) --, aes.cipher(size, mode), hash, rounds)
-					d = a.decrypt(@, d)
+				var data = decode64(x[1])
+				var salt = decode64(x[2])
+				if data and salt
+					var k = hmac(secret, salt)
+					var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
+					var d = a.decrypt(@, data)
 					if d
-						if hmac(k, table.concat({s, d, key})) == h
+						if hmac(k, table.concat({salt, d, key})) == decode64(sig)
 							return json.decode(d)
 
-	var make = \res ->  -- js readable salt
+
+	var name_ = name .. '_'
+
+	var make = \res ->  -- js readable signature
 		return res.cookie(name, false, nil, '/')
 	var make_ = \res ->  -- httponly payload
 		return res.cookie(name_, true, nil, '/')
 
+	var signature
+	var signing = -> return signature
+	-- update signature
+	var encrypting = \value ->
+		var payload
+		payload, signature = encrypt(value)
+		return payload
+
+
 	return {
 		read = \req ->
-			return decrypt(req.cookies[name], req.cookies[name_])
+			return decrypt(req.cookies[name_], req.cookies[name])
 
 		-- age nil means last till browser close
 		-- samesite nil means 'lax'
 		, create = \req, res, age ->
 			var secure = req.secure()
-			make(res)(age, nil, secure, encode64(salt))
-			return make_(res)(age, nil, secure, encrypt)
-		
+			-- order is important, encrypt then sign
+			var data = make_(res)(age, nil, secure, encrypting)
+			make(res)(age, nil, secure, signing)
+			return data
+
 		-- age -ve means delete
 		, delete = \res ->
 			make(res)(-100)

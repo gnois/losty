@@ -50,10 +50,10 @@ local redirect = function(url, same_method)
     end
     headers["Location"] = url
 end
-local jar
+local jar, order, o
 local cookie = function(name, httponly, domain, path)
     if not name then
-        error("cookie must have a name")
+        error("cookie must have a name", 2)
     end
     local c = {_name = name, _httponly = httponly, _domain = domain, _path = path}
     local data = setmetatable({}, {__metatable = false, __index = c, __call = function(t, age, samesite, secure, value)
@@ -65,6 +65,9 @@ local cookie = function(name, httponly, domain, path)
     end})
     if jar[name] then
         ngx.log(ngx.NOTICE, "Overwriting cookie named " .. name)
+    else
+        o = o + 1
+        order[o] = name
     end
     jar[name] = data
     return data
@@ -116,24 +119,27 @@ local bake = function(c)
     return table.concat(z, ";")
 end
 local send = function()
-    local arr, n = {}, 0
-    for _, c in pairs(jar) do
-        n = n + 1
-        arr[n] = bake(c)
-    end
-    if n > 0 then
+    local arr = {}
+    if o > 0 then
+        for n, k in ipairs(order) do
+            arr[n] = bake(jar[k])
+        end
         headers["Set-Cookie"] = arr
     end
     ngx.send_headers()
 end
 return function()
     jar = {}
+    order, o = {}, 0
+    local cookies = setmetatable({}, {__index = jar, __newindex = function()
+        error("use response.cookie() to update response cookies", 2)
+    end})
     return setmetatable({
         headers = headers
         , nocache = nocache
         , cache = cache
         , cookie = cookie
-        , cookies = jar
+        , cookies = cookies
         , redirect = redirect
         , send = send
     }, {__metatable = false, __index = function(_, k)

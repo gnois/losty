@@ -7,18 +7,18 @@ return function(secret)
     if not secret then
         error("secret required", 2)
     end
-    return {sign = function(fragment, length)
-        assert(fragment)
-        local sig = enc.encode64(hmac(secret, fragment))
+    return {sign = function(payload, length)
+        assert(payload)
+        local sig = enc.encode64(hmac(secret, payload))
         if length then
             assert(length > 1)
             return string.sub(sig, 1, length)
         end
         return sig
-    end, verify = function(sig, fragment, length)
-        assert(fragment)
+    end, verify = function(sig, payload, length)
+        assert(payload)
         if sig then
-            local mac = enc.encode64(hmac(secret, fragment))
+            local mac = enc.encode64(hmac(secret, payload))
             if length then
                 assert(length > 1)
                 return string.sub(sig, 1, length) == string.sub(mac, 1, length)

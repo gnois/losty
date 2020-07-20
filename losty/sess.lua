@@ -15,28 +15,30 @@ return function(name, secret, key)
     if not secret then
         error("session secret required", 2)
     end
-    local name_ = name .. "_"
-    local salt = rnd.bytes(8)
     local encrypt = function(value)
-        local k = hmac(secret, salt)
-        local d = json.encode(value)
-        local h = hmac(k, table.concat({salt, d, key}))
-        local a = aes:new(k, salt)
-        return encode64(a:encrypt(d)) .. "|" .. encode64(h)
+        local salt = rnd.bytes(8)
+        local d, err = json.encode(value)
+        if d then
+            local k = hmac(secret, salt)
+            local a = aes:new(k, salt)
+            local sig = hmac(k, table.concat({salt, d, key}))
+            local data = a:encrypt(d)
+            return encode64(data) .. "|" .. encode64(salt), encode64(sig)
+        end
+        return "", err
     end
-    local decrypt = function(s, txt)
-        if s and txt then
-            local x = str.split(txt, "|")
+    local decrypt = function(payload, sig)
+        if payload and sig then
+            local x = str.split(payload, "|")
             if x and x[1] and x[2] then
-                local d = decode64(x[1])
-                local h = decode64(x[2])
-                if d and h then
-                    s = decode64(s)
-                    local k = hmac(secret, s)
-                    local a = aes:new(k, s)
-                    d = a:decrypt(d)
+                local data = decode64(x[1])
+                local salt = decode64(x[2])
+                if data and salt then
+                    local k = hmac(secret, salt)
+                    local a = aes:new(k, salt)
+                    local d = a:decrypt(data)
                     if d then
-                        if hmac(k, table.concat({s, d, key})) == h then
+                        if hmac(k, table.concat({salt, d, key})) == decode64(sig) then
                             return json.decode(d)
                         end
                     end
@@ -44,18 +46,29 @@ return function(name, secret, key)
             end
         end
     end
+    local name_ = name .. "_"
     local make = function(res)
         return res.cookie(name, false, nil, "/")
     end
     local make_ = function(res)
         return res.cookie(name_, true, nil, "/")
     end
+    local signature
+    local signing = function()
+        return signature
+    end
+    local encrypting = function(value)
+        local payload
+        payload, signature = encrypt(value)
+        return payload
+    end
     return {read = function(req)
-        return decrypt(req.cookies[name], req.cookies[name_])
+        return decrypt(req.cookies[name_], req.cookies[name])
     end, create = function(req, res, age)
         local secure = req.secure()
-        make(res)(age, nil, secure, encode64(salt))
-        return make_(res)(age, nil, secure, encrypt)
+        local data = make_(res)(age, nil, secure, encrypting)
+        make(res)(age, nil, secure, signing)
+        return data
     end, delete = function(res)
         make(res)(-100)
         make_(res)(-100)
