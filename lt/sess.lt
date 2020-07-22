@@ -45,7 +45,7 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 				if data and salt
 					var k = hmac(secret, salt)
 					var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
-					var d = a.decrypt(@, data)
+					var d = a and a.decrypt(@, data)
 					if d
 						if hmac(k, table.concat({salt, d, key})) == decode64(sig)
 							return json.decode(d)

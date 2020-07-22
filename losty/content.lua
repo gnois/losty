@@ -13,14 +13,14 @@ local JSON = "application/json"
 local reject = function(_, res)
     res.status = ngx.HTTP_NOT_ACCEPTABLE
 end
-local html = function(req, res, ...)
-    local out = req.next(...)
+local html = function(req, res)
+    local out = req.next()
     res.headers["Content-Type"] = HTML
     res.nocache()
     return out
 end
-local json = function(req, res, ...)
-    local out = req.next(...)
+local json = function(req, res)
+    local out = req.next()
     res.headers["Content-Type"] = JSON
     out = cjson.encode(out)
     local cachectrl = res.headers["Cache-Control"]
@@ -41,14 +41,14 @@ local json = function(req, res, ...)
     return out
 end
 local dual = function(...)
-    local hn = {...}
-    return function(req, res, ...)
+    local handlers = {...}
+    return function(req, res)
         res.headers["Vary"] = "Accept"
         local pref = choose(req.headers["Accept"], {HTML, JSON})
         if tostring(pref[1]) == HTML then
-            return dispatch(hn, req, res, ...)
+            return dispatch(handlers, req, res)
         end
-        return json(req, res, ...)
+        return json(req, res)
     end
 end
 local form = function(req, res)

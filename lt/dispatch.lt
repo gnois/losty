@@ -1,22 +1,19 @@
 
 -- temporarily sets the req.next()
 
-return \hn, req, res, ... ->
-	var i, n = 0, #hn
-	var nargs = select('#', ...)
-	var args = {...}
+return \handlers, req, res ->
+	var i, n = 0, #handlers
+	var args, a = {}, 0
 
 	var nxt = req.next
 	req.next = \... ->
-		var np = select('#', ...)
-		var p = {...}
-		for j = 1, np
-			args[nargs + j] = p[j]
-		nargs = nargs + np
+		for _, v in ipairs({...})
+			a = a + 1
+			args[a] = v
 		i = i + 1
 		if i <= n
-			-- unpack() accepts tables of up to 8000 elements only in Lua 5.1 and LuaJIT
-			return hn[i](req, res, unpack(args, 1, nargs))
+			-- unpack() accepts tables of up to 8000 elements in Lua 5.1 and LuaJIT
+			return handlers[i](req, res, unpack(args))
 
 	var v = req.next()
 	req.next = nxt

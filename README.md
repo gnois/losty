@@ -1,7 +1,7 @@
 ## Losty = [Luaty](https://github.com/gnois/luaty) + [OpenResty](http://openresty.org)
 
 Losty is a functional style web framework that runs on OpenResty with minimal dependencies.
-By composing functions almost everywhere, it adds helpers on OpenResty without obscuring its API that you are familiar with.
+By composing functions almost everywhere and utilizing Lua's powerful language features, it adds helpers on OpenResty without obscuring its API that you are familiar with.
 
 It has built in
 - request router
@@ -78,8 +78,7 @@ See [losty-starters](https://github.com/gnois/losty-starters) repo for more exam
 ## Guide
 
 Losty matches HTTP requests to user defined routes, which associates one or more handler functions that process the request.
-Similar to frameworks like Koajs,
-handlers need to be invoked downstream, and then control flows back upstream.
+Similar to frameworks like Koajs, handlers need to be invoked downstream, and then control flows back upstream.
 
 
 ### Handler
@@ -120,9 +119,9 @@ The above handlers can be chained like this:
 w.post('/path', function(q, r)
 	r.headers["Content-Type"] = "application/json"
 	return q.next()
-end, form, database, function(q, r, db)
-	-- use q.body and db here
-	db.insert(...)
+end, form, database, function(q, r, body, db)
+	-- use body and db
+	db.insert("users(name) values (:?)", body.name)
 	r.status = 201
 	return json.encode({ok = true})
 end)
@@ -132,8 +131,7 @@ Notice how the form `body` and `db` are appended and passed as arguments to the 
 If the response body is large, or may not be available all at once, we can return a function from the handler, and Losty will call the function as a coroutine and resume it until it is done. That function would use `coroutine.yield()` to return the response when it becomes available.
 
 
-Other frameworks normally use a context table that is extended with keys and passed across handlers, but Losty passes them as cumulative function arguments.
-Here are some considerations for Losty's design.
+Other frameworks normally use a context table that is extended with keys and passed across handlers, but Losty passes them as cumulative function arguments, thanks to Lua variable argument and multiple return values. Here are some considerations for Losty's design.
 
 * Arguments are easily visible.
 * Arguments (un)packing is slower, but may not be significant if there are only a handful of handlers.
@@ -175,8 +173,6 @@ Step 2. r.cookie returns another function, which must be called to specify age, 
   * a simple string, treated as is
   * an encoding function, such as json.encode(), which encodes the callable table as a cookie key/value object
 
-Response headers including cookies are accumulated and finally set into `ngx.headers`. Setting `ngx.headers` directly prior to the last handler return, shd also work as expected.
-
 
 ### Session
 
@@ -197,6 +193,17 @@ w.post('/login', function(q, r)
 ```
 In the above example, there will be a cookie named 'candy' within document.cookie readable by javascript, holding the signature of this session cookie.
 The actual encrypted data is stored in other cookie named 'candy_', which is httponly.
+
+
+
+#### Response completion and returning control to Nginx
+
+Response headers including cookies and sessions are accumulated and finally set into `ngx.headers` before response is returned.
+Setting `ngx.headers` directly prior to returning response should also work as expected.
+
+Note that calling `ngx.redirect()`, `ngx.flush()`, `ngx.exit()` or `ngx.eof()` in a handler would terminate itself, short circuit the Losty dispatcher and return control to Nginx immediately. It is not recommended to call these functions because response headers and body generated from handlers may be discarded.
+
+That said, a valid example would be to user `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages.
 
 
 
@@ -330,7 +337,7 @@ Please refer to [pgmoon](https://github.com/leafo/pgmoon) or [lua-resty-mysql](h
 
 ### Generating HTML
 
-Unlike templating libraries that embed control flow inside HTML constructs, Losty goes the other way round by generating HTML with Lua, with full language features at your disposal. In Javascript, it is like JSX vs hyperscript on steroids, where the HTML tags become functions themselves, thanks to Lua metatable.
+Unlike templating libraries that embed control flow inside HTML constructs, Losty goes the other way round by generating HTML with Lua, with full language features at your disposal. In Javascript, it is like JSX vs hyperscript on steroids, where the HTML tags become functions themselves, thanks to Lua function environment and its metatable again.
 
 ```
 function tmpl(args)
@@ -452,11 +459,6 @@ end)
 When run using `resty cli`, the test above produces summary of tests passed/failed.
 To seed the database, omit the q.begin() and q.rollback() statements, and pass `true` as the last argument to test()
 
-
-#### Note
-
-To use error_page directive in nginx.conf instead of using Losty generated error page, you can use `return ngx.exit(status)`.
-Howevet, tt is not recommended to call `ngx.redirect()`, `ngx.flush()` or `ngx.eof()` in handlers, unless you want to short circuit Losty dispatcher, terminate the handler and return control to nginx immediately.
 
 
 ### Credits

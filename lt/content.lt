@@ -18,8 +18,8 @@ var reject = \_, res ->
 --   https://www.mnot.net/cache_docs/
 --   https://devcenter.heroku.com/articles/jax-rs-http-caching
 --   https://devcenter.heroku.com/articles/increasing-application-performance-with-http-cache-headers
-var html = \req, res, ... ->
-	var out = req.next(...)
+var html = \req, res ->
+	var out = req.next()
 	res.headers["Content-Type"] = HTML
 	-- see nginx_gzip.conf, gzip_vary on;
 	-- res.headers["Vary"] = "Accept-Encoding"
@@ -28,8 +28,8 @@ var html = \req, res, ... ->
 	return out
 
 
-var json = \req, res, ... ->
-	var out = req.next(...)
+var json = \req, res ->
+	var out = req.next()
 	res.headers["Content-Type"] = JSON
 	-- just throw if error
 	out = cjson.encode(out)
@@ -59,8 +59,8 @@ var json = \req, res, ... ->
 -- See https://www.fastly.com/blog/best-practices-for-using-the-vary-header
 -- This actually causes the browser to not cache the content of all responses
 var dual = \... ->
-	var hn = {...}
-	return \req, res, ... ->
+	var handlers = {...}
+	return \req, res ->
 		-- If we `back` from browser, the json is displayed instead of html page!  We need to have api.domain.com or different url instead of just using content-type
 		-- if use vary:Accept header, caching is basically disabled by proxies and browsers
 		-- http://www.sitepoint.com/solve-caching-conundrums/
@@ -74,8 +74,8 @@ var dual = \... ->
 		
 		var pref = choose(req.headers["Accept"], {HTML, JSON})
 		if tostring(pref[1]) == HTML
-			return dispatch(hn, req, res, ...)
-		return json(req, res, ...)
+			return dispatch(handlers, req, res)
+		return json(req, res)
 
 
 
