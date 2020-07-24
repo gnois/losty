@@ -88,11 +88,12 @@ return \db, func ->
 		if fails == 0 and errors == 0
 			passes = passes + 1
 					
-		var msg = tests .. " checks: " .. tests - fails - errors .. " passed"
-		if errors > 0
-			msg = msg .. ", " .. errors .. " errors"
+		var msg = tests .. " checks: " .. tests - fails .. " passed"
 		if fails > 0
 			msg = msg .. ", " .. fails .. " failed"
+		if errors > 0
+			msg = msg .. "   [ Error: " .. errors .. " ]"
+
 		var color = fails + errors > 0 and c.cyan or c.green
 		print(color .. "                                         ---------- " .. msg .. " ----------\n" .. c.reset)
 

@@ -88,12 +88,12 @@ return function(db, func)
         if fails == 0 and errors == 0 then
             passes = passes + 1
         end
-        local msg = tests .. " checks: " .. tests - fails - errors .. " passed"
-        if errors > 0 then
-            msg = msg .. ", " .. errors .. " errors"
-        end
+        local msg = tests .. " checks: " .. tests - fails .. " passed"
         if fails > 0 then
             msg = msg .. ", " .. fails .. " failed"
+        end
+        if errors > 0 then
+            msg = msg .. "   [ Error: " .. errors .. " ]"
         end
         local color = fails + errors > 0 and c.cyan or c.green
         print(color .. "                                         ---------- " .. msg .. " ----------\n" .. c.reset)

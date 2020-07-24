@@ -1,6 +1,7 @@
 ## Losty = [Luaty](https://github.com/gnois/luaty) + [OpenResty](http://openresty.org)
 
 Losty is a functional style web framework that runs on OpenResty with minimal dependencies.
+
 By composing functions almost everywhere and utilizing Lua's powerful language features, it adds helpers on OpenResty without obscuring its API that you are familiar with.
 
 It has built in
@@ -21,6 +22,7 @@ It has built in
 
 
 Losty is written in [Luaty](https://github.com/gnois/luaty) and compiled to Lua.
+
 Bug reports and contributions are very much welcomed and appreciated.
 
 
@@ -75,7 +77,7 @@ http {
 See [losty-starters](https://github.com/gnois/losty-starters) repo for more examples.
 
 
-## Guide
+## General Idea
 
 Losty matches HTTP requests to user defined routes, which associates one or more handler functions that process the request.
 Similar to frameworks like Koajs, handlers need to be invoked downstream, and then control flows back upstream.
@@ -83,7 +85,7 @@ Similar to frameworks like Koajs, handlers need to be invoked downstream, and th
 
 ### Handler
 
-A handler function takes a request (q) and a response (r) table, and optionally more arguments.
+A handler is a function that takes a request (q) and a response (r) table, and optionally more arguments which may be passed from previous handlers.
 
 Here is a handler for http POST, PUT or DELETE request, taken from the built in content.lua helper:
 ```
@@ -163,6 +165,7 @@ data.token = yyy
 
 ```
 Step 1. r.cookie is called with a name, and optional httponly, domain and path. These 4 parameters make up the identity of a cookie, which is required if deletion is intended.
+
 Step 2. r.cookie returns another function, which must be called to specify age, samesite, secure and cookie value.
 - The age can be nil, +ve or -ve number
   * nil means the cookie will be deleted upon browser close
@@ -196,21 +199,23 @@ The actual encrypted data is stored in other cookie named 'candy_', which is htt
 
 
 
-#### Response completion and returning control to Nginx
+### Response completion and returning control to Nginx
 
 Response headers including cookies and sessions are accumulated and finally set into `ngx.headers` before response is returned.
 Setting `ngx.headers` directly prior to returning response should also work as expected.
 
 Note that calling `ngx.redirect()`, `ngx.flush()`, `ngx.exit()` or `ngx.eof()` in a handler would terminate itself, short circuit the Losty dispatcher and return control to Nginx immediately. It is not recommended to call these functions because response headers and body generated from handlers may be discarded.
 
-That said, a valid example would be to user `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages.
+That said, a valid example would be to use `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages.
 
 
 
 ### Routes
 
 Routes are defined using HTTP methods, like get() for GET or post() for POST.
+
 Route paths are strings that begins with '/', followed by multiple segments separated by '/' as well. A trailing slash is ignored.
+
 A segment that begins with : specifies a capturing lua pattern. Captured values are stored in `match` array of request table (q).
 
 There is no named capture like in other frameworks, due to possible conflicting paths like:
@@ -274,7 +279,7 @@ CREATE TABLE user (
 	, email text NOT NULL
 );
 ```
-Lets create another table with a Lua file:
+And another table with a Lua file:
 
 friends.lua
 ```
@@ -296,6 +301,7 @@ The database server host and port are optional, and defaults to '127.0.0.1' and 
 Losty migration accepts both SQL and Lua source files, and a .lua file extension is optional.
 
 A Lua source should return an array of strings, which are SQL commands. Each array item is sent to the database server in separate batch. This means we can programatically generate SQL with Lua.
+
 An SQL file uses `----` as batch separator. Separating SQL commands into batches are helpful in case an error occurs, without which it's harder to locate the line of error.
 
 Lets create a function to insert a user:
@@ -457,6 +463,7 @@ end)
 
 ```
 When run using `resty cli`, the test above produces summary of tests passed/failed.
+
 To seed the database, omit the q.begin() and q.rollback() statements, and pass `true` as the last argument to test()
 
 
@@ -464,5 +471,6 @@ To seed the database, omit the q.begin() and q.rollback() statements, and pass `
 ### Credits
 
 This project has taken ideas and codes from respectable projects such as Lapis, Mashape router, lua-resty-session, and helpful examples from OpenResty and around the web.
+
 Of course it wouldn't exist without the magnificent OpenResty in the first place.
 
