@@ -124,7 +124,7 @@ var router = ->
 					token = str_sub(token, 2)
 				var ok, err = check(token)
 				if not ok
-					error(err .. " in " .. path)
+					error(err .. " in " .. path, 2)
 
 				nodes = find_create(nodes, token)
 			else
@@ -167,7 +167,7 @@ var router = ->
 		, set = \method, path, ... ->
 			var err = invalid(path)
 			if err
-				error("route '" .. path .. "' " .. err)
+				error("route '" .. path .. "' " .. err, 2)
 			if not tree[method]
 				tree[method] = {}
 			install(tree[method], path, ...)

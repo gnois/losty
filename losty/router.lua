@@ -85,7 +85,7 @@ local router = function()
                 end
                 local ok, err = check(token)
                 if not ok then
-                    error(err .. " in " .. path)
+                    error(err .. " in " .. path, 2)
                 end
                 nodes = find_create(nodes, token)
             else
@@ -132,7 +132,7 @@ local router = function()
     end, set = function(method, path, ...)
         local err = invalid(path)
         if err then
-            error("route '" .. path .. "' " .. err)
+            error("route '" .. path .. "' " .. err, 2)
         end
         if not tree[method] then
             tree[method] = {}

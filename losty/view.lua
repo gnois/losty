@@ -78,16 +78,16 @@ local void = function(tag, attrs)
                     cell.attrs[key] = val
                 else
                     local msg = tag .. "('" .. concat(v) .. "'"
-                    error(msg .. " attribute must start with `.` or `#` or `[`")
+                    error(msg .. " attribute must start with `.` or `#` or `[`", 2)
                 end
             end
         elseif "table" == kind then
             if attrs[1] then
-                error(NoChild(tag))
+                error(NoChild(tag), 2)
             end
             for key, val in pairs(attrs) do
                 if key == "_tag" then
-                    error(NoChild(tag))
+                    error(NoChild(tag), 2)
                 end
                 if key == "class" then
                     if val ~= nil and val ~= "" then
@@ -100,7 +100,7 @@ local void = function(tag, attrs)
             end
         else
             local msg = tag .. "(" .. kind .. ")"
-            error("Attribute must be a table or a string: " .. msg)
+            error("Attribute must be a table or a string: " .. msg, 2)
         end
     end
     if classes[1] then
@@ -175,7 +175,7 @@ local view = function(func, args, naked, strict)
         if void_tags.has(name) then
             return function(attrs, w, x, y, z)
                 if w or x or y or z then
-                    error(NoChild(name))
+                    error(NoChild(name), 2)
                 end
                 return void(name, attrs)
             end

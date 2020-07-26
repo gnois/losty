@@ -193,17 +193,17 @@ var void = \tag, attrs ->
 					cell.attrs[key] = val
 				else
 					var msg = tag .. "('" .. concat(v) .. "'"
-					error(msg .. " attribute must start with `.` or `#` or `[`")
+					error(msg .. " attribute must start with `.` or `#` or `[`", 2)
 
 		else if 'table' == kind
 			-- attr cannot be array
 			if attrs[1]
-				error(NoChild(tag))
+				error(NoChild(tag), 2)
 				
 			for key, val in pairs(attrs)
 				-- attr cannot have {_tag=...}
 				if key == '_tag'
-					error(NoChild(tag))
+					error(NoChild(tag), 2)
 				if key == 'class'
 					if val ~= nil and val ~= ''
 						classes[n] = val --insert(classes, val)
@@ -212,7 +212,7 @@ var void = \tag, attrs ->
 					cell.attrs[key] = val
 		else
 			var msg = tag .. '(' .. kind .. ')'
-			error("Attribute must be a table or a string: " .. msg)
+			error("Attribute must be a table or a string: " .. msg, 2)
 		
 	if classes[1]
 		cell.attrs['class'] = concat(classes, ' ')
@@ -299,7 +299,7 @@ var view = \func, args, naked, strict ->
 			if void_tags.has(name)
 				return \attrs, w, x, y, z ->
 					if w or x or y or z
-						error(NoChild(name))
+						error(NoChild(name), 2)
 					return void(name, attrs)
 			if normal_tags.has(name)
 				return \... ->
