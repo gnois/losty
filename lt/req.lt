@@ -103,7 +103,7 @@ return ->
 		, headers = headers
 		, cookies = cookies
 		, args = args
-		, secure = -> return ngx.var.scheme == 'https'
+		, secure = -> return ngx.var.https == 'on'
 	}, {
 		__metatable = false
 		

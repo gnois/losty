@@ -79,7 +79,7 @@ See [losty-starters](https://github.com/gnois/losty-starters) repo for more exam
 
 ## General Idea
 
-Losty matches HTTP requests to user defined routes, which associates one or more handler functions that process the request.
+Losty can be used in content_by_lua_* directive in OpenResty. It matches HTTP requests to user defined routes, which associates one or more handler functions that process the request.
 Similar to frameworks like Koajs, handlers need to be invoked downstream, and then control flows back upstream.
 
 
@@ -204,9 +204,7 @@ The actual encrypted data is stored in other cookie named 'candy_', which is htt
 Response headers including cookies and sessions are accumulated and finally set into `ngx.headers` before response is returned.
 Setting `ngx.headers` directly prior to returning response should also work as expected.
 
-Note that calling `ngx.redirect()`, `ngx.flush()`, `ngx.exit()` or `ngx.eof()` in a handler would terminate itself, short circuit the Losty dispatcher and return control to Nginx immediately. It is not recommended to call these functions because response headers and body generated from handlers may be discarded.
-
-That said, a valid example would be to use `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages.
+Note that calling `ngx.exec()`, `ngx.redirect()`, `ngx.exit()`, `ngx.flush()`, `ngx.say()`, `ngx.print()` or `ngx.eof()` in a handler would short circuit the Losty dispatcher flow and return control to Nginx immediately. A valid example would be to use `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages.
 
 
 

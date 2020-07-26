@@ -64,7 +64,7 @@ local cookie = function(name, httponly, domain, path)
         return t
     end})
     if jar[name] then
-        ngx.log(ngx.NOTICE, "Overwriting cookie named " .. name)
+        ngx.log(ngx.NOTICE, "Overwriting cookie " .. name)
     else
         o = o + 1
         order[o] = name

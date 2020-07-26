@@ -22,6 +22,7 @@ var s = \... ->
 			out[i] = tostring(x)
 	return table.concat(out, ' ')
 
+-- make short key names for db access
 var setup = \db ->
 	if db
 		var map = {
@@ -39,7 +40,7 @@ var setup = \db ->
 
 
 
--- make short key names for db access
+-- db can be nil if not using sql
 return \db, func ->
 
 	var q = setup(db)

@@ -55,7 +55,7 @@ local headers = setmetatable({}, {__metatable = false, __index = function(_, nam
 end})
 return function()
     return setmetatable({vars = ngx.var, headers = headers, cookies = cookies, args = args, secure = function()
-        return ngx.var.scheme == "https"
+        return ngx.var.https == "on"
     end}, {__metatable = false, __index = function(tbl, key)
         local fn = userid[key]
         if fn then
