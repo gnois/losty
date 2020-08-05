@@ -78,9 +78,9 @@ K.buffered = function(req)
 end
 local yield = coroutine.yield
 local parser = function()
-    local input, err = upload:new(8192)
+    local input, err = upload:new(4096)
     if input then
-        input:set_timeout(1000)
+        input:set_timeout(2000)
         local t, data
         repeat
             t, data, err = input:read()

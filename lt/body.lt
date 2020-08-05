@@ -83,9 +83,9 @@ case key
 var yield = coroutine.yield
 
 var parser =  ->
-	var input, err = upload.new(@, 8192)
+	var input, err = upload.new(@, 4096)
 	if input
-		input.set_timeout(@, 1000) -- 1 sec
+		input.set_timeout(@, 2000) -- 2 sec
 		var t, data
 		do
 			t, data, err = input.read(@)

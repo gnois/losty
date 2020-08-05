@@ -1,7 +1,6 @@
 --
 -- Generated from accept.lt
 --
-require("resty.core.regex")
 local bit = require("bit")
 local to = require("losty.to")
 local yield = coroutine.yield

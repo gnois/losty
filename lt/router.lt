@@ -21,11 +21,6 @@ There is no named capture like in other frameworks, bcoz for conflicting paths l
 So, req.match cannot be keyed table, but is an array, which allows multiple captures within one segment also
 eg: /page/%w-(%d)-(%d)
 
------------
-Possible TODO: (nice to have)
-Allow named capture, eg:  /page/date:%w+(%d+)  <->  /page/nov2019
-gives  req.match.date = {'nov2019', '2019'}
------------
 
 There is no way to specify optional last segment, to avoid possible conflicts
   /page/:?  <- 
