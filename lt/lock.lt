@@ -1,0 +1,32 @@
+--`` 
+- Using shdict as lock: Shd explicitly unlock, else hold max n secs before auto unlock
+lock == add(key, true, n sec)
+unlock == delete(key)
+
+
+nginx.conf
+----------
+ http {
+    lua_shared_dict lock_name 1m;
+
+``
+
+return \lock_name ->
+
+	var lock = ngx.shared[lock_name]
+	if not lock
+		error("missing lua_shared_dict ".. lock_name)
+
+	return {
+		-- sec - hold secs before auto unlock
+		-- if already locked, return false, "exists"
+		-- may return false, "no memory"
+		lock = \key, sec ->
+			return lock.add(@, key, true, sec)
+
+		, locked = \key ->
+			return true == lock.get(@, key)
+
+		, unlock = \key ->
+			lock.delete(@, key)
+	}

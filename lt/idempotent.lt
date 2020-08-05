@@ -1,0 +1,107 @@
+--`` 
+For idempotent POST request
+
+- Using shdict as state machine and cache: cache lifetime is user defined
+advance == incr(key, 1, 0, lifetime)
+value - number if progressing in state machine, else is string of encoded result
+flags - crc32 of identity for the key that needs to match when retrieving
+
+
+nginx.conf
+----------
+ http {
+    lua_shared_dict cache_name 50m;
+
+``
+
+
+var locker = require('losty.lock')
+var json = require('cjson.safe')
+var crc32 = ngx.crc32_short
+var abs = math.abs
+
+return \lock_name, cache_name, key ->
+
+	var cache = ngx.shared[cache_name]
+	if not cache
+		error("missing lua_shared_dict ".. cache_name)
+
+	var lock = locker(lock_name)
+	var crc = 1 -- in case value is nil, this nonzero flag indicates the value has been inserted
+	
+	-- expiry - how long to keep
+	-- id must be nil or string
+	-- if already started, return false, "exists"
+	-- may return false, "no memory"
+	-- if ok, return 1
+	var start = \id, expiry ->
+		if id ~= nil
+			crc = abs(crc32(id))
+		var ok, err = cache.safe_add(@, key, 1, expiry, crc)
+		if ok
+			return 1, crc
+		return ok, err
+
+
+	-- if exists
+	--    if matched id, return val
+	--    else   val, 'identity mismatch'
+	-- else nil, err
+	var get = \id ->
+		var val, flags = cache.get(@, key)
+		print(id, ' flags ', flags)
+		if "number" == type(flags) -- not error
+			if id == nil and flags == 1
+				return val, flags
+			if id and abs(crc32(id)) ~= flags
+				return val, "identity mismatch"
+		return val, flags
+
+
+
+	return {
+		-- if not locked
+		--    if check started but error, unlock and 
+		--    if already started, returns 1 or 2 or 3 or 4 ...
+		--    else start, return 1
+		-- else false, "exists"
+		acquire = \id, secs, expiry ->
+			-- try read
+			var val, c = get(id)
+			if 'string' == type(c) -- error
+				return nil, c
+
+			var ok, err = lock.lock(key, secs)
+			if ok
+				if c == nil -- not found
+					return start(id, expiry), nil
+				-- decode if completed
+				if 'number' == type(val)
+					return val, nil
+				var result = json.decode(val)
+				return result.status, result.body
+			return ok, err
+
+
+		, release = ->
+			lock.unlock(key)
+		
+		-- if exists
+		--   if completed, return nil, "not a number"
+		--   else  return 2, 3 ...
+		-- else nil, "not found"
+		, advance = ->
+			if lock.locked(key)
+				return cache.incr(@, key, 1)
+			return false, "not locked"
+
+		-- expiry - how long to keep
+		-- returns true if ok
+		, complete = \status, body, expiry ->
+			if lock.locked(key)
+				var str = json.encode({status = status, body = body})
+				return cache.set(@, key, str, expiry, crc)
+			return false, "not locked"
+	}
+
+
