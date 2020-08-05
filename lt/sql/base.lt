@@ -11,7 +11,7 @@ return \db, run ->
 	var K = {
 		run = run
 	}
-	
+
 	-- https://github.com/openresty/lua-nginx-module#lua_socket_connect_timeout
 	-- default 60s each for connect, send and read
 	-- but unit here is in ms
@@ -27,9 +27,9 @@ return \db, run ->
 	-- query returns only one row
 	var one = \query, ... ->
 		var res, err, partial, count = run(query, ...)
-		var result = res and res[1]
+		var result = res and res[1] or {}
 		return result, err, partial, count
-	
+
 	for k, v in pairs(map)
 		K[k .. '1'] = \sql, ... ->
 			return one(v .. sql, ...)

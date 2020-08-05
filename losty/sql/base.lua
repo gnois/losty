@@ -14,7 +14,7 @@ return function(db, run)
     end
     local one = function(query, ...)
         local res, err, partial, count = run(query, ...)
-        local result = res and res[1]
+        local result = res and res[1] or {}
         return result, err, partial, count
     end
     for k, v in pairs(map) do
