@@ -1,30 +1,48 @@
 var pgmoon = require('pgmoon')
-var parrays = require('pgmoon.arrays')  -- encode_array()  cannot handle empty array and array of row types 
+var parrays = require('pgmoon.arrays')  -- encode_array()  cannot handle empty array and array of row types
 var pjson = require('pgmoon.json')
 var phstore = require('pgmoon.hstore')
 var sql = require('losty.sql.base')
 var str_gsub = string.gsub
 
--- Remember to call setup_hstore() 
+-- Remember to call setup_hstore()
 
-return \database, user, password, host, port, pool, dbg ->
-	
-	var db = pgmoon.new({database = database, user = user, password = password, host = host, port = port, pool = pool})
-	-- nil works better in conditional expr
-	--db.convert_null = true
-	--db.NULL = ngx.null
-	
+var escape = {
+	literal = \val ->
+		if val == nil or val == ngx.null
+			return "NULL"
 
-	var escape = \str, mode ->
+		var ty = type(val)
+		if 'number' == ty or 'boolean' == ty
+			return tostring(val)
+		else if 'string' == ty
+			return "'" .. str_gsub(val, "'", "''") .. "'"
+		error("cannot escape literal " .. tostring(val))
+
+	, identifier = \val ->
+		if 'string' == type(val)
+			return '"' .. str_gsub(val, '"', '""') .. '"'
+		error("cannot escape identifier " .. tostring(val))
+
+	, any = \val, mode ->
 		-- transform comments, strip semicolon
-		var s = str_gsub(str, "/%*", "/ *")
+		var s = str_gsub(val, "/%*", "/ *")
 		s = str_gsub(s, "%*/", "* /")
 		s = str_gsub(s, "%-%-", "- -")
 		s = str_gsub(s, ";", "")
 		return str_gsub(s, mode, "")
 		
-	
-	
+}
+
+
+return \database, user, password, host, port, pool, dbg ->
+
+	var db = pgmoon.new({database = database, user = user, password = password, host = host, port = port, pool = pool})
+	-- nil works better in conditional expr
+	--db.convert_null = true
+	--db.NULL = ngx.null
+
+
 	-- make composite value, probably inside array like ARRAY['(,,"",)', '(,,,"")']
 	-- https://www.postgresql.org/docs/11/rowtypes.html
 	-- https://www.postgresql.org/docs/11/sql-expressions.html#SQL-SYNTAX-ROW-CONSTRUCTORS
@@ -58,7 +76,7 @@ return \database, user, password, host, port, pool, dbg ->
 		var ty = type(v)
 		if 'table' == ty
 			if mode == 'r'
-				return db.escape_literal(@, encode_row(v))
+				return escape.literal(encode_row(v))
 			else if mode == 'a'
 				return parrays.encode_array(v)
 			else if mode == 'h'
@@ -70,15 +88,17 @@ return \database, user, password, host, port, pool, dbg ->
 			if mode == 'b'
 				return db.encode_bytea(@, v)
 			else if mode == '?'
-				return db.escape_literal(@, v)
+				return escape.literal(v)
+			else if mode == '!'
+				return escape.identifier(v)
 			else if mode == ')' or mode == ']'    -- this allow SQL injection and inputs like   date 'today' + interval '1 month'. Use with care!!
-				return escape(v, "%" .. mode)
+				return escape.any(v, "%" .. mode)
 
-		return nil, "Invalid placeholder `:" .. mode .. "` for a " .. ty
+		return nil, "invalid placeholder `:" .. mode .. "` for a " .. ty
 
 
 	-- To list all pgsql operators
-	-- psql 
+	-- psql
 	-- \do ?
 	-- \do ??
 	-- \do ???
@@ -87,7 +107,7 @@ return \database, user, password, host, port, pool, dbg ->
 	var interpolate = \query, ... ->
 		var args = {...}
 		var i = 0
-		return (str_gsub(query, "(:?):([a-z%?%)%]])", \c, mode ->
+		return (str_gsub(query, "(:?):([a-z!%?%)%]])", \c, mode ->
 			-- if using [^:] instead of (:?), we will miss :? at the beginning of a line
 			if c == ':'  -- return verbatim
 				return '::' .. mode
@@ -97,7 +117,7 @@ return \database, user, password, host, port, pool, dbg ->
 			if s
 				return s
 			ngx.log(ngx.ERR, err .. " at position ", i)
-			
+
 		)), i
 
 
@@ -105,7 +125,7 @@ return \database, user, password, host, port, pool, dbg ->
 		var n = select("#", ...)
 		var q, i = interpolate(str, ...)
 		if n ~= i
-			ngx.log(ngx.ERR, "Trying to match ", i ," placeholders to ", n ," arguments for query `", str, "`")
+			ngx.log(ngx.ERR, "trying to match ", i ," placeholders to ", n ," arguments for query `", str, "`")
 
 		if dbg
 			--ngx.log(ngx.NOTICE, q)  -- this one does not show on screen
@@ -121,9 +141,9 @@ return \database, user, password, host, port, pool, dbg ->
 
 	var keepalive = \timeout ->
 		db.keepalive(@, timeout)
-		
+
 	var K = sql(db, run)
-	
+
 	K.encode = encode
 
 	K.hstore = ->
@@ -136,7 +156,7 @@ return \database, user, password, host, port, pool, dbg ->
 		if n > 0
 			var places = string.rep(", " .. mode, n - 1)
 			return (interpolate(mode .. places, ...))  -- () parenthesis to remove other returns
-			
+
 
 	-- must only connect() inside a function, not at top level
 	-- else Error: cannot yield across C-call boundary
@@ -147,15 +167,15 @@ return \database, user, password, host, port, pool, dbg ->
 	-- closes the connection, vs disconnect() which keepalive the connection and rollback uncommitted transaction
 	K.close = ->
 		db.disconnect(@)
-		
+
 	-- if read timed out, pgmoon closes the socket for us
 	-- no need to wrap in xpcall()
 	K.listen = ->
 		return db.wait_for_notification(@)
-	
+
 	K.subscribe = \channel ->
 		return db.query(@, 'LISTEN ' .. channel)
-	
+
 	K.unsubscribe = \channel ->
 		return db.query(@, 'UNLISTEN ' .. channel)
 
@@ -172,13 +192,21 @@ return \database, user, password, host, port, pool, dbg ->
 			tx = 0
 		keepalive(timeout)
 
-	K.begin = ->
-		var cmd = tx < 1 and 'BEGIN' or 'SAVEPOINT ' .. sp_name()
+	K.begin = \serializable ->
+		var cmd
+		if tx < 1
+			if serializable == true
+				cmd = 'BEGIN ISOLATION LEVEL SERIALIZABLE'
+			else if serializable == false
+				cmd = 'BEGIN ISOLATION LEVEL REPEATABLE READ'
+			else
+				cmd = 'BEGIN'
+		else
+			cmd = 'SAVEPOINT ' .. sp_name()
 		tx = tx + 1
 		if dbg
 			print(cmd)
-		db.query(@, cmd)
-		return tx
+		return db.query(@, cmd)
 
 	K.commit = ->
 		assert(tx > 0, "no transaction or savepoint to commit")
@@ -186,8 +214,8 @@ return \database, user, password, host, port, pool, dbg ->
 		var cmd = tx < 1 and 'COMMIT' or 'RELEASE SAVEPOINT ' .. sp_name()
 		if dbg
 			print(cmd)
-		db.query(@, cmd)
-		return tx
+		return db.query(@, cmd)
+
 
 	K.rollback = ->
 		assert(tx > 0, "no transaction or savepoint to rollback")
@@ -195,8 +223,7 @@ return \database, user, password, host, port, pool, dbg ->
 		var cmd = tx < 1 and 'ROLLBACK' or 'ROLLBACK TO SAVEPOINT ' .. sp_name()
 		if dbg
 			print(cmd)
-		db.query(@, cmd)
-		return tx
+		return db.query(@, cmd)
 
 	return K
 

@@ -7,6 +7,29 @@ local pjson = require("pgmoon.json")
 local phstore = require("pgmoon.hstore")
 local sql = require("losty.sql.base")
 local str_gsub = string.gsub
+local escape = {literal = function(val)
+    if val == nil or val == ngx.null then
+        return "NULL"
+    end
+    local ty = type(val)
+    if "number" == ty or "boolean" == ty then
+        return tostring(val)
+    elseif "string" == ty then
+        return "'" .. str_gsub(val, "'", "''") .. "'"
+    end
+    error("cannot escape literal " .. tostring(val))
+end, identifier = function(val)
+    if "string" == type(val) then
+        return "\"" .. str_gsub(val, "\"", "\"\"") .. "\""
+    end
+    error("cannot escape identifier " .. tostring(val))
+end, any = function(val, mode)
+    local s = str_gsub(val, "/%*", "/ *")
+    s = str_gsub(s, "%*/", "* /")
+    s = str_gsub(s, "%-%-", "- -")
+    s = str_gsub(s, ";", "")
+    return str_gsub(s, mode, "")
+end}
 return function(database, user, password, host, port, pool, dbg)
     local db = pgmoon.new({
         database = database
@@ -16,13 +39,6 @@ return function(database, user, password, host, port, pool, dbg)
         , port = port
         , pool = pool
     })
-    local escape = function(str, mode)
-        local s = str_gsub(str, "/%*", "/ *")
-        s = str_gsub(s, "%*/", "* /")
-        s = str_gsub(s, "%-%-", "- -")
-        s = str_gsub(s, ";", "")
-        return str_gsub(s, mode, "")
-    end
     local encode_row
     encode_row = function(t)
         local out = {}
@@ -55,7 +71,7 @@ return function(database, user, password, host, port, pool, dbg)
         local ty = type(v)
         if "table" == ty then
             if mode == "r" then
-                return db:escape_literal(encode_row(v))
+                return escape.literal(encode_row(v))
             elseif mode == "a" then
                 return parrays.encode_array(v)
             elseif mode == "h" then
@@ -67,17 +83,19 @@ return function(database, user, password, host, port, pool, dbg)
             if mode == "b" then
                 return db:encode_bytea(v)
             elseif mode == "?" then
-                return db:escape_literal(v)
+                return escape.literal(v)
+            elseif mode == "!" then
+                return escape.identifier(v)
             elseif mode == ")" or mode == "]" then
-                return escape(v, "%" .. mode)
+                return escape.any(v, "%" .. mode)
             end
         end
-        return nil, "Invalid placeholder `:" .. mode .. "` for a " .. ty
+        return nil, "invalid placeholder `:" .. mode .. "` for a " .. ty
     end
     local interpolate = function(query, ...)
         local args = {...}
         local i = 0
-        return str_gsub(query, "(:?):([a-z%?%)%]])", function(c, mode)
+        return str_gsub(query, "(:?):([a-z!%?%)%]])", function(c, mode)
             if c == ":" then
                 return "::" .. mode
             end
@@ -93,7 +111,7 @@ return function(database, user, password, host, port, pool, dbg)
         local n = select("#", ...)
         local q, i = interpolate(str, ...)
         if n ~= i then
-            ngx.log(ngx.ERR, "Trying to match ", i, " placeholders to ", n, " arguments for query `", str, "`")
+            ngx.log(ngx.ERR, "trying to match ", i, " placeholders to ", n, " arguments for query `", str, "`")
         end
         if dbg then
             print(q)
@@ -147,14 +165,24 @@ return function(database, user, password, host, port, pool, dbg)
         end
         keepalive(timeout)
     end
-    K.begin = function()
-        local cmd = tx < 1 and "BEGIN" or "SAVEPOINT " .. sp_name()
+    K.begin = function(serializable)
+        local cmd
+        if tx < 1 then
+            if serializable == true then
+                cmd = "BEGIN ISOLATION LEVEL SERIALIZABLE"
+            elseif serializable == false then
+                cmd = "BEGIN ISOLATION LEVEL REPEATABLE READ"
+            else
+                cmd = "BEGIN"
+            end
+        else
+            cmd = "SAVEPOINT " .. sp_name()
+        end
         tx = tx + 1
         if dbg then
             print(cmd)
         end
-        db:query(cmd)
-        return tx
+        return db:query(cmd)
     end
     K.commit = function()
         assert(tx > 0, "no transaction or savepoint to commit")
@@ -163,8 +191,7 @@ return function(database, user, password, host, port, pool, dbg)
         if dbg then
             print(cmd)
         end
-        db:query(cmd)
-        return tx
+        return db:query(cmd)
     end
     K.rollback = function()
         assert(tx > 0, "no transaction or savepoint to rollback")
@@ -173,8 +200,7 @@ return function(database, user, password, host, port, pool, dbg)
         if dbg then
             print(cmd)
         end
-        db:query(cmd)
-        return tx
+        return db:query(cmd)
     end
     return K
 end
