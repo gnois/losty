@@ -27,7 +27,7 @@ return \db, run ->
 	-- query returns only one row
 	var one = \query, ... ->
 		var res, err, partial, count = run(query, ...)
-		var result = res and res[1] or {}
+		var result = res and res[1]
 		return result, err, partial, count
 
 	for k, v in pairs(map)
