@@ -60,11 +60,15 @@ return \lock_name, cache_name, key ->
 
 
 	return {
-		-- if not locked
-		--    if check started but error, unlock and 
+		-- if check started but error, return nil, err
+		-- else lock if can
 		--    if already started, returns 1 or 2 or 3 or 4 ...
 		--    else start, return 1
+		--      caller must release() later
 		-- else false, "exists"
+		
+		-- sec - hold secs before auto unlock, eg: 10
+		-- expiry - how many secs to keep state, eg: 24 * 3600 = 24 hrs
 		acquire = \id, secs, expiry ->
 			-- try read
 			var val, c = get(id)

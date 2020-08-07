@@ -1,48 +1,45 @@
 -- Cache lock abstraction, from
 -- https://github.com/openresty/lua-resty-lock#for-cache-locks
 
--- Must have this nginx directive at http level
--- lua_shared_dict locks 1m;
+--`` 
+nginx.conf
 
-var rlock = require('resty.lock')
+http {
+   lua_shared_dict lock_name 1m;
+   ...
+
+``
+
+var locker = require('resty.lock')
 
 -- Usage 1: Read from cache if exist, else add to cache
--- Usage 2: Check if file exists, else create the file
+-- Usage 2: Check if file exists, else write the file
 
--- done is function to try read/check. It shd take the key as param and return non-nil value
--- create is function to create the target if it havent existed
+-- read(key) tries to read the target, return non-nil if succeed
+-- write() creates the target if it havent existed
 
--- returns value from done(), or create()
--- else if create or acquire/lock/unlock failed, returns nil, err
+-- returns value from read(), or write()
 
-return \lock, key, done, create, ...->
+return \lock_name, key, expiry, read, write, ...->
 	-- check if exist
-	var val, err = done(key)
+	var val, err = read(key)
 	if val ~= nil
 		return val
 
 	-- not exist, acquire lock...
-	var locker = rlock.new(@, lock)
-	var elapsed
-	elapsed, err = locker.lock(@, key)
-	if not elapsed
-		ngx.log(ngx.ERR, "Fail to acquire '", key, "' from ", lock, ": ", err)
+	var lock = locker.new(@, lock_name, {exptime = expiry})
+	var ok
+	ok, err = lock.lock(@, key)
+	if not ok
 		return nil, err
 
-	-- lock acquired
-	ngx.log(ngx.INFO, "Acquired '", key, "' from ", lock, " after ", elapsed, " seconds")
-
-	-- while waiting, someone might have created the target
-	val, err = done(key)
+	-- lock acquired. while waiting, someone might have created the target
+	val, err = read(key)
 	if val == nil
-		val, err = create(...)
+		val, err = write(...)
 	
 	-- release lock
-	var ok
-	ok, err = locker.unlock(@)
-	if not ok
-		ngx.log(ngx.ERR, "Fail to release '", key, "' from ", lock, ": ", err)
-		return nil, err
+	ok, err = lock.unlock(@)
 	return val, err
 
 
