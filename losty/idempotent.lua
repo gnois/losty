@@ -24,7 +24,6 @@ return function(lock_name, cache_name, key)
     end
     local get = function(id)
         local val, flags = cache:get(key)
-        print(id, " flags ", flags)
         if "number" == type(flags) then
             if id == nil and flags == 1 then
                 return val, flags
@@ -40,6 +39,7 @@ return function(lock_name, cache_name, key)
         if "string" == type(c) then
             return nil, c
         end
+        crc = c
         local ok, err = lock.lock(key, secs)
         if ok then
             if c == nil then

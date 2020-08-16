@@ -1,4 +1,4 @@
---`` 
+--``
 For idempotent POST request
 
 - Using shdict as state machine and cache: cache lifetime is user defined
@@ -28,7 +28,7 @@ return \lock_name, cache_name, key ->
 
 	var lock = locker(lock_name)
 	var crc = 1 -- in case value is nil, this nonzero flag indicates the value has been inserted
-	
+
 	-- expiry - how long to keep
 	-- id must be nil or string
 	-- if already started, return false, "exists"
@@ -49,7 +49,7 @@ return \lock_name, cache_name, key ->
 	-- else nil, err
 	var get = \id ->
 		var val, flags = cache.get(@, key)
-		print(id, ' flags ', flags)
+		--print(id, ' flags ', flags)
 		if "number" == type(flags) -- not error
 			if id == nil and flags == 1
 				return val, flags
@@ -66,7 +66,7 @@ return \lock_name, cache_name, key ->
 		--    else start, return 1
 		--      caller must release() later
 		-- else false, "exists"
-		
+
 		-- sec - hold secs before auto unlock, eg: 10
 		-- expiry - how many secs to keep state, eg: 24 * 3600 = 24 hrs
 		acquire = \id, secs, expiry ->
@@ -75,6 +75,8 @@ return \lock_name, cache_name, key ->
 			if 'string' == type(c) -- error
 				return nil, c
 
+			-- get the crc for complete() later
+			crc = c
 			var ok, err = lock.lock(key, secs)
 			if ok
 				if c == nil -- not found
@@ -89,7 +91,7 @@ return \lock_name, cache_name, key ->
 
 		, release = ->
 			lock.unlock(key)
-		
+
 		-- if exists
 		--   if completed, return nil, "not a number"
 		--   else  return 2, 3 ...

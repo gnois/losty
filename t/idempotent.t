@@ -9,10 +9,7 @@ our $HttpConfig = qq{
     lua_shared_dict caches 100k;
 };
 
-$ENV{TEST_NGINX_WORKER_USER}='www www';
-
 no_long_string();
-
 
 run_tests();
 
