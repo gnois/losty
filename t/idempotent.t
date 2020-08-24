@@ -32,7 +32,7 @@ __DATA__
                k, err = idem.advance()
                ngx.say("idem: ", k, " ", err)
             end
-            k, err = idem.complete(201, "YES", 20)
+            k, err = idem.save(201, "YES", 20)
             ngx.say("idem: ", k, " ", err)
             idem.release()
             k, err = idem.acquire("fdasds", 2, 20)
@@ -48,7 +48,7 @@ GET /t
 idem: 1 nil
 idem: 2 nil
 idem: 3 nil
-idem: true nil
+idem: 201 nil
 idem: nil identity mismatch
 idem: 201 YES
 
@@ -85,7 +85,7 @@ idem: 201 YES
             ngx.say("idem: ", k, " ", err)
             k, err = idem.acquire(ngx.var.request_uri, 2, 20)
             ngx.say("idem: ", k, " ", err)
-            k, err = idem.complete(200, "YES", 20)
+            k, err = idem.save(200, "YES", 20)
             ngx.say("idem: ", k, " ", err)
             idem.release()
         }
@@ -100,8 +100,60 @@ sub idem: false not locked
 idem: 2 nil
 idem: 3 nil
 idem: false exists
-idem: true nil
+idem: 200 nil
 
 --- no_error_log
 [error]
 
+
+
+
+=== TEST 3: advancing via save()
+--- http_config eval: $::HttpConfig
+--- config
+    location = /t {
+        content_by_lua_block {
+            local idempotent = require "losty.idempotent"
+            local key = "foo"
+            local idem = idempotent("locks", "caches", key)
+            collectgarbage("collect")
+            local k, err = idem.acquire(ngx.var.request_uri, 2, 20)
+            ngx.say("idem: ", k, " ", err)
+            for i = 1, 2 do
+               collectgarbage("collect")
+               k, err = idem.advance()
+               ngx.say("idem: ", k, " ", err)
+            end
+            k, err = idem.save(5, "YES", 20)
+            ngx.say("idem: ", k, " ", err)
+            idem.release()
+            k, err = idem.acquire(ngx.var.request_uri, 2, 13)
+            ngx.say("idem: ", k, " ", err)
+            k, err = idem.save(6, "NOPE")
+            idem.release()
+            k, err = idem.save(7, "MAY")
+            ngx.say("idem: ", k, " ", err)
+            k, err = idem.acquire(ngx.var.request_uri, 2, 16)
+            ngx.say("idem: ", k, " ", err)
+            k, err = idem.save(8, "BE")
+            ngx.say("idem: ", k, " ", err)
+            k, err = idem.save(7, "MAY")
+            ngx.say("idem: ", k, " ", err)
+        }
+    }
+--- request
+GET /t
+--- response_body
+idem: 1 nil
+idem: 2 nil
+idem: 3 nil
+idem: 5 nil
+idem: 5 YES
+idem: false not locked
+idem: 6 NOPE
+idem: 8 nil
+idem: 7 nil
+
+
+--- no_error_log
+[error]

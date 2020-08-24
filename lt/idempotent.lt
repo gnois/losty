@@ -18,7 +18,9 @@ nginx.conf
 var locker = require('losty.lock')
 var json = require('cjson.safe')
 var crc32 = ngx.crc32_short
-var abs = math.abs
+-- although the doc says is unsigned, seems like is signed
+var intmax = 2147483647
+
 
 return \lock_name, cache_name, key ->
 
@@ -36,7 +38,8 @@ return \lock_name, cache_name, key ->
 	-- if ok, return 1
 	var start = \id, expiry ->
 		if id ~= nil
-			crc = abs(crc32(id))
+			crc = crc32(id) % intmax
+		print(id, ' crc ', crc)
 		var ok, err = cache.safe_add(@, key, 1, expiry, crc)
 		if ok
 			return 1, crc
@@ -49,11 +52,11 @@ return \lock_name, cache_name, key ->
 	-- else nil, err
 	var get = \id ->
 		var val, flags = cache.get(@, key)
-		--print(id, ' flags ', flags)
+		print(id, ' flags ', flags)
 		if "number" == type(flags) -- not error
 			if id == nil and flags == 1
 				return val, flags
-			if id and abs(crc32(id)) ~= flags
+			if id and crc32(id) % intmax ~= flags
 				return val, "identity mismatch"
 		return val, flags
 
@@ -81,11 +84,11 @@ return \lock_name, cache_name, key ->
 			if ok
 				if c == nil -- not found
 					return start(id, expiry), nil
-				-- decode if completed
+				-- decode if saved state
 				if 'number' == type(val)
 					return val, nil
-				var result = json.decode(val)
-				return result.status, result.body
+				var out = json.decode(val)
+				return out.status, out.body
 			return ok, err
 
 
@@ -93,7 +96,7 @@ return \lock_name, cache_name, key ->
 			lock.unlock(key)
 
 		-- if exists
-		--   if completed, return nil, "not a number"
+		--   if saved, return nil, "not a number"
 		--   else  return 2, 3 ...
 		-- else nil, "not found"
 		, advance = ->
@@ -101,12 +104,16 @@ return \lock_name, cache_name, key ->
 				return cache.incr(@, key, 1)
 			return false, "not locked"
 
-		-- expiry - how long to keep
+		-- expiry - how long to keep. 0 if no expiry
 		-- returns true if ok
-		, complete = \status, body, expiry ->
+		-- once save() is called, cannot use advance()
+		, save = \status, body, expiry ->
 			if lock.locked(key)
 				var str = json.encode({status = status, body = body})
-				return cache.set(@, key, str, expiry, crc)
+				var ok, err = cache.set(@, key, str, expiry, crc)
+				if ok
+					return status
+				return ok, err
 			return false, "not locked"
 	}
 

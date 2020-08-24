@@ -4,7 +4,7 @@
 local locker = require("losty.lock")
 local json = require("cjson.safe")
 local crc32 = ngx.crc32_short
-local abs = math.abs
+local intmax = 2147483647
 return function(lock_name, cache_name, key)
     local cache = ngx.shared[cache_name]
     if not cache then
@@ -14,8 +14,9 @@ return function(lock_name, cache_name, key)
     local crc = 1
     local start = function(id, expiry)
         if id ~= nil then
-            crc = abs(crc32(id))
+            crc = crc32(id) % intmax
         end
+        print(id, " crc ", crc)
         local ok, err = cache:safe_add(key, 1, expiry, crc)
         if ok then
             return 1, crc
@@ -24,11 +25,12 @@ return function(lock_name, cache_name, key)
     end
     local get = function(id)
         local val, flags = cache:get(key)
+        print(id, " flags ", flags)
         if "number" == type(flags) then
             if id == nil and flags == 1 then
                 return val, flags
             end
-            if id and abs(crc32(id)) ~= flags then
+            if id and crc32(id) % intmax ~= flags then
                 return val, "identity mismatch"
             end
         end
@@ -48,8 +50,8 @@ return function(lock_name, cache_name, key)
             if "number" == type(val) then
                 return val, nil
             end
-            local result = json.decode(val)
-            return result.status, result.body
+            local out = json.decode(val)
+            return out.status, out.body
         end
         return ok, err
     end, release = function()
@@ -59,10 +61,14 @@ return function(lock_name, cache_name, key)
             return cache:incr(key, 1)
         end
         return false, "not locked"
-    end, complete = function(status, body, expiry)
+    end, save = function(status, body, expiry)
         if lock.locked(key) then
             local str = json.encode({status = status, body = body})
-            return cache:set(key, str, expiry, crc)
+            local ok, err = cache:set(key, str, expiry, crc)
+            if ok then
+                return status
+            end
+            return ok, err
         end
         return false, "not locked"
     end}
