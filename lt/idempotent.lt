@@ -30,17 +30,17 @@ return \lock_name, cache_name, key ->
 
 	var lock = locker(lock_name)
 	var crc = 1 -- in case value is nil, this nonzero flag indicates the value has been inserted
+	var expire = 0 -- how many secs to keep state, 0 is no expiry
 
-	-- expiry - how long to keep
 	-- id must be nil or string
 	-- if already started, return false, "exists"
 	-- may return false, "no memory"
 	-- if ok, return 1
-	var start = \id, expiry ->
+	var start = \id ->
 		if id ~= nil
 			crc = crc32(id) % intmax
 		print(id, ' crc ', crc)
-		var ok, err = cache.safe_add(@, key, 1, expiry, crc)
+		var ok, err = cache.safe_add(@, key, 1, expire, crc)
 		if ok
 			return 1, crc
 		return ok, err
@@ -52,7 +52,7 @@ return \lock_name, cache_name, key ->
 	-- else nil, err
 	var get = \id ->
 		var val, flags = cache.get(@, key)
-		print(id, ' flags ', flags)
+		--print(id, ' flags ', flags)
 		if "number" == type(flags) -- not error
 			if id == nil and flags == 1
 				return val, flags
@@ -67,28 +67,29 @@ return \lock_name, cache_name, key ->
 		-- else lock if can
 		--    if already started, returns 1 or 2 or 3 or 4 ...
 		--    else start, return 1
-		--      caller must release() later
+		--      caller can release() later, or let it auto unlock
 		-- else false, "exists"
 
-		-- sec - hold secs before auto unlock, eg: 10
-		-- expiry - how many secs to keep state, eg: 24 * 3600 = 24 hrs
+		-- sec - (required) hold secs before auto unlock, eg: 10
+		-- expiry - (optional) how many secs to keep state in secs, eg: 24 * 3600 is 24 hrs
 		acquire = \id, secs, expiry ->
 			-- try read
 			var val, c = get(id)
 			if 'string' == type(c) -- error
 				return nil, c
 
-			-- get the crc for complete() later
+			-- get the crc if any, for save() later
 			crc = c
+			expire = expiry or 0
 			var ok, err = lock.lock(key, secs)
 			if ok
 				if c == nil -- not found
-					return start(id, expiry), nil
+					return start(id), nil
 				-- decode if saved state
 				if 'number' == type(val)
 					return val, nil
 				var out = json.decode(val)
-				return out.status, out.body
+				return out.state, out.data
 			return ok, err
 
 
@@ -104,15 +105,19 @@ return \lock_name, cache_name, key ->
 				return cache.incr(@, key, 1)
 			return false, "not locked"
 
-		-- expiry - how long to keep. 0 if no expiry
+		
+		-- state must be int
+		-- data is optional
+		--    if data is nil then can call advance() again
 		-- returns true if ok
-		-- once save() is called, cannot use advance()
-		, save = \status, body, expiry ->
+		, save = \state, data ->
 			if lock.locked(key)
-				var str = json.encode({status = status, body = body})
-				var ok, err = cache.set(@, key, str, expiry, crc)
+				var val = state
+				if data ~= nil
+					val = json.encode({state = state, data = data})
+				var ok, err = cache.replace(@, key, val, expire, crc)
 				if ok
-					return status
+					return state
 				return ok, err
 			return false, "not locked"
 	}

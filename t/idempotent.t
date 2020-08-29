@@ -26,31 +26,31 @@ __DATA__
             local idem = idempotent("locks", "caches", key)
             collectgarbage("collect")
             local k, err = idem.acquire(ngx.var.request_uri, 2, 20)
-            ngx.say("idem: ", k, " ", err)
+            ngx.say("acq: ", k, " ", err)
             for i = 1, 2 do
                collectgarbage("collect")
                k, err = idem.advance()
                ngx.say("idem: ", k, " ", err)
             end
-            k, err = idem.save(201, "YES", 20)
+            k, err = idem.save(201, "YES")
             ngx.say("idem: ", k, " ", err)
             idem.release()
             k, err = idem.acquire("fdasds", 2, 20)
-            ngx.say("idem: ", k, " ", err)
+            ngx.say("acq: ", k, " ", err)
             k, err = idem.acquire(ngx.var.request_uri, 2, 20)
-            ngx.say("idem: ", k, " ", err)
+            ngx.say("acq: ", k, " ", err)
             idem.release()
         }
     }
 --- request
 GET /t
 --- response_body
-idem: 1 nil
+acq: 1 nil
 idem: 2 nil
 idem: 3 nil
 idem: 201 nil
-idem: nil identity mismatch
-idem: 201 YES
+acq: nil identity mismatch
+acq: 201 YES
 
 --- no_error_log
 [error]
@@ -67,7 +67,7 @@ idem: 201 YES
 
             local t, err = ngx.thread.spawn(function()
                 local k, err = idem.acquire(ngx.var.request_uri, 2, 20)
-                ngx.say("sub idem: ", k, " ", err)
+                ngx.say("sub acq: ", k, " ", err)
                 for i = 1, 2 do
                     ngx.sleep(1)
                     k, err = idem.advance()
@@ -80,12 +80,12 @@ idem: 201 YES
             ngx.say("idem: ", k, " ", err)
             ngx.sleep(2.5)
             k, err = idem.acquire(ngx.var.request_uri, 2, 20)
-            ngx.say("idem: ", k, " ", err)
+            ngx.say("acq: ", k, " ", err)
             k, err = idem.advance()
             ngx.say("idem: ", k, " ", err)
             k, err = idem.acquire(ngx.var.request_uri, 2, 20)
-            ngx.say("idem: ", k, " ", err)
-            k, err = idem.save(200, "YES", 20)
+            ngx.say("acq: ", k, " ", err)
+            k, err = idem.save(200, "YES")
             ngx.say("idem: ", k, " ", err)
             idem.release()
         }
@@ -93,13 +93,13 @@ idem: 201 YES
 --- request
 GET /t
 --- response_body
-sub idem: 1 nil
+sub acq: 1 nil
 idem: false exists
 sub idem: 2 nil
 sub idem: false not locked
-idem: 2 nil
+acq: 2 nil
 idem: 3 nil
-idem: false exists
+acq: false exists
 idem: 200 nil
 
 --- no_error_log
@@ -124,20 +124,22 @@ idem: 200 nil
                k, err = idem.advance()
                ngx.say("idem: ", k, " ", err)
             end
-            k, err = idem.save(5, "YES", 20)
+            k, err = idem.save(5, "YES")
             ngx.say("idem: ", k, " ", err)
             idem.release()
             k, err = idem.acquire(ngx.var.request_uri, 2, 13)
-            ngx.say("idem: ", k, " ", err)
+            ngx.say("acq: ", k, " ", err)
             k, err = idem.save(6, "NOPE")
             idem.release()
             k, err = idem.save(7, "MAY")
             ngx.say("idem: ", k, " ", err)
             k, err = idem.acquire(ngx.var.request_uri, 2, 16)
-            ngx.say("idem: ", k, " ", err)
+            ngx.say("acq: ", k, " ", err)
             k, err = idem.save(8, "BE")
             ngx.say("idem: ", k, " ", err)
-            k, err = idem.save(7, "MAY")
+            k, err = idem.save(7)
+            ngx.say("idem: ", k, " ", err)
+            k, err = idem.advance()
             ngx.say("idem: ", k, " ", err)
         }
     }
@@ -148,11 +150,12 @@ idem: 1 nil
 idem: 2 nil
 idem: 3 nil
 idem: 5 nil
-idem: 5 YES
+acq: 5 YES
 idem: false not locked
-idem: 6 NOPE
+acq: 6 NOPE
 idem: 8 nil
 idem: 7 nil
+idem: 8 nil
 
 
 --- no_error_log

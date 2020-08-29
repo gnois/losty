@@ -12,12 +12,13 @@ return function(lock_name, cache_name, key)
     end
     local lock = locker(lock_name)
     local crc = 1
-    local start = function(id, expiry)
+    local expire = 0
+    local start = function(id)
         if id ~= nil then
             crc = crc32(id) % intmax
         end
         print(id, " crc ", crc)
-        local ok, err = cache:safe_add(key, 1, expiry, crc)
+        local ok, err = cache:safe_add(key, 1, expire, crc)
         if ok then
             return 1, crc
         end
@@ -25,7 +26,6 @@ return function(lock_name, cache_name, key)
     end
     local get = function(id)
         local val, flags = cache:get(key)
-        print(id, " flags ", flags)
         if "number" == type(flags) then
             if id == nil and flags == 1 then
                 return val, flags
@@ -42,16 +42,17 @@ return function(lock_name, cache_name, key)
             return nil, c
         end
         crc = c
+        expire = expiry or 0
         local ok, err = lock.lock(key, secs)
         if ok then
             if c == nil then
-                return start(id, expiry), nil
+                return start(id), nil
             end
             if "number" == type(val) then
                 return val, nil
             end
             local out = json.decode(val)
-            return out.status, out.body
+            return out.state, out.data
         end
         return ok, err
     end, release = function()
@@ -61,12 +62,15 @@ return function(lock_name, cache_name, key)
             return cache:incr(key, 1)
         end
         return false, "not locked"
-    end, save = function(status, body, expiry)
+    end, save = function(state, data)
         if lock.locked(key) then
-            local str = json.encode({status = status, body = body})
-            local ok, err = cache:set(key, str, expiry, crc)
+            local val = state
+            if data ~= nil then
+                val = json.encode({state = state, data = data})
+            end
+            local ok, err = cache:replace(key, val, expire, crc)
             if ok then
-                return status
+                return state
             end
             return ok, err
         end
