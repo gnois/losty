@@ -2,26 +2,26 @@
 var enc = require('losty.enc')
 var hmac = ngx.hmac_sha1
 
-return \secret ->
+-- length (optional) - limit string length to be returned, and signature length check later
+return \secret, length ->
 	if not secret
 		error("secret required", 2)
+	if length
+		assert(length > 1, "signed url length must be greater than 1")
 
 	return {
-		sign = \payload, length ->
+		sign = \payload ->
 			assert(payload)
 			var sig = enc.encode64(hmac(secret, payload))
 			if length
-				assert(length > 1)
 				return string.sub(sig, 1, length)
 			return sig
 		
-		-- length - (optional) limits signature length check
-		, verify = \sig, payload, length ->
+		, verify = \sig, payload ->
 			assert(payload)
 			if sig
 				var mac = enc.encode64(hmac(secret, payload))
 				if length
-					assert(length > 1)
 					return string.sub(sig, 1, length) == string.sub(mac, 1, length)
 				return sig == mac
 			return false
