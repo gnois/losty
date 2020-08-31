@@ -36,7 +36,7 @@ return \lock_name, key, expiry, read, write, ...->
 	-- lock acquired. while waiting, someone might have created the target
 	val, err = read(key)
 	if val == nil
-		val, err = write(...)
+		val, err = write(key, ...)
 	
 	-- release lock
 	ok, err = lock.unlock(@)

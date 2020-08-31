@@ -15,7 +15,7 @@ return function(lock_name, key, expiry, read, write, ...)
     end
     val, err = read(key)
     if val == nil then
-        val, err = write(...)
+        val, err = write(key, ...)
     end
     ok, err = lock:unlock()
     return val, err
