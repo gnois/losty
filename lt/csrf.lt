@@ -4,25 +4,19 @@
 --  else browser `Back` button always fail csrf check
 
 var rnd = require('resty.random')
-var str = require('resty.string')
 var wrap = require('losty.wrap')
 var encode64 = ngx.encode_base64
 var decode64 = ngx.decode_base64
 
 var Name = 'csrf'
-var Len = 8
+var Len = 16
 
 var make = \res ->
 	return res.cookie(Name, true, nil, '/')
 
--- generate a random binary of `length` converted to hex
--- the returned string is longer than `length`
-var least = \length ->
-	var key = rnd.bytes(length)
-	return str.to_hex(key)
 
 var write = \req, res ->
-	var key = least(Len)
+	var key = rnd.bytes(Len)
 	make(res)(nil, true, req.secure(), encode64(key))
 	return key
 
@@ -51,7 +45,7 @@ return \secret ->
 
 		, check = \req, res, token ->
 			var key = read(req)
-			if token and key and #key > Len
+			if token and key and #key == Len
 				var bag = wrap(secret, key)
 				var sig, data = string.match(token, "^(.*)%.(.*)$")
 				if data
@@ -61,8 +55,8 @@ return \secret ->
 							return true
 						-- remove expired cookie
 						make(res)(-10)
-						return false, "token expired"
+						return false, "expired"
 			-- leave cookie untouched
-			return false, "forbidden"
+			return false, "invalid"
 	}
 	

@@ -10,6 +10,10 @@ var aes = require('resty.aes')
 var rnd = require('resty.random')
 var str = require('losty.str')
 
+-- AES salt length MUST BE MULTIPLE OF 8! else nginx gives intermittent error:
+-- ignoring stale global SSL error (SSL: error:06065064:digital envelope routines:EVP_DecryptFinal_ex:bad decrypt)
+var Len = 8
+
 var encode64 = ngx.encode_base64
 var decode64 = ngx.decode_base64
 var hmac = ngx.hmac_sha1
@@ -24,9 +28,7 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 		error("session secret required", 2)
 
 	var encrypt = \value ->
-		-- AES salt length MUST BE MULTIPLE OF 8! else nginx gives intermittent error:
-		-- ignoring stale global SSL error (SSL: error:06065064:digital envelope routines:EVP_DecryptFinal_ex:bad decrypt)
-		var salt = rnd.bytes(8)
+		var salt = rnd.bytes(Len)
 		var d, err = json.encode(value)
 		if d
 			var k = hmac(secret, salt)
@@ -42,7 +44,7 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 			if x and x[1] and x[2]
 				var data = decode64(x[1])
 				var salt = decode64(x[2])
-				if data and salt
+				if data and salt and #salt == Len
 					var k = hmac(secret, salt)
 					var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
 					var d = a and a.decrypt(@, data)

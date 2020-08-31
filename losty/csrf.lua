@@ -2,21 +2,16 @@
 -- Generated from csrf.lt
 --
 local rnd = require("resty.random")
-local str = require("resty.string")
 local wrap = require("losty.wrap")
 local encode64 = ngx.encode_base64
 local decode64 = ngx.decode_base64
 local Name = "csrf"
-local Len = 8
+local Len = 16
 local make = function(res)
     return res.cookie(Name, true, nil, "/")
 end
-local least = function(length)
-    local key = rnd.bytes(length)
-    return str.to_hex(key)
-end
 local write = function(req, res)
-    local key = least(Len)
+    local key = rnd.bytes(Len)
     make(res)(nil, true, req.secure(), encode64(key))
     return key
 end
@@ -41,7 +36,7 @@ return function(secret)
         return sig .. "." .. data
     end, check = function(req, res, token)
         local key = read(req)
-        if token and key and #key > Len then
+        if token and key and #key == Len then
             local bag = wrap(secret, key)
             local sig, data = string.match(token, "^(.*)%.(.*)$")
             if data then
@@ -51,10 +46,10 @@ return function(secret)
                         return true
                     end
                     make(res)(-10)
-                    return false, "token expired"
+                    return false, "expired"
                 end
             end
         end
-        return false, "forbidden"
+        return false, "invalid"
     end}
 end

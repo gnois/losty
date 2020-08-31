@@ -5,6 +5,7 @@ local json = require("cjson.safe")
 local aes = require("resty.aes")
 local rnd = require("resty.random")
 local str = require("losty.str")
+local Len = 8
 local encode64 = ngx.encode_base64
 local decode64 = ngx.decode_base64
 local hmac = ngx.hmac_sha1
@@ -16,7 +17,7 @@ return function(name, secret, key)
         error("session secret required", 2)
     end
     local encrypt = function(value)
-        local salt = rnd.bytes(8)
+        local salt = rnd.bytes(Len)
         local d, err = json.encode(value)
         if d then
             local k = hmac(secret, salt)
@@ -33,10 +34,10 @@ return function(name, secret, key)
             if x and x[1] and x[2] then
                 local data = decode64(x[1])
                 local salt = decode64(x[2])
-                if data and salt then
+                if data and salt and #salt == Len then
                     local k = hmac(secret, salt)
                     local a = aes:new(k, salt)
-                    local d = a:decrypt(data)
+                    local d = a and a:decrypt(data)
                     if d then
                         if hmac(k, table.concat({salt, d, key})) == decode64(sig) then
                             return json.decode(d)
