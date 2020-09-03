@@ -2,34 +2,19 @@ var upload = require('resty.upload')
 var cjson = require('cjson.safe')
 var str = require('losty.str')
 
-var has_body = \req ->
-	if not req.headers["Transfer-Encoding"] and not tonumber(req.headers["Content-Length"])
-		return false, "Empty request body"
-	return true
-
-var urlencoded = \req ->
-	var ok, err = has_body(req)
-	if ok
-		req.read_body()
-		return req.get_post_args()
-	return ok, err
-	
 var raw = \req ->
-	var ok, err = has_body(req)
-	if ok
-		req.read_body()
-		var data = req.get_body_data()
-		if not data 
-			var file = req.get_body_file()
-			if file 
-				var fp
-				fp, err = io.open(file, 'r')
-				if fp
-					data = fp.read(@, '*a')
-					fp.close(@)
-		return data, err
-	return ok, err
-	
+	var data = req.get_body_data()
+	if not data
+		var file = req.get_body_file()
+		if file 
+			var fp, err = io.open(file, 'r')
+			if not fp
+				return fp, err
+			data = fp.read(@, '*a')
+			fp.close(@)
+	return data
+
+
 var json = \req ->
 	var r, err = raw(req)
 	if r
@@ -37,37 +22,37 @@ var json = \req ->
 	return r, err
 
 
-var content_disposition = \value ->
-	var dtype, params = string.match(value, '([%w%-%._]+);(.+)')
-	if dtype and params
-		var out, o = {}, 0
-		for param in str.gsplit(params, ';')
-			var key, val = string.match(param, '([%w%.%-_]+)="(.+)"$')
-			if key
-				o = o + 1
-				out[o] = {key, val}
-		return out
-
-
-
 var K = {}
 
--- https://github.com/felixge/node-formidable/blob/master/lib/incoming_form.js
+K.raw = \req ->
+	req.read_body()
+	return raw(req)
+	
+
+-- chunked encoding
+-- https://github.com/openresty/lua-nginx-module/blob/master/t/116-raw-req-socket.t
+
 -- http://stackoverflow.com/questions/18877778/how-to-inspect-post-body-in-nginx-httpluamodule/19060711#19060711
 -- buffered way
+-- only for HTTP 1.x
 K.buffered = \req ->
-	var ctype = req.headers["Content-Type"]
-	if ctype
-		if string.match(ctype, "octet-stream")
-			return raw(req)
-		if string.match(ctype, "urlencoded")
-			return urlencoded(req)
-		if string.match(ctype, "json")
-			return json(req)
-		return nil, "Unfamiliar content-type " .. ctype
-	return nil, "Missing content-type"
+	if req.headers["Transfer-Encoding"] or req.headers["Content-Length"]
+		req.read_body()
+		var ctype = req.headers["Content-Type"]
+		if ctype
+			if string.match(ctype, "urlencoded")
+				return req.get_post_args()
+			if string.match(ctype, "octet-stream")
+				return raw(req)
+			if string.match(ctype, "json")
+				return json(req)
+			return nil, "Unfamiliar content-type " .. ctype
+		return nil, "Missing content-type"
+	return false, "Empty request body"
 
--- streaming way can look at 
+
+
+-- streaming way
 -- https://github.com/openresty/lua-resty-websocket/
 
 
@@ -81,6 +66,18 @@ case key
 --``
 
 var yield = coroutine.yield
+
+var content_disposition = \value ->
+	var dtype, params = string.match(value, '([%w%-%._]+);(.+)')
+	if dtype and params
+		var out, o = {}, 0
+		for param in str.gsplit(params, ';')
+			var key, val = string.match(param, '([%w%.%-_]+)="(.+)"$')
+			if key
+				o = o + 1
+				out[o] = {key, val}
+		return out
+
 
 var parser =  ->
 	var input, err = upload.new(@, 4096)

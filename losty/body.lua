@@ -4,39 +4,20 @@
 local upload = require("resty.upload")
 local cjson = require("cjson.safe")
 local str = require("losty.str")
-local has_body = function(req)
-    if not req.headers["Transfer-Encoding"] and not tonumber(req.headers["Content-Length"]) then
-        return false, "Empty request body"
-    end
-    return true
-end
-local urlencoded = function(req)
-    local ok, err = has_body(req)
-    if ok then
-        req.read_body()
-        return req.get_post_args()
-    end
-    return ok, err
-end
 local raw = function(req)
-    local ok, err = has_body(req)
-    if ok then
-        req.read_body()
-        local data = req.get_body_data()
-        if not data then
-            local file = req.get_body_file()
-            if file then
-                local fp
-                fp, err = io.open(file, "r")
-                if fp then
-                    data = fp:read("*a")
-                    fp:close()
-                end
+    local data = req.get_body_data()
+    if not data then
+        local file = req.get_body_file()
+        if file then
+            local fp, err = io.open(file, "r")
+            if not fp then
+                return fp, err
             end
+            data = fp:read("*a")
+            fp:close()
         end
-        return data, err
     end
-    return ok, err
+    return data
 end
 local json = function(req)
     local r, err = raw(req)
@@ -45,6 +26,32 @@ local json = function(req)
     end
     return r, err
 end
+local K = {}
+K.raw = function(req)
+    req.read_body()
+    return raw(req)
+end
+K.buffered = function(req)
+    if req.headers["Transfer-Encoding"] or req.headers["Content-Length"] then
+        req.read_body()
+        local ctype = req.headers["Content-Type"]
+        if ctype then
+            if string.match(ctype, "urlencoded") then
+                return req.get_post_args()
+            end
+            if string.match(ctype, "octet-stream") then
+                return raw(req)
+            end
+            if string.match(ctype, "json") then
+                return json(req)
+            end
+            return nil, "Unfamiliar content-type " .. ctype
+        end
+        return nil, "Missing content-type"
+    end
+    return false, "Empty request body"
+end
+local yield = coroutine.yield
 local content_disposition = function(value)
     local dtype, params = string.match(value, "([%w%-%._]+);(.+)")
     if dtype and params then
@@ -59,24 +66,6 @@ local content_disposition = function(value)
         return out
     end
 end
-local K = {}
-K.buffered = function(req)
-    local ctype = req.headers["Content-Type"]
-    if ctype then
-        if string.match(ctype, "octet-stream") then
-            return raw(req)
-        end
-        if string.match(ctype, "urlencoded") then
-            return urlencoded(req)
-        end
-        if string.match(ctype, "json") then
-            return json(req)
-        end
-        return nil, "Unfamiliar content-type " .. ctype
-    end
-    return nil, "Missing content-type"
-end
-local yield = coroutine.yield
 local parser = function()
     local input, err = upload:new(4096)
     if input then
