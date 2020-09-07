@@ -39,7 +39,7 @@ return \lock_name, cache_name, key ->
 	var start = \id ->
 		if id ~= nil
 			crc = crc32(id) % intmax
-		print(id, ' crc ', crc)
+		-- print(id, ' crc ', crc)
 		var ok, err = cache.safe_add(@, key, 1, expire, crc)
 		if ok
 			return 1, crc

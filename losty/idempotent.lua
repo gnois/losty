@@ -17,7 +17,6 @@ return function(lock_name, cache_name, key)
         if id ~= nil then
             crc = crc32(id) % intmax
         end
-        print(id, " crc ", crc)
         local ok, err = cache:safe_add(key, 1, expire, crc)
         if ok then
             return 1, crc
