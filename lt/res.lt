@@ -119,9 +119,10 @@ var cookie = \name, httponly, domain, path ->
 
 	if jar[name]
 		ngx.log(ngx.NOTICE, "Overwriting cookie " .. name)
-	else
-		o = o + 1
-		order[o] = name
+
+	-- ok if overwrite, still preserve order
+	o = o + 1
+	order[o] = name
 
 	jar[name] = data
 	return data
