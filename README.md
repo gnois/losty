@@ -1,21 +1,22 @@
 ## Losty = [Luaty](https://github.com/gnois/luaty) + [OpenResty](http://openresty.org)
 
-Losty is a functional style web framework that runs on OpenResty with minimal dependencies.
+Losty is a functional style web framework for OpenResty with minimal dependencies.
 
 By composing functions almost everywhere and utilizing Lua's powerful language features, it adds helpers on OpenResty without obscuring its API that you are familiar with.
 
-It has built in
+It has
 - request router
 - request body parsers
 - content-negotiation
 - cookie helpers
 - flash helpers
-- encrypted session
 - CSRF helpers
+- encrypted session
 - slug generation for url
 - DSL for HTML generation
-- Server Side Event (SSE) support
 - input validation helpers
+- idempotent API helper
+- Server Side Event (SSE) support
 - table, string and functional helpers
 - SQL operation and seeding helpers
 - SQL testing helpers
@@ -56,19 +57,15 @@ http {
 
 		location / {
 			content_by_lua_block {
-				local server = require("losty.web")
-				local web = server()
-				local w = web.route()
-
-				w.get('/', function(q, r)
+				local web = require('losty.web')()
+				local w = web.route('/t')
+				w.get('/hi', function(q, r)
 					r.status = 200
 					r.headers["content-type"] = "text/plain"
-					return "Hello world!"
+					return "Hi world"
 				end)
-
 				web.run()
 			}
-
 		}
 	}
 }
@@ -102,7 +99,7 @@ end
 When a route is matched with the requested URL, Losty dispatcher invokes the first handler, which may call the next handler with q.next() passing more arguments, like `val` in the above example, or simply return a response body.
 
 
-Here is another handler that opens a postgresql database connection and passes it to the next handler, then closes the connection and returns the received result.
+Here is another handler that opens a postgresql database connection and passes it to the next handler, then keepalives the connection and returns the received result.
 ```
 local pg = require('losty.sql.pg')
 
@@ -128,12 +125,12 @@ end, form, database, function(q, r, body, db)
 	return json.encode({ok = true})
 end)
 ```
-Notice how the form `body` and `db` are appended and passed as arguments to the following handlers.
+Notice how the form `body` and `db` are appended and passed as arguments to the following handlers, and the last handler optionally returns JSON as response body.
 
-If the response body is large, or may not be available all at once, we can return a function from the handler, and Losty will call the function as a coroutine and resume it until it is done. That function would use `coroutine.yield()` to return the response when it becomes available.
+If the response body is large, or may not be available all at once, we can return a function from the handler, and Losty will call the function as a coroutine and resume it until it is done. That function could then use `coroutine.yield()` to return the response when it becomes available.
 
 
-Other frameworks normally use a context table that is extended with keys and passed across handlers, but Losty passes them as cumulative function arguments, thanks to Lua variable argument and multiple return values. Here are some considerations for Losty's design.
+Other frameworks normally use a context table that is extended with keys and passed across handlers, but Losty passes them as cumulative function arguments by default, thanks to Lua variable argument and multiple return values. Here are some considerations for Losty's design.
 
 * Arguments are easily visible.
 * Arguments (un)packing is slower, but may not be significant if there are only a handful of handlers.
@@ -141,11 +138,11 @@ Other frameworks normally use a context table that is extended with keys and pas
 
 
 ### Request Table
-Inside handlers, the passed in request table is a thin wrapper for ngx.var and ngx.req, from which all properties are accessible.
+Inside handlers, the passed in request table (q) is a thin wrapper for ngx.var and ngx.req, from which all properties are accessible.
 
 
 ### Response Table
-Inside handlers, the passed in response table is a thin helper used to set HTTP headers and cookies, and wraps `ngx.status`. Setting `ngx.status` directly also works as expected.
+Inside handlers, the passed in response table (r) is a thin helper used to set HTTP headers and cookies, and wraps `ngx.status`. Setting `ngx.status` directly also works as expected.
 ```
 r.headers[Name] = value
 r.status = 201
@@ -154,15 +151,10 @@ assert(ngx.status == 201)
 
 #### Cookies
 
-The cookie API is flexible thanks to Lua metatable. Cookies are created using the response table in 2 steps:
+Cookies are created using the response table in 2 steps:
 ```
 local ck = r.cookie('biscuit', true, nil, '/')  -- step 1
 local data = ck(nil, true, r.secure(), value) -- step 2
-
--- if value is an encoding function, data can be used as a table that will be stored in the cookie
-data.id = xxx
-data.token = yyy
-
 ```
 Step 1. r.cookie is called with a name, and optional httponly, domain and path. These 4 parameters make up the identity of a cookie, which is required if deletion is intended.
 
@@ -172,9 +164,14 @@ Step 2. r.cookie returns another function, which must be called to specify age, 
   * +ve is the number of secs for the cookie to last
   * -ve means it will be deleted when the response is returned, and samesite, secure and value is not needed. eg:  ck(-100)
 
-- The cookie value is optional. It can be:
+- If the age is not -ve number, the cookie value can be specified as either:
   * a simple string, treated as is
-  * an encoding function, such as json.encode(), which encodes the callable table as a cookie key/value object
+  * an encoding function, such as json.encode(), which encodes the cookie as key/value object. Continuing from the above example:
+
+```
+data.id = xxx
+data.token = yyy
+```
 
 
 ### Session
@@ -196,6 +193,7 @@ w.post('/login', function(q, r)
 ```
 In the above example, there will be a cookie named 'candy' within document.cookie readable by javascript, holding the signature of this session cookie.
 The actual encrypted data is stored in other cookie named 'candy_', which is httponly.
+Both cookies is matched to ensure the session is not tampered with.
 
 
 
@@ -431,15 +429,20 @@ A third boolean parameter prevents `<!DOCTYPE html>` being prepended to the resu
 
 ### (SQL) testing or seeding helpers
 
-There is a simple unit testing helper for exercising your SQL or Lua functionalities.
+Losty has a simple unit testing helper for exercising your SQL or Lua functionalities.
 
 ```
 local setup = require('losty.test')
 local pg = require('losty.sql.pg')
 
 local sql = pg(databasename, username, password, true)
+
+-- the 1st parameter `sql` can be nil if we are not testing database operations
 setup(sql, function(test, a, p, q)
-	-- Note that sql can be nil, and q is optional, so that we only test Lua functions and not SQL operations
+	-- test is a function that tests some assertions
+	-- a is an assert function
+	-- p is a printing function
+	-- q holds a table of functions for sql query (optional)
 
 	p('user test')
 	q.begin()
@@ -449,7 +452,7 @@ setup(sql, function(test, a, p, q)
 		local u = user.add(q, "belly@email.com", 'Passw0rd')
 		a(u and u.user_id, u)  -- works like assert
 		uid = u.user_id
-	end, true) -- true means commit to database, until end of parent scope, which can decide whether to commit or rollback
+	end, true) -- true means commit a savepoint to database, until end of parent scope, which then decide whether to commit or rollback the whole setup
 
 	test("can match user", function()
 		local i = q.s1([[* from find_user(:?, :?)]], "belly@email.com", 'Passw0rd')
