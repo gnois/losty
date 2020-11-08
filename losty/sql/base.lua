@@ -1,6 +1,7 @@
 --
 -- Generated from base.lt
 --
+local json = require("cjson")
 local map = {select = "SELECT ", insert = "INSERT INTO ", update = "UPDATE ", delete = "DELETE FROM "}
 return function(db, run)
     local K = {run = run}
@@ -9,7 +10,11 @@ return function(db, run)
     end
     for k, v in pairs(map) do
         K[k] = function(sql, ...)
-            return run(v .. sql, ...)
+            local res, err, partial, count = run(v .. sql, ...)
+            if res then
+                setmetatable(res, json.empty_array_mt)
+            end
+            return res, err, partial, count
         end
     end
     local one = function(query, ...)

@@ -1,3 +1,6 @@
+var json = require('cjson')
+
+
 var map = {
 	select = "SELECT "
 	, insert = "INSERT INTO "
@@ -22,7 +25,11 @@ return \db, run ->
 	-- caller to test for result[1]
 	for k, v in pairs(map)
 		K[k] = \sql, ... ->
-			return run(v .. sql, ...)
+			var res, err, partial, count = run(v .. sql, ...)
+			if res
+				setmetatable(res, json.empty_array_mt)
+			return res, err, partial, count
+
 
 	-- query returns only one row
 	var one = \query, ... ->
