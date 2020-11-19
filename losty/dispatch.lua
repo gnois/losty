@@ -1,18 +1,21 @@
 --
 -- Generated from dispatch.lt
 --
-return function(handlers, req, res)
-    local i, n = 0, #handlers
-    local args, a = {}, 0
+return function(hn, req, res, ...)
+    local i, n = 0, #hn
+    local nargs = select("#", ...)
+    local args = {...}
     local nxt = req.next
     req.next = function(...)
-        for _, v in ipairs({...}) do
-            a = a + 1
-            args[a] = v
+        local np = select("#", ...)
+        local p = {...}
+        for j = 1, np do
+            args[nargs + j] = p[j]
         end
+        nargs = nargs + np
         i = i + 1
         if i <= n then
-            return handlers[i](req, res, unpack(args))
+            return hn[i](req, res, unpack(args, 1, nargs))
         end
     end
     local v = req.next()
