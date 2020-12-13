@@ -8,12 +8,9 @@ return function(key, salt, size, mode, hash, rounds)
     hash = hash or aes.hash.md5
     local cipher = aes.cipher(size, mode)
     local a = aes:new(key, salt, cipher, hash, rounds)
-    local K = {}
-    K.encrypt = function(str)
+    return {encrypt = function(str)
         return a:encrypt(str)
-    end
-    K.decrypt = function(str)
+    end, decrypt = function(str)
         return a:decrypt(str)
-    end
-    return K
+    end}
 end
