@@ -10,6 +10,9 @@ local req = require("losty.req")
 local res = require("losty.res")
 local HTML = "text/html"
 local JSON = "application/json"
+local must_no_body = function(method, code)
+    return method == "HEAD" or code < 200 or code == 204 or code == 205 or code == 304
+end
 return function()
     local rt = router()
     local route = function(prefix)
@@ -31,9 +34,6 @@ return function()
         end
         return r
     end
-    local must_no_body = function(method, code)
-        return method == "HEAD" or code < 200 or code == 204 or code == 205 or code == 304
-    end
     local run = function(errors)
         local q = req()
         local r = res()
@@ -52,7 +52,7 @@ return function()
             end)
             if ok then
                 if r.status == 0 then
-                    error("response status required", 2)
+                    error("Response status required", 2)
                 end
                 if r.status >= 200 and r.status < 300 or body then
                     if not must_no_body(method, r.status) and not r.headers["Content-Type"] then
@@ -89,14 +89,10 @@ return function()
         r.send()
         if body and not must_no_body(method, r.status) then
             if "function" == type(body) then
-                local co = coroutine.create(body)
-                repeat
-                    local ok, val = coroutine.resume(co)
-                    if ok and val then
-                        ngx.print(val)
-                        ngx.flush(true)
-                    end
-                until not ok
+                for val in body() do
+                    ngx.print(val)
+                    ngx.flush(true)
+                end
             else
                 ngx.print(body)
             end

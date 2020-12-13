@@ -9,7 +9,12 @@ var res = require('losty.res')
 var HTML = "text/html"
 var JSON = "application/json"
 
--- why return function? because we want to separate router if used in different nginx location block
+-- see https://httpstatuses.com/
+var must_no_body = \method, code ->
+	return method == 'HEAD' or code < 200 or code == 204 or code == 205 or code == 304
+
+
+-- why return function? because we want separate router if used in different nginx location block
 return ->
 	var rt = router()
 
@@ -22,12 +27,8 @@ return ->
 				rt.set(string.upper(method), path, f, ...)
 		return r
 
-	-- see https://httpstatuses.com/
-	var must_no_body = \method, code ->
-		return method == 'HEAD' or code < 200 or code == 204 or code == 205 or code == 304
 
-
-	-- errors will only be used for HTTP status >= 400 and 
+	-- errors will only be used for HTTP status >= 400 and
 	-- can be true, nil or table indexed by HTTP status number, eg: { [400] = "<html> error message markup </html>" }
 	var run = \errors ->
 		var q = req()
@@ -49,7 +50,7 @@ return ->
 			if ok
 				-- ngx.status defaults to 0
 				if r.status == 0
-					error("response status required", 2)
+					error("Response status required", 2)
 				-- status < 200 or >= 300 can have no content, so no content-type needed
 				if r.status >= 200 and r.status < 300 or body
 					if not must_no_body(method, r.status) and not r.headers['Content-Type']
@@ -61,7 +62,7 @@ return ->
 			r.status = 404
 
 		-- for status 400 above without body:
-		-- 1. if json is requested, provide default response 
+		-- 1. if json is requested, provide default response
 		-- 2. if text/* is requested
 			-- if errors is true, fall back to nginx error_page
 			-- else if errors is table, use error[status] html
@@ -77,7 +78,7 @@ return ->
 						ngx.exit(r.status)
 					else if errors
 						body = errors[r.status]
-				
+
 					if not body
 						ctype = "text/plain"
 						body = status(r.status)
@@ -86,16 +87,14 @@ return ->
 		r.send()
 		if body and not must_no_body(method, r.status)
 			if 'function' == type(body)
-				var co = coroutine.create(body)
-				do
-					var ok, val = coroutine.resume(co)
-					if ok and val
-						ngx.print(val)
-						ngx.flush(true)
-				until not ok
+				for val in body()
+					ngx.print(val)
+					ngx.flush(true)
+				-- limitation: handlers cannot cleanup (close connection etc) after generating output
 			else
 				ngx.print(body)
 		ngx.eof()
+
 
 
 	return {
