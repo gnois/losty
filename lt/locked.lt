@@ -20,26 +20,23 @@ var locker = require('resty.lock')
 
 -- returns value from read(), or write()
 
-return \lock_name, key, expiry, read, write, ...->
+var f = \lock_name, key, expiry, read, write, ...->
 	-- check if exist
 	var val, err = read(key)
-	if val ~= nil
-		return val
-
-	-- not exist, acquire lock...
-	var lock = locker.new(@, lock_name, {exptime = expiry})
-	var ok
-	ok, err = lock.lock(@, key)
-	if not ok
-		return nil, err
-
-	-- lock acquired. while waiting, someone might have created the target
-	val, err = read(key)
 	if val == nil
-		val, err = write(key, ...)
-	
-	-- release lock
-	ok, err = lock.unlock(@)
+		-- not exist, acquire lock...
+		var lock = locker.new(@, lock_name, {exptime = expiry})
+		var ok
+		ok, err = lock.lock(@, key)
+		if ok
+			-- lock acquired. while waiting, someone might have created the target
+			val, err = read(key)
+			if val == nil
+				val, err = write(key, ...)
+
+			lock.unlock(@)
+
 	return val, err
 
 
+return f
