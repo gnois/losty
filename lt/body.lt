@@ -22,39 +22,6 @@ var json = \req ->
 	return r, err
 
 
-var K = {}
-
-K.raw = \req ->
-	req.read_body()
-	return raw(req)
-	
-
--- chunked encoding
--- https://github.com/openresty/lua-nginx-module/blob/master/t/116-raw-req-socket.t
-
--- http://stackoverflow.com/questions/18877778/how-to-inspect-post-body-in-nginx-httpluamodule/19060711#19060711
--- buffered way
--- only for HTTP 1.x
-K.buffered = \req ->
-	if req.headers["Transfer-Encoding"] or req.headers["Content-Length"]
-		req.read_body()
-		var ctype = req.headers["Content-Type"]
-		if ctype
-			if string.match(ctype, "urlencoded")
-				return req.get_post_args()
-			if string.match(ctype, "octet-stream")
-				return raw(req)
-			if string.match(ctype, "json")
-				return json(req)
-			return nil, "Unfamiliar content-type " .. ctype
-		return nil, "Missing content-type"
-	return false, "Empty request body"
-
-
-
--- streaming way
--- https://github.com/openresty/lua-resty-websocket/
-
 
 --``
 coroutine yields key, val
@@ -79,7 +46,7 @@ var content_disposition = \value ->
 		return out
 
 
-var parser =  ->
+var parser = ->
 	var input, err = upload.new(@, 4096)
 	if input
 		input.set_timeout(@, 2000) -- 2 sec
@@ -101,19 +68,44 @@ var parser =  ->
 				else if 'part_end' == t
 					yield(false, nil)
 			else
-				err = err or "Fail to parse upload data"
+				err = err or "fail to parse upload data"
 		until not t or t == 'eof'
 	return nil, err
 
 
-K.multipart = \req ->
-	var parse = coroutine.create(parser)
-	return ->
-		var ctype = req.headers["Content-Type"]
-		if ctype and string.match(ctype, "multipart")
-			var code, key, val = coroutine.resume(parse)
-			return key, val
-		return nil, "Expected multipart/form-data but received " .. ctype or 'nil'
 
 
-return K
+return {
+	raw = \req ->
+		req.read_body()
+		return raw(req)
+		
+
+	-- chunked encoding
+	-- https://github.com/openresty/lua-nginx-module/blob/master/t/116-raw-req-socket.t
+
+	-- http://stackoverflow.com/questions/18877778/how-to-inspect-post-body-in-nginx-httpluamodule/19060711#19060711
+	-- buffered way
+	-- only for HTTP 1.x
+	, prepare = \req ->
+		if req.headers["Transfer-Encoding"] or req.headers["Content-Length"]
+			req.read_body()
+			var ctype = req.headers["Content-Type"]
+			if ctype
+				if string.match(ctype, "urlencoded")
+					return req.get_post_args()
+				if string.match(ctype, "octet-stream")
+					return raw(req)
+				if string.match(ctype, "json")
+					return json(req)
+				if string.match(ctype, "multipart")
+					return ->
+						var parse = coroutine.create(parser)
+						return ->
+							var code, key, val = coroutine.resume(parse)
+							return key, val
+				return nil, "unfamiliar content-type " .. ctype
+			return nil, "missing content-type"
+		return false, "possibly empty request body"
+
+}

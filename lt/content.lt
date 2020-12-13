@@ -80,14 +80,14 @@ var dual = \... ->
 
 
 var form = \req, res ->
-	var val, fail = body.buffered(req)
-	var method = req.vars.request_method
-	if val or method == 'DELETE'
+	-- val is an iterator function for multipart/form-data
+	var val, err = body.prepare(req)
+	if val or 'DELETE' == req.vars.request_method
 		return req.next(val)
 	-- http://stackoverflow.com/questions/7323958/are-put-and-post-requests-required-expected-to-have-a-request-body
 	-- js client should not PUT or POST without a body
 	res.status = ngx.HTTP_BAD_REQUEST
-	return { fail = fail or method .. " should have request body" }
+	return {fail = err or "no request body"}
 
 
 return {

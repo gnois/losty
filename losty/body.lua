@@ -26,31 +26,6 @@ local json = function(req)
     end
     return r, err
 end
-local K = {}
-K.raw = function(req)
-    req.read_body()
-    return raw(req)
-end
-K.buffered = function(req)
-    if req.headers["Transfer-Encoding"] or req.headers["Content-Length"] then
-        req.read_body()
-        local ctype = req.headers["Content-Type"]
-        if ctype then
-            if string.match(ctype, "urlencoded") then
-                return req.get_post_args()
-            end
-            if string.match(ctype, "octet-stream") then
-                return raw(req)
-            end
-            if string.match(ctype, "json") then
-                return json(req)
-            end
-            return nil, "Unfamiliar content-type " .. ctype
-        end
-        return nil, "Missing content-type"
-    end
-    return false, "Empty request body"
-end
 local yield = coroutine.yield
 local content_disposition = function(value)
     local dtype, params = string.match(value, "([%w%-%._]+);(.+)")
@@ -92,21 +67,41 @@ local parser = function()
                     yield(false, nil)
                 end
             else
-                err = err or "Fail to parse upload data"
+                err = err or "fail to parse upload data"
             end
         until not t or t == "eof"
     end
     return nil, err
 end
-K.multipart = function(req)
-    local parse = coroutine.create(parser)
-    return function()
+return {raw = function(req)
+    req.read_body()
+    return raw(req)
+end, prepare = function(req)
+    if req.headers["Transfer-Encoding"] or req.headers["Content-Length"] then
+        req.read_body()
         local ctype = req.headers["Content-Type"]
-        if ctype and string.match(ctype, "multipart") then
-            local code, key, val = coroutine.resume(parse)
-            return key, val
+        if ctype then
+            if string.match(ctype, "urlencoded") then
+                return req.get_post_args()
+            end
+            if string.match(ctype, "octet-stream") then
+                return raw(req)
+            end
+            if string.match(ctype, "json") then
+                return json(req)
+            end
+            if string.match(ctype, "multipart") then
+                return function()
+                    local parse = coroutine.create(parser)
+                    return function()
+                        local code, key, val = coroutine.resume(parse)
+                        return key, val
+                    end
+                end
+            end
+            return nil, "unfamiliar content-type " .. ctype
         end
-        return nil, "Expected multipart/form-data but received " .. ctype or "nil"
+        return nil, "missing content-type"
     end
-end
-return K
+    return false, "possibly empty request body"
+end}
