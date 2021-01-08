@@ -3,7 +3,7 @@
 
 -- creates two cookies
 -- 1. signature  (readable by js)
--- 2. payload    (httponly)
+-- 2. payload|salt    (httponly)
 
 var json = require('cjson.safe')
 var aes = require('resty.aes')

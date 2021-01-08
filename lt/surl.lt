@@ -10,17 +10,17 @@ return \secret, length ->
 		assert(length > 1, "signed url length must be greater than 1")
 
 	return {
-		sign = \payload ->
-			assert(payload)
-			var sig = enc.encode64(hmac(secret, payload))
+		sign = \str ->
+			assert(str)
+			var sig = enc.encode64(hmac(secret, str))
 			if length
 				return string.sub(sig, 1, length)
 			return sig
 		
-		, verify = \sig, payload ->
-			assert(payload)
+		, verify = \sig, str ->
+			assert(str)
 			if sig
-				var mac = enc.encode64(hmac(secret, payload))
+				var mac = enc.encode64(hmac(secret, str))
 				if length
 					return string.sub(sig, 1, length) == string.sub(mac, 1, length)
 				return sig == mac

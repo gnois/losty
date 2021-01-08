@@ -10,17 +10,17 @@ return function(secret, length)
     if length then
         assert(length > 1, "signed url length must be greater than 1")
     end
-    return {sign = function(payload)
-        assert(payload)
-        local sig = enc.encode64(hmac(secret, payload))
+    return {sign = function(str)
+        assert(str)
+        local sig = enc.encode64(hmac(secret, str))
         if length then
             return string.sub(sig, 1, length)
         end
         return sig
-    end, verify = function(sig, payload)
-        assert(payload)
+    end, verify = function(sig, str)
+        assert(str)
         if sig then
-            local mac = enc.encode64(hmac(secret, payload))
+            local mac = enc.encode64(hmac(secret, str))
             if length then
                 return string.sub(sig, 1, length) == string.sub(mac, 1, length)
             end
