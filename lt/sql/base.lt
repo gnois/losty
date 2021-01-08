@@ -1,9 +1,7 @@
 var json = require('cjson')
 
-
 var map = {
-	select = "SELECT "
-	, insert = "INSERT INTO "
+	insert = "INSERT INTO "
 	, update = "UPDATE "
 	, delete = "DELETE FROM "
 }
@@ -21,24 +19,42 @@ return \db, run ->
 	K.settimeouts = \connect, send, read ->
 		db.settimeouts(@, connect, send, read)
 
-	-- query returns multiple rows
+
+	-- select multiple rows
 	-- caller to test for result[1]
+	K.select = \sql, ... ->
+		var res, err, partial, count = run("SELECT " .. sql, ...)
+		if res
+			setmetatable(res, json.empty_array_mt)
+		return res, err, partial, count
+
+	-- insert, update, delete
+	-- result can be {affected_rows=n, {...}} or true
 	for k, v in pairs(map)
 		K[k] = \sql, ... ->
 			var res, err, partial, count = run(v .. sql, ...)
-			if res
-				setmetatable(res, json.empty_array_mt)
+			if res and res == true
+				res = {}
 			return res, err, partial, count
 
 
-	-- query returns only one row
-	var one = \query, ... ->
-		var res, err, partial, count = run(query, ...)
-		var result = res and res[1]
-		return result, err, partial, count
+	-- expect query returns only one row
+	K.select1 = \sql, ... ->
+		var res, err, partial, count = run("SELECT " .. sql, ...)
+		return res and res[1], err, partial, count
 
+
+	-- insert, update, delete
+	-- result can be {affected_rows=n, {...}} or true
 	for k, v in pairs(map)
 		K[k .. '1'] = \sql, ... ->
-			return one(v .. sql, ...)
+			var res, err, partial, count = run(v .. sql, ...)
+			if res
+				if res == true
+					res = {}
+				else
+					res = res[1]
+			return res, err, partial, count
+
 
 	return K
