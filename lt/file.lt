@@ -1,0 +1,32 @@
+-- determine forward or back slash
+var Slash = package.config.sub(@, 1, 1)
+
+return {
+	Slash = Slash
+
+	-- read whole file
+	, read = \path ->
+		var f = assert(io.open(path, "r"))
+		var text = f.read(@, "*all")
+		f.close(@)
+		return text
+
+
+	-- write whole file
+	, write = \path, text ->
+		var f = assert(io.open(path, "w"))
+		f.write(@, text)
+		f.close(@)
+
+
+	, localize = \path ->
+		if Slash == '\\'
+			return string.gsub(path, '/', Slash)
+		return string.gsub(path, '\\', Slash)
+
+
+	-- get the filename given a path like abc/def
+	, filename = \path ->
+		return string.match(path, "[^/]*$")
+
+}
