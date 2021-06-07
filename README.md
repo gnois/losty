@@ -7,7 +7,7 @@ By composing functions almost everywhere and utilizing Lua's powerful language f
 It has
 - request router
 - request body parsers
-- content-negotiation
+- content negotiation
 - cookie helpers
 - flash helpers
 - CSRF helpers
@@ -16,7 +16,7 @@ It has
 - DSL for HTML generation
 - input validation helpers
 - idempotent API helper
-- Server Side Event (SSE) support
+- Server Side Event (SSE) helper
 - table, string and functional helpers
 - SQL operation and seeding helpers
 - SQL testing helpers
@@ -25,6 +25,7 @@ It has
 Losty is written in [Luaty](https://github.com/gnois/luaty) and compiled to Lua.
 
 Bug reports and contributions are very much welcomed and appreciated.
+
 
 
 ## Dependency
@@ -49,164 +50,63 @@ opm get gnois/losty
 nginx.conf
 ```
 events {
-	worker_connections 4096;
+   worker_connections 4096;
 }
 http {
-	server {
-		listen 80;
+   server {
+      listen 80;
 
-		location / {
-			content_by_lua_block {
-				local web = require('losty.web')()
-				local w = web.route('/t')
-				w.get('/hi', function(q, r)
-					r.status = 200
-					r.headers["content-type"] = "text/plain"
-					return "Hi world"
-				end)
-				web.run()
-			}
-		}
-	}
+      location / {
+         content_by_lua_block {
+            local web = require('losty.web')()      -- line 1
+            local w = web.route('/t')               -- line 2
+            w.get('/hi', function(q, r)             -- line 3
+               r.status = 200
+               r.headers["content-type"] = "text/plain"
+               return "Hi world"
+            end)
+            web.run()
+         }
+      }
+   }
 }
 ```
+
+The result can be viewed by visiting `/t/hi`.
 
 See [losty-starters](https://github.com/gnois/losty-starters) repo for more examples.
 
 
-## General Idea
+## Introduction
 
-Losty can be used in content_by_lua_* directive in OpenResty. It matches HTTP requests to user defined routes, which associates one or more handler functions that process the request.
-Similar to frameworks like Koajs, handlers need to be invoked downstream, and then control flows back upstream.
+Losty can be used in content_by_lua* directive in OpenResty. It matches HTTP requests to user defined routes, which associates one or more handler functions that process the request.
+Similar to frameworks like Koajs, handlers need to be explicitly invoked downstream, and then control flows back upstream.
 
+line 1, 2 and 3 in the Quickstart is the basic pattern to setup route handlers within a content_by_lua* block.
+Line 1 returns a simple key/value table having only 2 functions, `route()` and `run()`.
 
-### Handler
-
-A handler is a function that takes a request (q) and a response (r) table, and optionally more arguments which may be passed from previous handlers.
-
-Here is a handler for http POST, PUT or DELETE request, taken from the built in content.lua helper:
-```
-function form(q, r)
-	local val, fail = body.buffered(q)
-	local method = q.vars.request_method
-	if val or method == "DELETE" then
-		return q.next(val)
-	end
-	r.status = ngx.HTTP_BAD_REQUEST
-	return {fail = fail or method .. " should have request body"}
-end
-```
-When a route is matched with the requested URL, Losty dispatcher invokes the first handler, which may call the next handler with q.next() passing more arguments, like `val` in the above example, or simply return a response body.
-
-
-Here is another handler that opens a postgresql database connection and passes it to the next handler, then keepalives the connection and returns the received result.
-```
-local pg = require('losty.sql.pg')
-
-function database(q, r)
-	local db = pg(databasename, username, password)
-	db.connect()
-	local out = q.next(db)
-	db.disconnect()
-	return out
-end
-```
-
-The above handlers can be chained like this:
+`route()` may be called multiple times, each taking an optional path prefix for grouping purpose. In the quickstart, `/t` is the prefix used to group route handlers under `/t/...` url.
+If any combined prefix and path resolves to the same string, their associated handlers are accumulated (but still has to be explicitly invoked). For eg:
 
 ```
-w.post('/path', function(q, r)
-	r.headers["Content-Type"] = "application/json"
-	return q.next()
-end, form, database, function(q, r, body, db)
-	-- use body and db
-	db.insert("users(name) values (:?)", body.name)
-	r.status = 201
-	return json.encode({ok = true})
+local web = require('losty.web')()
+local w = web.route()
+w.get('/a/b', function(q, r)
+   r.status = 403
+   return q.next()      -- explicitly invoke next handler if any
 end)
-```
-Notice how the form `body` and `db` are appended and passed as arguments to the following handlers, and the last handler optionally returns JSON as response body.
 
-If the response body is large, or may not be available all at once, we can return a function from the handler, and Losty will call the function as a coroutine and resume it until it is done. That function could then use `coroutine.yield()` to return the response when it becomes available.
-
-
-Other frameworks normally use a context table that is extended with keys and passed across handlers, but Losty passes them as cumulative function arguments by default, thanks to Lua variable argument and multiple return values. Here are some considerations for Losty's design.
-
-* Arguments are easily visible.
-* Arguments (un)packing is slower, but may not be significant if there are only a handful of handlers.
-* Switching to a context table is easy for Losty; just append keys to the request (q) or response (r) table. But the reverse is not.
-
-
-### Request Table
-Inside handlers, the passed in request table (q) is a thin wrapper for ngx.var and ngx.req, from which all properties are accessible.
-
-
-### Response Table
-Inside handlers, the passed in response table (r) is a thin helper used to set HTTP headers and cookies, and wraps `ngx.status`. Setting `ngx.status` directly also works as expected.
-```
-r.headers[Name] = value
-r.status = 201
-assert(ngx.status == 201)
-```
-
-#### Cookies
-
-Cookies are created using the response table in 2 steps:
-```
-local ck = r.cookie('biscuit', true, nil, '/')  -- step 1
-local data = ck(nil, true, r.secure(), value) -- step 2
-```
-Step 1. r.cookie is called with a name, and optional httponly, domain and path. These 4 parameters make up the identity of a cookie, which is required if deletion is intended.
-
-Step 2. r.cookie returns another function, which must be called to specify age, samesite, secure and cookie value.
-- The age can be nil, +ve or -ve number
-  * nil means the cookie will be deleted upon browser close
-  * +ve is the number of secs for the cookie to last
-  * -ve means it will be deleted when the response is returned, and samesite, secure and value is not needed. eg:  ck(-100)
-
-- If the age is not -ve number, the cookie value can be specified as either:
-  * a simple string, treated as is
-  * an encoding function, such as json.encode(), which encodes the cookie as key/value object. Continuing from the above example:
+local w = web.route('/a')
+w.get('/b/', function(q, r) return "No entry" end)      -- line 4
 
 ```
-data.id = xxx
-data.token = yyy
-```
+
+Visiting `/a/b` will get "No entry" with HTTP status 403. Notice that the extra `/` on line 4 is ignored.
+
+After routes are established, `run()` must be called to start handling incoming requests.
 
 
-### Session
-
-Session is implemented via a pair of cookies, one bearing the encrypted data, which is httponly and the other bears its signature, which is javascript readable.
-This allows javascript to detect cookie changes, and act accordingly without additional server round trip.
-
-```
-var session = require('losty.sess')
-var sess = session('candy', "This IS secret", "this-is_key")
-
-w.post('/login', function(q, r)
-	r.headers["Content-Type"] = "application/json"
-	var s = sess(q, r, 3600 * 24 * 7) -- age 7 days
-	s.data = "userid"
-	s.extra = {other = "info"}
-	r.redirect('/')
-)
-```
-In the above example, there will be a cookie named 'candy' within document.cookie readable by javascript, holding the signature of this session cookie.
-The actual encrypted data is stored in other cookie named 'candy_', which is httponly.
-Both cookies is matched to ensure the session is not tampered with.
-
-
-
-### Response completion and returning control to Nginx
-
-Response headers including cookies and sessions are accumulated and finally set into `ngx.headers` before response is returned.
-Setting `ngx.headers` directly prior to returning response should also work as expected.
-
-Note that calling `ngx.exec()`, `ngx.redirect()`, `ngx.exit()`, `ngx.flush()`, `ngx.say()`, `ngx.print()` or `ngx.eof()` in a handler would short circuit the Losty dispatcher flow and return control to Nginx immediately. A valid example would be to use `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages.
-
-
-
-### Routes
+### Routes definition
 
 Routes are defined using HTTP methods, like get() for GET or post() for POST.
 
@@ -219,7 +119,7 @@ There is no named capture like in other frameworks, due to possible conflicting 
   /page/:id
   /page/:user
 ```
-where :user may never be matched, and `q.match['user']` is always nil
+where :user may never be matched, causing `q.match['user']` to be always nil.
 
 Hence, q.match is not a keyed table, but an array instead, which also enables multiple captures within one segment.
 eg:
@@ -227,12 +127,12 @@ eg:
 /page/:%w-(%d)-(%d)
 ```
 
-There is no way to specify optional last segment, to avoid possible conflicts
+There is no way to specify an optional last segment, to avoid possible conflicts:
 ```
   /page/:?  <- not valid
   /page
 ```
-Specify both routes instead, with and without the optional segment
+Specify both routes instead, with and without the optional segment.
 
 The match pattern does not allow `%c, %s`, and obviously `/`, which is always a path separator.
 
@@ -256,7 +156,134 @@ Notice the last route receives multiple captures within a single segment.
 
 Path matching is deterministic. They are matched in order of declaration, and non-pattern path gets a higher precedence.
 
-server.route(prefix) may be called multiple times, each taking an path prefix for grouping purpose.
+
+
+
+### Handler
+
+A handler is a function that takes a request (q) and a response (r) table, and optionally more arguments which may be passed from previous handlers.
+
+Here is a handler for http POST, PUT or DELETE request, taken from the built in content.lua helper:
+```
+function form(q, r)
+   local val, fail = body.buffered(q)
+   local method = q.vars.request_method
+   if val or method == "DELETE" then
+      return q.next(val)
+   end
+   r.status = ngx.HTTP_BAD_REQUEST
+   return {fail = fail or method .. " should have request body"}
+end
+```
+When a route is matched with the requested URL, Losty dispatcher invokes the first handler, which may call the next handler with q.next() passing more arguments, like `val` in the above example, or simply return a response body.
+
+
+Here is another handler that opens a postgresql database connection and passes it to the next handler, then keepalives the connection and returns the received result.
+```
+local pg = require('losty.sql.pg')
+
+function database(q, r)
+   local db = pg(databasename, username, password)
+   db.connect()
+   local out = q.next(db)
+   db.disconnect()
+   return out
+end
+```
+
+The above handlers can be chained like this:
+
+```
+w.post('/path', function(q, r)
+   r.headers["Content-Type"] = "application/json"
+   return q.next()
+end, form, database, function(q, r, body, db)
+   -- use body and db
+   db.insert("users(name) values (:?)", body.name)
+   r.status = 201
+   return json.encode({ok = true})
+end)
+```
+Notice how the form `body` and `db` are appended and passed as arguments to the following handlers, and the last handler returns JSON as response body.
+
+Other frameworks normally use a context table that is extended with keys and passed across handlers, but Losty passes them as cumulative function arguments by default, thanks to Lua variable argument and multiple return values. Here are some considerations for Losty's design.
+
+* Arguments are easily visible.
+* Arguments (un)packing is slower, but may not be significant if there are only a handful of handlers.
+* Switching to a context table is easy for Losty; just append keys to the request (q) or response (r) table. But the reverse is not.
+
+
+If the response body is large, or may not be available all at once, we can return a function from the handler, and Losty will loop the function as iterator, returning its result in streaming fashion until its result is nil.
+
+
+
+### Request Table
+Inside handlers, the passed in request table (q) is a thin wrapper for ngx.var and ngx.req, from which all properties are accessible.
+
+
+### Response Table
+Inside handlers, the passed in response table (r) is a thin helper used to set HTTP headers and cookies, and wraps `ngx.status`. Setting `ngx.status` directly also works as expected.
+
+```
+r.headers[Name] = value
+r.status = 201
+assert(ngx.status == 201)
+```
+
+#### Cookies
+
+Cookies are created using the response table (r) in 2 steps:
+```
+local ck = r.cookie('biscuit', true, nil, '/')  -- step 1
+local data = ck(nil, true, r.secure(), value) -- step 2
+data.id = xxx
+data.token = yyy
+```
+
+Step 1. r.cookie is called with a name, and optional httponly, domain and path. These 4 parameters make up the identity of a cookie, which is required for deletion.
+
+Step 2. r.cookie returns a function, which must be called to specify age, samesite, secure and cookie value.
+- The age can be nil, +ve or -ve number
+  * +ve is the number of secs for the cookie to last
+  * nil means the cookie will be deleted upon browser close
+  * -ve means it will be deleted when the response is returned, and samesite, secure and value is not needed. eg:  ck(-100)
+
+- If the age not a -ve number, the cookie value can be specified as either:
+  * a simple string, treated as is
+  * an encoding function, such as json.encode(), which encodes the cookie as key/value object, as seen in `data` above
+
+
+
+### Session
+
+Session is implemented via a pair of cookies, one bearing the encrypted data, which is httponly and the other bears its signature, which is javascript readable.
+This allows javascript to detect cookie changes, and act accordingly without additional server round trip.
+
+```
+var session = require('losty.sess')
+var sess = session('candy', "This IS secret", "this-is_key")
+
+w.post('/login', function(q, r)
+   r.headers["Content-Type"] = "application/json"
+   var s = sess(q, r, 3600 * 24 * 7) -- age 7 days
+   s.data = "userid"
+   s.extra = {other = "info"}
+   r.redirect('/')
+)
+```
+In the above example, there will be a cookie named 'candy' within document.cookie readable by javascript, holding the signature of this session cookie.
+The actual encrypted data is stored in other cookie named 'candy_', which is httponly.
+Both cookies is matched to ensure the session is not tampered with.
+
+
+
+### Response completion and returning control to Nginx
+
+Response headers including cookies and sessions are accumulated and finally set into `ngx.headers` before response is returned.
+Setting `ngx.headers` directly prior to returning response should also work as expected.
+
+Note that calling `ngx.exec()`, `ngx.redirect()`, `ngx.exit()`, `ngx.flush()`, `ngx.say()`, `ngx.print()` or `ngx.eof()` in a handler would short circuit the Losty dispatcher flow and return control to Nginx immediately. A valid example would be to use `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages.
+
 
 
 
@@ -270,9 +297,9 @@ Lets create a new table with SQL file:
 users.sql
 ```
 CREATE TABLE user (
-	id serial PRIMARY KEY
-	, name text NOT NULL
-	, email text NOT NULL
+   id serial PRIMARY KEY
+   , name text NOT NULL
+   , email text NOT NULL
 );
 ```
 And another table with a Lua file:
@@ -280,11 +307,11 @@ And another table with a Lua file:
 friends.lua
 ```
 return {
-	"CREATE TABLE friend (
-		id int NOT NULL REFERENCES users
-		, userid int NOT NULL REFERENCES users
-		, UNIQUE (id, userid)
-	);"
+   "CREATE TABLE friend (
+      id int NOT NULL REFERENCES users
+      , userid int NOT NULL REFERENCES users
+      , UNIQUE (id, userid)
+   );"
 }
 ```
 
@@ -307,10 +334,10 @@ user.lua
 local db = require("losty.sql.pg")("dbname", "user", "password")
 
 function insert(name, email)
-	db.connect()
-	local r, err = db.insert("user (name, email) VALUES (:?, :?) RETURNING id", name, email)
-	db.disconnect()
-	return r and r.id, err
+   db.connect()
+   local r, err = db.insert("user (name, email) VALUES (:?, :?) RETURNING id", name, email)
+   db.disconnect()
+   return r and r.id, err
 end
 ```
 
@@ -343,24 +370,24 @@ Unlike templating libraries that embed control flow inside HTML constructs, Lost
 
 ```
 function tmpl(args)
-	html({
-		head({
-			meta('[charset=UTF-8]')
-			, title(args.title)
-			, style({
-				'.center { text-align: center; }'
-			})
-		})
-		, body({
-			div('.center', {
-				h1(args.title)
-			})
-			, footer({
-				hr()
-				, div('.center', '&copy' .. args.copyright)
-			})
-		})
-	})
+   html({
+      head({
+         meta('[charset=UTF-8]')
+         , title(args.title)
+         , style({
+            '.center { text-align: center; }'
+         })
+      })
+      , body({
+         div('.center', {
+            h1(args.title)
+         })
+         , footer({
+            hr()
+            , div('.center', '&copy' .. args.copyright)
+         })
+      })
+   })
 end
 
 local view = require('losty.view')
@@ -439,27 +466,27 @@ local sql = pg(databasename, username, password, true)
 
 -- the 1st parameter `sql` can be nil if we are not testing database operations
 setup(sql, function(test, a, p, q)
-	-- test is a function that tests some assertions
-	-- a is an assert function
-	-- p is a printing function
-	-- q holds a table of functions for sql query (optional)
+   -- test is a function that tests some assertions
+   -- a is an assert function
+   -- p is a printing function
+   -- q holds a table of functions for sql query (optional)
 
-	p('user test')
-	q.begin()
+   p('user test')
+   q.begin()  -- optional
 
-	local uid
-	test("can create user", function()
-		local u = user.add(q, "belly@email.com", 'Passw0rd')
-		a(u and u.user_id, u)  -- works like assert
-		uid = u.user_id
-	end, true) -- true means commit a savepoint to database, until end of parent scope, which then decide whether to commit or rollback the whole setup
+   local uid
+   test("can create user", function()
+      local u = user.add(q, "belly@email.com", 'Passw0rd')
+      a(u and u.user_id, u)  -- assert
+      uid = u.user_id
+   end, true) -- true means commit a savepoint to database, until end of parent scope, which then decide whether to commit or rollback the whole setup
 
-	test("can match user", function()
-		local i = q.s1([[* from find_user(:?, :?)]], "belly@email.com", 'Passw0rd')
-		a(i and i.user_id == uid, i)
-	end)
+   test("can match user", function()
+      local i = q.s1([[* from find_user(:?, :?)]], "belly@email.com", 'Passw0rd')
+      a(i and i.user_id == uid, i)
+   end)
 
-	q.rollback() -- use q.commit() if seeding database
+   q.rollback() -- use q.commit() if seeding database
 end)
 
 ```

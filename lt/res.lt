@@ -150,7 +150,7 @@ var bake = \c ->
 		if a ~= 0
 			z[y] = "Expires=" .. ngx.cookie_time(ngx.time() + a)
 			y = y + 1
-		-- no zero or -ve max age
+		-- Max-Age cannot be zero or -ve
 		if a > 0
 			z[y] = "Max-Age=" .. a
 			y = y + 1
