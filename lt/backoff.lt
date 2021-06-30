@@ -1,0 +1,102 @@
+var ffi = require("ffi")
+
+-- TODO: we could avoid the tricky FFI cdata when lua_shared_dict supports
+-- hash-typed values as in redis.
+ffi.cdef(`
+    struct backoff_req_rec {
+        uint64_t        first;  /* first request time in milliseconds */
+        unsigned        count;  /* number of requests since first */
+    };
+`)
+
+var rec_ptr_type = ffi.typeof("struct backoff_req_rec*")
+var rec_size = ffi.sizeof("struct backoff_req_rec")
+
+var _M = {
+	_VERSION = '0.07'
+}
+
+var mt = {
+	__index = _M
+}
+
+
+-- initial - initial exponential, 2^(n+initial), where n = total requests before ttl.  default = 0
+-- ttl - duration before backoff is reset
+_M.new = \dict_name, initial, ttl ->
+	var dict = ngx.shared[dict_name]
+	if not dict
+		return nil, "shared dict not found"
+
+	assert(initial >= 0 and ttl > 0)
+
+	var self = {
+		dict = dict
+		, initial = initial
+		, ttl = ttl
+	}
+	return setmetatable(self, mt)
+
+
+-- sees an new incoming event
+-- the "commit" argument controls whether should we record the event in shm.
+-- FIXME we have a (small) race-condition window between dict:get() and
+-- dict:set() across multiple nginx worker processes. The size of the
+-- window is proportional to the number of workers.
+_M.incoming = \self, key, commit ->
+	var dict = self.dict
+	var initial = self.initial
+	var now = ngx.now() * 1000
+
+	var delay = 0
+	var rec
+	-- it's important to anchor the string value for the read-only pointer cdata:
+	var v = dict.get(@, key)
+	if v
+		if type(v) ~= "string" or #v ~= rec_size
+			return nil, "shdict abused by other users"
+
+		rec = ffi.cast(rec_ptr_type, v)
+
+		var elapsed = now - tonumber(rec.first)
+		var exp = math.pow(2, rec.count + initial) * 1000
+		var wait = exp + math.random(0,  math.ceil(exp / 3))  -- add (1/3 * exp) jitter
+		delay = wait - elapsed
+
+	if commit
+		if rec
+			rec.count = rec.count + 1
+		else
+			rec = ffi.new("struct backoff_req_rec")
+			rec.first = now
+			rec.count = 1
+		dict.set(@, key, ffi.string(rec, rec_size))
+
+	-- return the delay in seconds
+	return delay / 1000
+
+
+
+_M.uncommit = \self, key ->
+	assert(key)
+	var dict = self.dict
+
+	var v = dict.get(@, key)
+	if not v
+		return nil, "not found"
+
+	if type(v) ~= "string" or #v ~= rec_size
+		return nil, "shdict abused by other users"
+
+	var rec = ffi.cast(rec_ptr_type, v)
+
+	if rec.count > 0
+		rec.count = rec.count - 1
+	else
+		rec.first = 0
+		rec.count = 0
+	dict.set(@, key, ffi.string(rec, rec_size))
+	return true
+
+
+return _M
