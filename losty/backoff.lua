@@ -1,16 +1,7 @@
 --
 -- Generated from backoff.lt
 --
-local ffi = require("ffi")
-ffi.cdef([[
-    struct backoff_req_rec {
-        uint64_t        first;  /* first request time in milliseconds */
-        unsigned        count;  /* number of requests since first */
-    };
-]])
-local rec_ptr_type = ffi.typeof("struct backoff_req_rec*")
-local rec_size = ffi.sizeof("struct backoff_req_rec")
-local _M = {_VERSION = "0.07"}
+local _M = {_VERSION = "0.01"}
 local mt = {__index = _M}
 _M.new = function(dict_name, initial, ttl)
     local dict = ngx.shared[dict_name]
@@ -23,51 +14,38 @@ _M.new = function(dict_name, initial, ttl)
 end
 _M.incoming = function(self, key, commit)
     local dict = self.dict
-    local initial = self.initial
     local now = ngx.now() * 1000
     local delay = 0
-    local rec
-    local v = dict:get(key)
-    if v then
-        if type(v) ~= "string" or #v ~= rec_size then
-            return nil, "shdict abused by other users"
-        end
-        rec = ffi.cast(rec_ptr_type, v)
-        local elapsed = now - tonumber(rec.first)
-        local exp = math.pow(2, rec.count + initial) * 1000
-        local wait = exp + math.random(0, math.ceil(exp / 3))
+    local last, count = dict:get(key)
+    if last and count then
+        local elapsed = now - tonumber(last)
+        local exp = math.pow(2, count + self.initial) * 1000
+        local wait = exp + math.random(1, math.ceil(exp / 3))
         delay = wait - elapsed
     end
     if commit then
-        if rec then
-            rec.count = rec.count + 1
+        if not count then
+            count = 1
         else
-            rec = ffi.new("struct backoff_req_rec")
-            rec.first = now
-            rec.count = 1
+            count = count + 1
         end
-        dict:set(key, ffi.string(rec, rec_size))
+        last = now
+        dict:set(key, last, self.ttl, count)
     end
-    return delay / 1000
+    return delay / 1000, count
 end
 _M.uncommit = function(self, key)
     assert(key)
     local dict = self.dict
-    local v = dict:get(key)
-    if not v then
-        return nil, "not found"
+    local last, count = dict:get(key)
+    if last and count then
+        if count > 1 then
+            count = count - 1
+        end
+        local ttl = dict:ttl(key)
+        dict:set(key, last, ttl, count)
+        return true
     end
-    if type(v) ~= "string" or #v ~= rec_size then
-        return nil, "shdict abused by other users"
-    end
-    local rec = ffi.cast(rec_ptr_type, v)
-    if rec.count > 0 then
-        rec.count = rec.count - 1
-    else
-        rec.first = 0
-        rec.count = 0
-    end
-    dict:set(key, ffi.string(rec, rec_size))
-    return true
+    return nil, "not found"
 end
 return _M
