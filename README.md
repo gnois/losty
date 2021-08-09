@@ -1,3 +1,5 @@
+![](./assets/logo.png)
+
 ## Losty = [Luaty](https://github.com/gnois/luaty) + [OpenResty](http://openresty.org)
 
 Losty is a functional style web framework for OpenResty with minimal dependencies.
