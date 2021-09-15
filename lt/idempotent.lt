@@ -1,5 +1,6 @@
 --``
 For idempotent POST request
+Idea based on https://brandur.org/idempotency-keys, except not using external db
 
 - Using shdict as state machine and cache: cache lifetime is user defined
 advance == incr(key, 1, 0, lifetime)
@@ -22,6 +23,7 @@ var crc32 = ngx.crc32_short
 var intmax = 2147483647
 
 
+-- key is used to index shdict for lock and cache
 return \lock_name, cache_name, key ->
 
 	var cache = ngx.shared[cache_name]
@@ -70,6 +72,10 @@ return \lock_name, cache_name, key ->
 		--      caller can release() later, or let it auto unlock
 		-- else false, "exists"
 
+		-- id - (optional) only used for safety check. nullable. in https://brandur.org/idempotency-keys, its usage would be similar to:
+		-- # Programs sending multiple requests with different parameters but the same idempotency key is a bug
+		--     if key.request_params != params
+	
 		-- sec - (required) hold secs before auto unlock, eg: 10
 		-- expiry - (optional) how many secs to keep state in secs, eg: 24 * 3600 is 24 hrs
 		acquire = \id, secs, expiry ->

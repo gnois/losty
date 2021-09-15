@@ -2,29 +2,34 @@
 -- Generated from is.lt
 --
 local K = {}
-K.have = function(t)
-    if t then
+K.null = function(t)
+    if t == nil or t == ngx.null then
         return true
     end
-    return nil, "exist"
+    return nil, "be null"
 end
-local is = function(check, expected)
+K.nonull = function(t)
+    if t ~= nil and t ~= ngx.null then
+        return true
+    end
+    return nil, "not be null"
+end
+local typeof = function(expected)
     return function(v)
-        if check(v) == expected then
+        if type(v) == expected then
             return true
         end
-        return false, "be a " .. expected
+        return nil, "be a " .. expected
     end
 end
-local tbl = is(type, "table")
-K.tbl = tbl
-K.num = is(type, "number")
-K.str = is(type, "string")
-K.bool = is(type, "boolean")
-K.func = is(type, "function")
+K.tbl = typeof("table")
+K.num = typeof("number")
+K.str = typeof("string")
+K.bool = typeof("boolean")
+K.func = typeof("function")
 K.array = function(of)
     return function(t)
-        if not tbl(t) then
+        if type(t) ~= "table" then
             return false, "be an array"
         end
         local i = 0
@@ -76,34 +81,6 @@ K.email = function(t)
     end
     return true
 end
-K.no_space = function(t)
-    if string.find(t, "%s") then
-        return false, "not contain whitespace"
-    end
-    return true
-end
-K.min = function(n)
-    return function(t)
-        if t < n then
-            return false, "be greater than " .. n
-        end
-        return true
-    end
-end
-K.max = function(n)
-    return function(t)
-        if t > n then
-            return false, "be less than " .. n
-        end
-        return true
-    end
-end
-K.int = function(t)
-    if math.floor(t) == t then
-        return false, "be an integer"
-    end
-    return true
-end
 K.date = function(fmt)
     return function(t)
         local ok = false
@@ -133,5 +110,43 @@ K.date = function(fmt)
         end
         return true
     end
+end
+K.has = function(pattern, what)
+    return function(t)
+        if string.find(t, pattern) then
+            return true
+        end
+        return false, "have " .. (what or pattern)
+    end
+end
+K.match = function(pattern, what)
+    return function(t)
+        if string.match(t, pattern) then
+            return true
+        end
+        return false, "match " .. (what or pattern)
+    end
+end
+K.min = function(n)
+    return function(t)
+        if t < n then
+            return false, "be greater than " .. n
+        end
+        return true
+    end
+end
+K.max = function(n)
+    return function(t)
+        if t > n then
+            return false, "be less than " .. n
+        end
+        return true
+    end
+end
+K.int = function(t)
+    if math.floor(t) == t then
+        return false, "be an integer"
+    end
+    return true
 end
 return K

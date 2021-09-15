@@ -67,6 +67,8 @@ return ->
 			-- if errors is true, fall back to nginx error_page
 			-- else if errors is table, use error[status] html
 			-- else generate text/plain error msg
+		-- https://github.com/openresty/lua-nginx-module/issues/875
+		-- for error_page to work, you must not generate and send your own response via the ngx.status and ngx.say/ngx.print API
 		if not body and r.status >= 400
 			var pref = accept(q.headers["Accept"], {HTML, JSON})
 			var ctype = tostring(pref[1])

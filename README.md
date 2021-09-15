@@ -16,7 +16,7 @@ It has
 - encrypted session
 - slug generation for url
 - DSL for HTML generation
-- input validation helpers
+- validation and convertion helpers
 - idempotent API helper
 - Server Side Event (SSE) helper
 - table, string and functional helpers
@@ -495,6 +495,72 @@ end)
 When run using `resty cli`, the test above produces summary of tests passed/failed.
 
 To seed the database, omit the q.begin() and q.rollback() statements, and pass `true` as the last argument to test()
+
+
+
+
+### Validation Helpers
+
+Losty has builtin test functions in `losty.is`, to perform validation checks on a variable. Some of them takes addition arguments:
+```
+local is = require('losty.is')
+
+is.null
+is.nonull
+is.tbl
+is.num
+is.str
+is.bool
+is.func1
+is.array(fn)  -- fn can be is.str/is.num/is.bool etc to check if is an array only contains strings or numbers or booleans
+is.len(min, max)  -- check minimum and maximum length of string
+is.email
+is.date
+is.has(pattern)      -- calls string.find with the given pattern
+is.match(pattern)    -- calls string.match with the given pattern
+is.min(n)
+is.max(n)
+is.int
+
+```
+
+
+Using `losty.check`, We can also chain these test functions together to perform multiple validations and returns cumulative error messages on failure. For eg:
+
+```
+local c = require('losty.check')
+local is = require('losty.is')
+
+local text = 'helo'
+local o, errs = c.check(is.nonull, is.str, is.has('%s', 'space'), is.atleast(10))(text)
+if not o then
+	print(o, c.message('text', errs))
+end
+
+```
+
+The output error message is cumulative of the failed test functions, if they are called.
+```
+false   text should have space and be at least 10 characters
+```
+
+By following simple convention, we can write custom test function that can work like the builtins. For eg, testing for non nil:
+```
+local nonull = function(t)
+    if t ~= nil or t ~= ngx.null then
+        return true
+    end
+    return nil, "not be null"
+end
+```
+If the test succeeds, we simply returns true, and the next test in the chain (if any) will be called.
+
+But if the test fails and the next test should not be allowed, return nil to terminate the chain. Here we return nil because it does not make sense to continue testing a nil variable.
+To continue testing, we can return false.
+For failures, the 2nd return value must be an error message, which will be auto prepended with the word 'should' by the `losty.check.message()` function.
+
+
+
 
 
 

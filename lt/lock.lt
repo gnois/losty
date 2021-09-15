@@ -3,6 +3,7 @@
 lock == add(key, true, n sec)
 unlock == delete(key)
 
+- This tries to obtain lock but gives up immediately. Same as lua-resty-lock where timeout = 0
 
 nginx.conf
 ----------

@@ -1,33 +1,47 @@
-var K = {}
 
-var to = \convert, atype ->
+var K = {
+	-- try to convert via functions
+	-- return converted val or nil with msg on first error, since we cannot convert further
+	try = \... ->
+		var funs = {...}
+		
+		return \val ->
+			var v, err = val
+			for _, fn in ipairs(funs)
+				v, err = fn(v)
+				if v == nil
+					return nil, 'cannot ' .. err
+			return v
+}
+
+
+var to = \fn, atype ->
 	return \t ->
-		var x = convert(t)
+		var x = fn(t)
 		if x
 			return x
-		return nil, 'be ' .. atype
+		return nil, 'convert to ' .. atype
 		
 		
-K.str = to(tostring, 'a string')
-K.num = to(tonumber, 'a number')
+K.str = to(tostring, 'string')
+K.num = to(tonumber, 'number')
 K.int = to(\t ->
 	var i = tonumber(t)
 	if i and math.floor(i) == i
 		return i
-, 'an integer')
+, 'integer')
+
 
 -- Capitalize the first letter of the string.
 K.capital = \str ->
-	str = tostring(str)
-	return string.gsub(str, "^%l", string.upper)
+	return string.gsub(str, "^%l", string.upper), 'capitalize first letter'
 
 -- Trim whitespace in begin and end
 K.trimmed = \str ->
-	str = tostring(str)
 	if #str > 200
-		return str.gsub(@, "^%s+", "").reverse(@).gsub(@, "^%s+", "").reverse(@)
+		return str.gsub(@, "^%s+", "").reverse(@).gsub(@, "^%s+", "").reverse(@), 'trim string'
 	else
-		return string.match(str, "^%s*(.-)%s*$")
+		return string.match(str, "^%s*(.-)%s*$"), 'trim string'
 		
 
 return K

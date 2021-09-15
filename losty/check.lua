@@ -2,7 +2,7 @@
 -- Generated from check.lt
 --
 local K = {}
-K.is = function(...)
+K.check = function(...)
     local funs = {...}
     return function(val)
         local pass = true
@@ -22,27 +22,13 @@ K.is = function(...)
         return pass, errs
     end
 end
-K.message = function(arg, errs)
+K.message = function(subject, errs)
     local msgs = {}
     for _, v in ipairs(errs) do
         if true ~= v then
             table.insert(msgs, v)
         end
     end
-    return arg .. " should " .. table.concat(msgs, " and ")
-end
-K.to = function(...)
-    local funs = {...}
-    return function(val)
-        local v = val
-        local err
-        for _, fn in ipairs(funs) do
-            v, err = fn(v)
-            if v == nil then
-                break
-            end
-        end
-        return v, err
-    end
+    return subject .. " should " .. table.concat(msgs, " and ")
 end
 return K
