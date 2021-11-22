@@ -37,7 +37,7 @@ K.capital = \str ->
 	return string.gsub(str, "^%l", string.upper), 'capitalize first letter'
 
 -- Trim whitespace in begin and end
-K.trimmed = \str ->
+K.trim = \str ->
 	if #str > 200
 		return str.gsub(@, "^%s+", "").reverse(@).gsub(@, "^%s+", "").reverse(@), 'trim string'
 	else

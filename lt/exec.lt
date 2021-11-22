@@ -7,10 +7,10 @@ var K = {}
 
 -- Quote a command argument for UNIX-like environments.
 --
-K.quote = \arg ->
-	if arg and string.match(arg, "[!\"#%$&'%(%)%*;<>%?%[\\%]`{|}~%s]")
-		arg = "'" .. string.gsub(arg, "[']", "'\\''") .. "'"
-	return arg
+K.quote = \argt ->
+	if argt and string.match(argt, "[!\"#%$&'%(%)%*;<>%?%[\\%]`{|}~%s]")
+		argt = "'" .. string.gsub(argt, "[']", "'\\''") .. "'"
+	return argt
 
 
 K.exec = \cmd ->
@@ -33,6 +33,10 @@ K.script_path = ->
 	return string.match(path, "(.*/)")
 
 
+
+-- On windows console, enable ansi color by editing registry
+-- https://superuser.com/questions/413073/windows-console-with-ansi-colors-handling/1300251#1300251
+	
 var colors = {
 	reset = 0
 	, clear = 0

@@ -97,4 +97,11 @@ K.reverse_inplace = function(arr)
         j = j - 1
     end
 end
+K.val2key = function(t)
+    local o = {}
+    for k, v in pairs(t) do
+        o[v] = k
+    end
+    return o
+end
 return K

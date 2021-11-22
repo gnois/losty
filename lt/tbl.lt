@@ -88,4 +88,13 @@ K.reverse_inplace = \arr ->
 		i = i + 1
 		j = j - 1
 
+
+-- table values become keys, keys become values
+K.val2key = \t ->
+	var o = {}
+	for k, v in pairs(t)
+		o[v] = k
+	return o
+
+
 return K

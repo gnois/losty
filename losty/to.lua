@@ -34,7 +34,7 @@ end, "integer")
 K.capital = function(str)
     return string.gsub(str, "^%l", string.upper), "capitalize first letter"
 end
-K.trimmed = function(str)
+K.trim = function(str)
     if #str > 200 then
         return str:gsub("^%s+", ""):reverse():gsub("^%s+", ""):reverse(), "trim string"
     else

@@ -46,10 +46,10 @@ return function(db, func)
     local chk = function(ok, ...)
         tests = tests + 1
         if ok then
-            print(c.green .. "ok" .. c.reset)
+            print(c.bright .. c.green .. "ok" .. c.reset)
         else
             fails = fails + 1
-            print(c.red .. "fail: " .. s(...) .. c.reset)
+            print(c.bright .. c.red .. "fail: " .. s(...) .. c.reset)
         end
     end
     local groups = 0
@@ -59,7 +59,7 @@ return function(db, func)
         tests = 0
         fails = 0
         errors = 0
-        local title = c.bright .. c.cyan .. groups .. ". " .. c.blue .. "[[ " .. (desc or "?? no name ??") .. " ]]"
+        local title = c.bright .. c.cyan .. groups .. ". " .. c.yellow .. "[[ " .. (desc or "?? no name ??") .. " ]]"
         if commit then
             title = title .. c.cyan .. " - WITH COMMIT"
         end
@@ -74,7 +74,7 @@ return function(db, func)
             if q then
                 q.rollback()
             end
-            print(c.red, "\nERROR: " .. err .. "\n" .. c.reset)
+            print(c.bright .. c.red, "\nERROR: " .. err .. "\n" .. c.reset)
             errors = errors + 1
         else
             if q then
@@ -96,7 +96,7 @@ return function(db, func)
             msg = msg .. "   [ Error: " .. errors .. " ]"
         end
         local color = fails + errors > 0 and c.cyan or c.green
-        print(color .. "                                         ---------- " .. msg .. " ----------\n" .. c.reset)
+        print(c.bright .. color .. "                                         ---------- " .. msg .. " ----------\n" .. c.reset)
     end
     if q then
         q.connect()
@@ -106,5 +106,5 @@ return function(db, func)
         q.disconnect()
     end
     local color = groups - passes > 0 and c.magenta or c.yellow
-    print(color .. "                                         === " .. groups .. " cases: " .. passes .. " ok, " .. groups - passes .. " not ok ===\n" .. c.reset)
+    print(c.bright .. color .. "                                         === " .. groups .. " cases:    " .. passes .. " ok,    " .. groups - passes .. " not ok ===\n" .. c.reset)
 end

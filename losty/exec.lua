@@ -2,11 +2,11 @@
 -- Generated from exec.lt
 --
 local K = {}
-K.quote = function(arg)
-    if arg and string.match(arg, "[!\"#%$&'%(%)%*;<>%?%[\\%]`{|}~%s]") then
-        arg = "'" .. string.gsub(arg, "[']", "'\\''") .. "'"
+K.quote = function(argt)
+    if argt and string.match(argt, "[!\"#%$&'%(%)%*;<>%?%[\\%]`{|}~%s]") then
+        argt = "'" .. string.gsub(argt, "[']", "'\\''") .. "'"
     end
-    return arg
+    return argt
 end
 K.exec = function(cmd)
     assert(#cmd > 0)
