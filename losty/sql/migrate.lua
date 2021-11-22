@@ -11,7 +11,7 @@ local migrate = function(db, migrations)
     local err
     db.connect()
     for _, v in ipairs(migrations) do
-        local sql = to.trimmed(v)
+        local sql = to.trim(v)
         if #sql > 0 then
             ok, err = db.run(sql)
             if tonumber(err) then
@@ -101,7 +101,7 @@ return function(db)
                 end
                 file:close()
             else
-                local file = string.gsub(to.trimmed(fname), ".lua$", "")
+                local file = string.gsub(to.trim(fname), ".lua$", "")
                 scripts = require(file)
             end
             if #scripts > 0 then

@@ -10,7 +10,6 @@ var resume = coroutine.resume
 var gmatch = string.gmatch
 var lower = string.lower
 var concat = table.concat
-var trim = to.trimmed
 
 -- parse a string without breaking "quoted" apart
 var parse = \s, sep ->
@@ -42,7 +41,7 @@ var parse = \s, sep ->
 var split = \str, sep ->
 	var acc, a = {}, 0
 	for each in parse(str, sep)
-		var x = trim(each)
+		var x = to.trim(each)
 		if #x > 0
 			a = a + 1
 			acc[a] = x

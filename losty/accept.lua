@@ -9,7 +9,6 @@ local resume = coroutine.resume
 local gmatch = string.gmatch
 local lower = string.lower
 local concat = table.concat
-local trim = to.trimmed
 local parse = function(s, sep)
     local r = create(function()
         local acc, n = {}, 0
@@ -43,7 +42,7 @@ end
 local split = function(str, sep)
     local acc, a = {}, 0
     for each in parse(str, sep) do
-        local x = trim(each)
+        local x = to.trim(each)
         if #x > 0 then
             a = a + 1
             acc[a] = x

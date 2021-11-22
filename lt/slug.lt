@@ -843,7 +843,7 @@ stops[3] = stops[2].map(\v -> return string.gsub(v, "'", ''))
 
 return \title ->
 	if title
-		title = to.trimmed(title)
+		title = to.trim(title)
 		if #title > 0
 			title = string.lower(title)
 			var out = {}
@@ -888,7 +888,7 @@ return \title ->
 			clean = string.gsub(clean, '—', ' ')
 			
 			-- trim begin and end again
-			clean = to.trimmed(clean)
+			clean = to.trim(clean)
 			-- all middle spaces to dash (underscore is not treated as separator by google)
 			-- https://www.ecreativeim.com/blog/index.php/2011/03/30/seo-basics-hyphen-or-underscore-for-seo-urls/
 			clean = string.gsub(clean, '%s+', '-')

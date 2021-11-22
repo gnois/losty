@@ -53,7 +53,7 @@ var migrate = \db, migrations ->
 	var err
 	db.connect()
 	for _, v in ipairs(migrations)
-		var sql = to.trimmed(v)
+		var sql = to.trim(v)
 		if #sql > 0
 			ok, err = db.run(sql)
 			if tonumber(err) -- err is 0 when no statement to execute, maybe bcoz all are comments
@@ -154,7 +154,7 @@ return \db ->
 					scripts[n] = table.concat(lines, "\n")
 				file.close(@)
 			else
-				var file = string.gsub(to.trimmed(fname), '.lua$', '')
+				var file = string.gsub(to.trim(fname), '.lua$', '')
 				scripts = require(file)
 			
 			if #scripts > 0

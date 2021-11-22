@@ -1135,7 +1135,7 @@ stops[3] = stops[2].map(function(v)
 end)
 return function(title)
     if title then
-        title = to.trimmed(title)
+        title = to.trim(title)
         if #title > 0 then
             title = string.lower(title)
             local out = {}
@@ -1170,7 +1170,7 @@ return function(title)
             end
             clean = string.gsub(clean, "%p+", " ")
             clean = string.gsub(clean, "—", " ")
-            clean = to.trimmed(clean)
+            clean = to.trim(clean)
             clean = string.gsub(clean, "%s+", "-")
             return clean
         end
