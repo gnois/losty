@@ -76,7 +76,7 @@ return \database, user, password, host, port, pool, dbg ->
 		var ty = type(v)
 		if 'table' == ty
 			if mode == 'r'
-				return escape.literal(encode_row(v))
+				return encode_row(v)   -- escape.literal(encode_row(v))
 			else if mode == 'a'
 				return parrays.encode_array(v)
 			else if mode == 'h'

@@ -71,7 +71,7 @@ return function(database, user, password, host, port, pool, dbg)
         local ty = type(v)
         if "table" == ty then
             if mode == "r" then
-                return escape.literal(encode_row(v))
+                return encode_row(v)
             elseif mode == "a" then
                 return parrays.encode_array(v)
             elseif mode == "h" then
