@@ -22,6 +22,7 @@ It has
 - table, string and functional helpers
 - SQL operation and seeding helpers
 - SQL testing helpers
+- simple scheduled job
 
 
 Losty is written in [Luaty](https://github.com/gnois/luaty) and compiled to Lua.
@@ -534,7 +535,7 @@ local is = require('losty.is')
 local text = 'helo'
 local o, errs = c.check(is.nonull, is.str, is.has('%s', 'space'), is.atleast(10))(text)
 if not o then
-	print(o, c.message('text', errs))
+   print(o, c.message('text', errs))
 end
 
 ```
@@ -547,10 +548,10 @@ false   text should have space and be at least 10 characters
 By following simple convention, we can write custom test function that can work like the builtins. For eg, testing for non nil:
 ```
 local nonull = function(t)
-    if t ~= nil or t ~= ngx.null then
-        return true
-    end
-    return nil, "not be null"
+   if t ~= nil or t ~= ngx.null then
+      return true
+   end
+   return nil, "not be null"
 end
 ```
 If the test succeeds, we simply returns true, and the next test in the chain (if any) will be called.
@@ -558,6 +559,54 @@ If the test succeeds, we simply returns true, and the next test in the chain (if
 But if the test fails and the next test should not be allowed, return nil to terminate the chain. Here we return nil because it does not make sense to continue testing a nil variable.
 To continue testing, we can return false.
 For failures, the 2nd return value must be an error message, which will be auto prepended with the word 'should' by the `losty.check.message()` function.
+
+
+
+### Simple scheduled job
+
+A job can be scheduled to run at a point of time in future on one worker using `losty.schedule`. It can optionally be run periodically after that point of time.
+The scheduler is only one function with signature
+
+`function (worker, cycle, ndays, hh, mm, ss, job, ...)`, where `job` is a function that is repeatedly called with the given varargs to perform actual processing.
+
+- worker: ordinal num of worker to run the job on, between 0 .. ngx.worker.count()-1, via nginx.conf worker_processes directive
+- cycle: repeat every `cycle` seconds - 0 or nil means non repeating job
+- ndays: days from now to start the job running - 0 means next coming time at hh:min:ss
+- hh, mm, ss: the first time to invoke the job at, after which the job may be repeated every `cycle` secs
+
+
+Suppose we would like to cleanup expired data daily at around 11.58pm where user activity is low, starting 7 days later after nginx is brought up, we would schedule the job via `init_worker_by_lua_*` below:
+
+
+clean.lua
+```
+-- only one can run
+local running
+
+function clean(...)
+   if not running then
+      running = true
+      local db = sql()
+      db.connect()
+       -- do cleanup
+      db.disconnect()
+      running = nil
+   end
+end
+
+local schedule = require('losty.schedule')
+schedule(worker, 24*60*60, 7, 23, 58, 0, clean)
+
+```
+
+nginx.conf
+```
+init_worker_by_lua_block {
+   require("clean")
+}
+
+```
+
 
 
 

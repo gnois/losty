@@ -1,0 +1,72 @@
+
+var SecPerDay = 24 * 60 * 60
+
+-- get epoch of ndays later, at specific point of time
+var day_at = \ndays, hh, mm, ss ->
+	var later = os.time() + ndays * SecPerDay -- in epoch
+
+	var t = os.date('*t', later)
+	t.hour = hh
+	t.min = mm or 0
+	t.sec = ss or 0
+
+	t.yday = nil
+	t.wday = nil
+
+	return os.time(t)
+
+
+
+var task
+task = \premature, cycle, fn, ... ->
+	if premature
+		ngx.log(ngx.WARN, "schedule task premature end at worker ", ngx.worker.id())
+	else
+		fn(...)
+		if cycle and cycle > 0
+			var ok, err = ngx.timer.every(cycle, fn, ...)
+			if not ok
+				ngx.log(ngx.ERR, "ngx.timer.every() failed: ", err)
+
+
+
+-- periodic task on one worker
+-- worker - ordinal num of worker, between 0 .. ngx.worker.count()-1, via nginx.conf worker_processes directive
+--  ndays - 0 means next coming time at hh:min:ss
+--```
+ Example fn, where every cycle process one page of data
+
+var Batch = cycle / worktime
+var running
+var previd = 0
+var fn = \... ->
+	if not running
+		running = true
+		var db = sql()
+		db.connect()
+		-- keyset pagination
+		var list = db.select("id, ... FROM tb WHERE id > :? ORDER BY id ASC LIMIT " .. Batch, previd)
+		for _, v in ipairs(list)
+			...
+			previd = v.id
+
+		if #list < Batch
+			previd = 0
+		db.disconnect()
+		running = false
+```
+
+return \worker, cycle, ndays, hh, mm, ss, fn, ... ->
+	if ngx.worker.id() == worker
+		var later = day_at(ndays, hh, mm, ss)
+		var wait = later - os.time()
+		if wait < 0
+			wait = wait + SecPerDay  -- already past the time, so tomorrow
+		--ngx.log(ngx.NOTICE, 'worker ', worker, ' scheduled task at ', wait, ' secs')
+		var ok, err = ngx.timer.at(wait, task, cycle, fn, ...)
+		if not ok
+			ngx.log(ngx.ERR, "ngx.timer.at() failed at worker ", worker, ": ", err)
+
+
+
+
