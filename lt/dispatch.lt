@@ -1,22 +1,118 @@
--- temporarily sets the req.next()
 
-return \hn, req, res, ... ->
+var dispatch = \hn, req, res, ... ->
 	var i, n = 0, #hn
-	var nargs = select('#', ...)
-	var args = {...}
+	var nargs, aargs = 0
 
-	var nxt = req.next
-	req.next = \... ->
-		var np = select('#', ...)
-		var p = {...}
-		for j = 1, np
-			args[nargs + j] = p[j]
-		nargs = nargs + np
+	var invoke = \... ->
+		var np = select('#', ...) -- select() count nils in ...
+		if np > 0
+			var p = {...}
+			aargs = aargs or {}
+			for j = 1, np
+				aargs[nargs + j] = p[j]
+			nargs = nargs + np
 		i = i + 1
 		if i <= n
-			-- unpack() accepts tables of up to 8000 elements only in Lua 5.1 and LuaJIT
-			return hn[i](req, res, unpack(args, 1, nargs))
+			if aargs
+				-- unpack() accepts tables of up to 8000 elements only in Lua 5.1 and LuaJIT
+				return hn[i](req, res, unpack(aargs, 1, nargs))  -- preserve all nils
+			-- cant use this expr:  aargs and unpack(aargs, 1, nargs), else varargs are truncated
+			return hn[i](req, res)
 
-	var v = req.next()
-	req.next = nxt
-	return v
+	-- just overwrite req.next to support multiple returns
+	req.next = invoke
+	return invoke(...)
+
+
+--```
+var test = ->
+
+ 	-- no handlers shd not error
+	dispatch({}, {}, {})
+
+	var trail = {}
+	var add = \... ->
+		var n = select('#', ...)
+		var arr = {...}
+		for k = 1, n
+			if arr[k] == nil
+				arr[k] = 'nil'
+			table.insert(trail, arr[k])
+
+
+	-- multiple returns, and multiple nil args
+	var a = \q, r, ... ->
+		add('=>a', ...)
+		var v, w, x = q.next()
+		add('a<=')
+		return v, w, x
+
+	var b = \q, r, ... ->
+		add('=>b', ...)
+		var v, w = q.next(nil, nil)
+		add('b<=')
+		return v, w, ' and b'
+
+	var c = \q, r, ... ->
+		add('=>c', ...)
+		add('c<=')
+		return 'called', ' c'
+
+	var req, res = {}, {}
+	var m, n, o = dispatch({a,b,c}, req, res)
+	print(table.concat(trail, ' '))
+	assert(table.concat(trail, ' ') == '=>a =>b =>c nil nil c<= b<= a<=')
+	assert(m .. n .. o == 'called c and b')
+
+
+	--
+	var e = \q, r, ... ->
+		--print("e", ...)
+		add('=>e', ...)
+		var v = q.next(4, nil)
+		add('e<=')
+		return v or 'e()'
+
+	var f = \q, r, ... ->
+		--print("f", ...)
+		add('=>f', ...)
+		var v = q.next(nil, 5)
+		add('f<=')
+		return v or 'f()'
+
+	var g = \q, r, ... ->
+		--print("g", ...)
+		add('=>g', ...)
+		var v = q.next(6, nil, 7)
+		add('g<=')
+		return v or 'g()'
+
+	-- calling q.next() at last handler is ok
+	var h = \q, r, ... ->
+		--print("h", ...)
+		add('=>h', ...)
+		var v = q.next()
+		add('h<=')
+		return v or 'h()'
+
+	trail = {}
+	assert(dispatch({e,f,g,h}, req, res, 1) == 'h()')
+	print(table.concat(trail, ' '))
+	assert(table.concat(trail, ' ') == '=>e 1 =>f 1 4 nil =>g 1 4 nil nil 5 =>h 1 4 nil nil 5 6 nil 7 h<= g<= f<= e<=')
+
+	-- reentrance
+	var k = \q, r ->
+		add('=>k')
+		q.next()
+		add('k<=')
+
+	trail = {}
+	dispatch({k,k,k,k}, req, res)
+	print(table.concat(trail, ' '))
+	assert(table.concat(trail, ' ') == '=>k =>k =>k =>k k<= k<= k<= k<=')
+
+-- uncomment to test
+test()
+```
+
+return dispatch

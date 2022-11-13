@@ -1,24 +1,28 @@
 --
 -- Generated from dispatch.lt
 --
-return function(hn, req, res, ...)
+local dispatch = function(hn, req, res, ...)
     local i, n = 0, #hn
-    local nargs = select("#", ...)
-    local args = {...}
-    local nxt = req.next
-    req.next = function(...)
+    local nargs, aargs = 0
+    local invoke = function(...)
         local np = select("#", ...)
-        local p = {...}
-        for j = 1, np do
-            args[nargs + j] = p[j]
+        if np > 0 then
+            local p = {...}
+            aargs = aargs or {}
+            for j = 1, np do
+                aargs[nargs + j] = p[j]
+            end
+            nargs = nargs + np
         end
-        nargs = nargs + np
         i = i + 1
         if i <= n then
-            return hn[i](req, res, unpack(args, 1, nargs))
+            if aargs then
+                return hn[i](req, res, unpack(aargs, 1, nargs))
+            end
+            return hn[i](req, res)
         end
     end
-    local v = req.next()
-    req.next = nxt
-    return v
+    req.next = invoke
+    return invoke(...)
 end
+return dispatch
