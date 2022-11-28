@@ -16,7 +16,7 @@ var dispatch = \hn, req, res, ... ->
 			if aargs
 				-- unpack() accepts tables of up to 8000 elements only in Lua 5.1 and LuaJIT
 				return hn[i](req, res, unpack(aargs, 1, nargs))  -- preserve all nils
-			-- cant use this expr:  aargs and unpack(aargs, 1, nargs), else varargs are truncated
+			-- aargs and unpack(aargs, 1, nargs) will adjusts to one result
 			return hn[i](req, res)
 
 	-- just overwrite req.next to support multiple returns
@@ -24,6 +24,7 @@ var dispatch = \hn, req, res, ... ->
 	return invoke(...)
 
 
+-- uncomment to test
 --```
 var test = ->
 
@@ -43,7 +44,7 @@ var test = ->
 	-- multiple returns, and multiple nil args
 	var a = \q, r, ... ->
 		add('=>a', ...)
-		var v, w, x = q.next()
+		var v, w, x = q.next(nil)
 		add('a<=')
 		return v, w, x
 
@@ -56,13 +57,13 @@ var test = ->
 	var c = \q, r, ... ->
 		add('=>c', ...)
 		add('c<=')
-		return 'called', ' c'
+		return nil, 'c'
 
 	var req, res = {}, {}
 	var m, n, o = dispatch({a,b,c}, req, res)
 	print(table.concat(trail, ' '))
-	assert(table.concat(trail, ' ') == '=>a =>b =>c nil nil c<= b<= a<=')
-	assert(m .. n .. o == 'called c and b')
+	assert(table.concat(trail, ' ') == '=>a =>b nil =>c nil nil nil c<= b<= a<=')
+	assert(m == nil and n .. o == 'c and b')
 
 
 	--
@@ -101,18 +102,17 @@ var test = ->
 	assert(table.concat(trail, ' ') == '=>e 1 =>f 1 4 nil =>g 1 4 nil nil 5 =>h 1 4 nil nil 5 6 nil 7 h<= g<= f<= e<=')
 
 	-- reentrance
-	var k = \q, r ->
-		add('=>k')
-		q.next()
+	var k = \q, r, ... ->
+		add('=>k', ...)
+		q.next(nil)
 		add('k<=')
 
 	trail = {}
 	dispatch({k,k,k,k}, req, res)
 	print(table.concat(trail, ' '))
-	assert(table.concat(trail, ' ') == '=>k =>k =>k =>k k<= k<= k<= k<=')
+	assert(table.concat(trail, ' ') == '=>k =>k nil =>k nil nil =>k nil nil nil k<= k<= k<= k<=')
 
--- uncomment to test
 test()
-```
+---```
 
 return dispatch
