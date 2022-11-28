@@ -18,17 +18,18 @@ local push = function(tb, k, v)
     elseif "table" == type(old) then
         insert(old, v)
     elseif "table" == type(v) then
-        insert(v, old)
-        tb[k] = v
+        local oldt = {old}
+        insert(oldt, v)
+        tb[k] = oldt
     else
-        tb[k] = {old, v}
+        tb[k] = {v, old}
     end
 end
 local headers = setmetatable({}, {__metatable = false, __index = function(_, k)
     return ngx.header[k]
 end, __newindex = function(_, k, v)
-    if nil == v then
-        ngx.header[k] = v
+    if nil == v or type(v) == "table" and next(v) == nil then
+        ngx.header[k] = nil
     else
         push(ngx.header, k, v)
     end
