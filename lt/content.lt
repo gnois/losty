@@ -1,6 +1,5 @@
 var cjson = require('cjson')
-var sha1 = require('resty.sha1')
-var str = require('resty.string')
+var etag = require('losty.etag')
 var strz = require('losty.str')
 var body = require('losty.body')
 var choose = require('losty.accept')
@@ -39,19 +38,13 @@ var json = \req, res ->
 	if cachectrl and (strz.contains(cachectrl, "no-cache") or strz.contains(cachectrl, "no-store"))
 		return out
 
-	var sha = sha1.new(@)
-	if sha.update(@, out)
-		var digest = sha.final(@)
-		var etag = str.to_hex(digest)
-		-- https://groups.google.com/forum/#!topic/openresty-en/W16iCSRMMZk
-		-- http://forum.nginx.org/read.php?2,240120,240120 
-		-- https://en.wikipedia.org/wiki/HTTP_ETag#Strong_and_weak_validation
-		etag = 'W/"' .. etag .. '"'
-		if etag == req.headers["If-None-Match"]
+	var tag = etag(out, true)  -- weak
+	if tag
+		if tag == req.headers["If-None-Match"]
 			res.status = ngx.HTTP_NOT_MODIFIED
 			return -- no body
-		
-		res.headers["ETag"] = etag
+
+		res.headers["ETag"] = tag
 	return out
 
 
@@ -68,10 +61,10 @@ var dual = \... ->
 		-- http://stackoverflow.com/questions/9956255/chrome-displays-ajax-response-when-pressing-back-button
 		-- https://bugs.chromium.org/p/chromium/issues/detail?id=108425
 		-- https://bugs.chromium.org/p/chromium/issues/detail?id=94369
-		
+
 		-- See http://stackoverflow.com/questions/1975416/what-is-the-function-of-the-vary-accept-http-header
 		res.headers["Vary"] = "Accept"
-		
+
 		var pref = choose(req.headers["Accept"], {HTML, JSON})
 		if tostring(pref[1]) == HTML
 			return dispatch(handlers, req, res)

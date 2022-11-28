@@ -1,0 +1,18 @@
+var sha1 = require('resty.sha1')
+var str = require('resty.string')
+
+-- https://groups.google.com/forum/#!topic/openresty-en/W16iCSRMMZk
+-- http://forum.nginx.org/read.php?2,240120,240120
+-- https://en.wikipedia.org/wiki/HTTP_ETag#Strong_and_weak_validation
+
+var etag = \payload, weak ->
+	var sha = sha1.new(@)
+	if sha.update(@, payload)
+		var digest = sha.final(@)
+		var tag = str.to_hex(digest)
+		if weak
+			return 'W/"' .. tag .. '"'
+		return '"' .. tag .. '"'
+
+
+return etag

@@ -2,8 +2,7 @@
 -- Generated from content.lt
 --
 local cjson = require("cjson")
-local sha1 = require("resty.sha1")
-local str = require("resty.string")
+local etag = require("losty.etag")
 local strz = require("losty.str")
 local body = require("losty.body")
 local choose = require("losty.accept")
@@ -27,16 +26,13 @@ local json = function(req, res)
     if cachectrl and (strz.contains(cachectrl, "no-cache") or strz.contains(cachectrl, "no-store")) then
         return out
     end
-    local sha = sha1:new()
-    if sha:update(out) then
-        local digest = sha:final()
-        local etag = str.to_hex(digest)
-        etag = "W/\"" .. etag .. "\""
-        if etag == req.headers["If-None-Match"] then
+    local tag = etag(out, true)
+    if tag then
+        if tag == req.headers["If-None-Match"] then
             res.status = ngx.HTTP_NOT_MODIFIED
             return 
         end
-        res.headers["ETag"] = etag
+        res.headers["ETag"] = tag
     end
     return out
 end
