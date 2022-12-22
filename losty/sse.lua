@@ -2,7 +2,7 @@
 -- Generated from sse.lt
 --
 local semaphore = require("ngx.semaphore")
-local choose = require("losty.accept")
+local accept = require("losty.accept")
 local EVstream = "text/event-stream"
 local timeout = 30
 local ping = "event:ping\ndata:\n\n"
@@ -25,8 +25,8 @@ local push = function(str)
 end
 local subscribe = function()
     local headers = ngx.req.get_headers()
-    local prefs = choose(headers["Accept"], {EVstream})
-    if tostring(prefs[1]) == EVstream then
+    local prefs = accept(headers["Accept"], {EVstream})
+    if prefs and prefs[1] == EVstream then
         ngx.header["Content-Type"] = EVstream
         ngx.header["Cache-Control"] = "no-cache"
         ngx.status = 200
@@ -34,7 +34,7 @@ local subscribe = function()
         local alive = true
         ngx.on_abort(function()
             alive = false
-            ngx.exit(499)
+            return ngx.exit(499)
         end)
         local sec = math.random(timeout - 10, timeout - 5)
         push("retry:" .. tostring(sec) .. "000\n" .. ping)
@@ -43,7 +43,7 @@ local subscribe = function()
             push(content)
         end
     else
-        ngx.status = 406
+        ngx.status = ngx.HTTP_NOT_ACCEPTABLE
     end
 end
 return {pinging = pinging, pub = publish, sub = subscribe}

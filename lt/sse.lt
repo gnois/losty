@@ -1,10 +1,16 @@
 --``
 IMPORTANT: See https://stackoverflow.com/questions/18584525/server-sent-events-and-browser-limits
 ...  Chrome limits SSE connections to 4-5, while Opera doesn't. Firefox, on the other hand, after 4-5 simultaneous connections, refuses to load any other page
+
+https://bugzilla.mozilla.org/show_bug.cgi?id=906896
+https://bugs.chromium.org/p/chromium/issues/detail?id=275955
+https://fastmail.blog/historical/inter-tab-communication-using-local-storage/
+
 ``
 
+
 var semaphore = require('ngx.semaphore')
-var choose = require('losty.accept')
+var accept = require('losty.accept')
 
 --print(ngx.worker.id())
 
@@ -25,7 +31,7 @@ var publish = \gen, ... ->
 	if clients < 0
 		content = gen(...)
 		sema.post(@, -clients)
-		ngx.sleep(0.01)  -- post() is non blocking, so yield to wake up waiters immediately. 
+		ngx.sleep(0.01)  -- post() is non blocking, so yield to wake up waiters immediately.
 		-- it would be perfect to have a sync version of post
 
 
@@ -35,17 +41,17 @@ var push = \str ->
 
 var subscribe = ->
 	var headers = ngx.req.get_headers()
-	var prefs = choose(headers["Accept"], {EVstream})
+	var prefs = accept(headers["Accept"], {EVstream})
 
-	if tostring(prefs[1]) == EVstream
+	if prefs and prefs[1] == EVstream
 		ngx.header["Content-Type"] = EVstream
 		ngx.header["Cache-Control"] = "no-cache"
 		ngx.status = 200
 		ngx.send_headers()
 		var alive = true
-		ngx.on_abort(-> 
+		ngx.on_abort(->
 			alive = false
-			ngx.exit(499)
+			return ngx.exit(499)
 		)
 		-- first message
 		var sec = math.random(timeout - 10, timeout - 5)
@@ -55,8 +61,8 @@ var subscribe = ->
 			sema.wait(@, timeout)  -- send a ping on timeout
 			push(content)
 	else
-		ngx.status = 406 -- not acceptable
-	
+		ngx.status = ngx.HTTP_NOT_ACCEPTABLE -- not acceptable
+
 
 return {
 	pinging = pinging
