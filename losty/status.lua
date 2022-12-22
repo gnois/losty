@@ -61,6 +61,14 @@ local status = {
     , [510] = "Not Extended"
     , [511] = "Network Authentication Required"
 }
-return function(code)
+return {text = function(code)
     return status[code] or ""
-end
+end, is_empty = function(code)
+    return code == 204 or code == 205 or code == 304
+end, is_redirect = function(code)
+    return 300 <= code and code <= 303 or code == 305 or code == 307 or code == 308
+end, is_retry = function(code)
+    return 502 <= code and code <= 504
+end, is_shorted = function(code)
+    return code == 400 or code == 405 or code == 408 or code == 413 or code == 414 or code == 494 or 499 <= code and code <= 501
+end}

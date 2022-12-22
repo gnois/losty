@@ -5,7 +5,7 @@ local cjson = require("cjson")
 local etag = require("losty.etag")
 local strz = require("losty.str")
 local body = require("losty.body")
-local choose = require("losty.accept")
+local accept = require("losty.accept")
 local dispatch = require("losty.dispatch")
 local HTML = "text/html"
 local JSON = "application/json"
@@ -40,8 +40,8 @@ local dual = function(...)
     local handlers = {...}
     return function(req, res)
         res.headers["Vary"] = "Accept"
-        local pref = choose(req.headers["Accept"], {HTML, JSON})
-        if tostring(pref[1]) == HTML then
+        local pref = accept(req.headers["Accept"], {HTML, JSON})
+        if pref and pref[1] == HTML then
             return dispatch(handlers, req, res)
         end
         return json(req, res)

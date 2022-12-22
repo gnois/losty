@@ -2,7 +2,7 @@ var cjson = require('cjson')
 var etag = require('losty.etag')
 var strz = require('losty.str')
 var body = require('losty.body')
-var choose = require('losty.accept')
+var accept = require('losty.accept')
 var dispatch = require('losty.dispatch')
 
 var HTML = "text/html"
@@ -65,10 +65,10 @@ var dual = \... ->
 		-- See http://stackoverflow.com/questions/1975416/what-is-the-function-of-the-vary-accept-http-header
 		res.headers["Vary"] = "Accept"
 
-		var pref = choose(req.headers["Accept"], {HTML, JSON})
-		if tostring(pref[1]) == HTML
+		var pref = accept(req.headers["Accept"], {HTML, JSON})
+		if pref and pref[1] == HTML
 			return dispatch(handlers, req, res)
-		return json(req, res)
+		return json(req, res) -- even if pref has no application/json
 
 
 

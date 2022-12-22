@@ -1,103 +1,81 @@
 --
 -- Generated from web.lt
 --
-local json = require("cjson.safe")
-local status = require("losty.status")
-local accept = require("losty.accept")
 local router = require("losty.router")
 local dispatch = require("losty.dispatch")
+local statuses = require("losty.status")
 local req = require("losty.req")
 local res = require("losty.res")
-local HTML = "text/html"
-local JSON = "application/json"
-local must_no_body = function(method, code)
-    return method == "HEAD" or code < 200 or code == 204 or code == 205 or code == 304
-end
+local METHODS = {
+    "GET"
+    , "POST"
+    , "PUT"
+    , "DELETE"
+    , "PATCH"
+    , "OPTIONS"
+}
 return function()
     local rt = router()
     local route = function(prefix)
         local r = {}
-        for _, method in ipairs({
-            "get"
-            , "post"
-            , "put"
-            , "delete"
-            , "patch"
-            , "options"
-        }) do
-            r[method] = function(path, f, ...)
+        for _, meth in ipairs(METHODS) do
+            r[string.lower(meth)] = function(path, f, ...)
                 if prefix and prefix ~= "/" then
                     path = prefix .. path
                 end
-                rt.set(string.upper(method), path, f, ...)
+                rt.set(meth, path, f, ...)
             end
         end
         return r
     end
-    local run = function(errors)
+    local run = function(error_page, check)
+        local handlers, body, ok, trace
         local q = req()
         local r = res()
-        local body
         local method = q.vars.request_method
-        if method == "HEAD" then
-            method = "GET"
-        end
-        local handlers, matches = rt.match(method, q.vars.uri)
+        handlers, q.match = rt.match(method == "HEAD" and "GET" or method, q.vars.uri)
         if handlers then
-            q.match = matches
-            local ok, trace = xpcall(function()
+            ok, trace = xpcall(function()
                 body = dispatch(handlers, q, r)
             end, function(err)
                 return debug.traceback(err, 2)
             end)
-            if ok then
-                if r.status == 0 then
-                    error("Response status required", 2)
-                end
-                if r.status >= 200 and r.status < 300 or body then
-                    if not must_no_body(method, r.status) and not r.headers["Content-Type"] then
-                        error("Content-Type header required", 2)
-                    end
-                end
-            else
+            if not ok then
                 r.status = 500
                 ngx.log(ngx.ERR, trace)
             end
         else
             r.status = 404
         end
-        if not body and r.status >= 400 then
-            local pref = accept(q.headers["Accept"], {HTML, JSON})
-            local ctype = tostring(pref[1])
-            if method ~= "HEAD" then
-                if ctype == JSON then
-                    body = json.encode({fail = status(r.status)})
-                else
-                    if errors == true then
-                        ngx.exit(r.status)
-                    elseif errors then
-                        body = errors[r.status]
-                    end
-                    if not body then
-                        ctype = "text/plain"
-                        body = status(r.status)
-                    end
+        local code = r.status
+        if error_page == true and body == nil and code >= 400 then
+            ngx.exit(code)
+            return code, trace
+        end
+        if check then
+            if code == 0 then
+                error("Response status required")
+            end
+            if body ~= nil or code >= 200 and code < 300 then
+                if not statuses.is_empty(code) and r.headers["Content-Type"] == nil then
+                    error("Content-Type header required")
                 end
             end
-            r.headers["Content-Type"] = ctype
         end
-        r.send()
-        if body and not must_no_body(method, r.status) then
-            if "function" == type(body) then
-                for val in body() do
-                    ngx.print(val)
-                    ngx.flush(true)
-                end
-            else
-                ngx.print(body)
+        local err
+        ok, err = r.send()
+        if ok then
+            if method ~= "HEAD" and not statuses.is_empty(code) and body ~= nil then
+                ok, err = ngx.print(body)
+            end
+            if ok then
+                ok, err = ngx.eof()
             end
         end
-        ngx.eof()
+        if not ok then
+            ngx.log(ngx.ERR, err)
+        end
+        return code, err or trace
     end
     return {route = route, run = run}
 end
