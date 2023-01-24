@@ -66,7 +66,7 @@ var dual = \... ->
 		res.headers["Vary"] = "Accept"
 
 		var pref = accept(req.headers["Accept"], {HTML, JSON})
-		if pref and pref[1] == HTML
+		if tostring(pref[1]) == HTML
 			return dispatch(handlers, req, res)
 		return json(req, res) -- even if pref has no application/json
 

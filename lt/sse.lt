@@ -43,7 +43,7 @@ var subscribe = ->
 	var headers = ngx.req.get_headers()
 	var prefs = accept(headers["Accept"], {EVstream})
 
-	if prefs and prefs[1] == EVstream
+	if tostring(prefs[1]) == EVstream
 		ngx.header["Content-Type"] = EVstream
 		ngx.header["Cache-Control"] = "no-cache"
 		ngx.status = 200

@@ -41,7 +41,7 @@ local dual = function(...)
     return function(req, res)
         res.headers["Vary"] = "Accept"
         local pref = accept(req.headers["Accept"], {HTML, JSON})
-        if pref and pref[1] == HTML then
+        if tostring(pref[1]) == HTML then
             return dispatch(handlers, req, res)
         end
         return json(req, res)
