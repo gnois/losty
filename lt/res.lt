@@ -1,4 +1,5 @@
--- a response is merely status and header
+-- a res() is merely status and header
+var ngx_header = ngx.header
 
 var insert
 insert = \tb, v ->
@@ -10,7 +11,7 @@ insert = \tb, v ->
 
 
 -- append v to ngx.header[k]
--- why must append? "for single valued header, only the last array item is sent"
+-- why append? "for single valued header, only the last array item is sent"
 var push = \tb, k, v ->
 	var old = tb[k]
 	if nil == old
@@ -45,14 +46,14 @@ var headers = setmetatable({}, {
 	, __index = \_, k ->
 		-- not calling ngx.resp.get_headers()
 		-- https://github.com/openresty/lua-nginx-module/issues/1595
-		return ngx.header[k]
+		return ngx_header[k]
 
 	, __newindex = \_, k, v ->
 		if nil == v or (type(v) == 'table' and next(v) == nil)
 			-- ngx.header doc: set to nil or {} clears the header k
-			ngx.header[k] = nil
+			ngx_header[k] = nil
 		else
-			push(ngx.header, k, v)
+			push(ngx_header, k, v)
 })
 
 
@@ -185,7 +186,7 @@ var send = ->
 		for n, k in ipairs(order)
 			arr[n] = bake(jar[k])
 		headers['Set-Cookie'] = arr
-	ngx.send_headers()
+	return ngx.send_headers()
 
 
 

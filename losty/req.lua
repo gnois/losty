@@ -1,10 +1,11 @@
 --
 -- Generated from req.lt
 --
+local ngx_var = ngx.var
 local bit = require("bit")
 local ffi = require("ffi")
 local read_uid = function()
-    local str = ngx.var.uid_set or ngx.var.uid_got
+    local str = ngx_var.uid_set or ngx_var.uid_got
     if str then
         local ind = string.find(str, "=")
         if ind > 0 then
@@ -44,18 +45,18 @@ local userid = {id = read_uid, id_binary = read_uid_binary, id_base64 = function
     return ngx.encode_base64(read_uid_binary())
 end}
 local cookies = setmetatable({}, {__metatable = false, __index = function(_, name)
-    local v = ngx.var["cookie_" .. name]
+    local v = ngx_var["cookie_" .. name]
     return v and ngx.unescape_uri(v)
 end})
 local args = setmetatable({}, {__metatable = false, __index = function(_, name)
-    return ngx.var["arg_" .. name]
+    return ngx_var["arg_" .. name]
 end})
 local headers = setmetatable({}, {__metatable = false, __index = function(_, name)
-    return ngx.var["http_" .. string.lower(string.gsub(name, "-", "_"))]
+    return ngx_var["http_" .. string.lower(string.gsub(name, "-", "_"))]
 end})
 return function()
-    return setmetatable({vars = ngx.var, headers = headers, cookies = cookies, args = args, secure = function()
-        return ngx.var.https == "on"
+    return setmetatable({vars = ngx_var, headers = headers, cookies = cookies, args = args, secure = function()
+        return ngx_var.https == "on"
     end}, {__metatable = false, __index = function(tbl, key)
         local fn = userid[key]
         if fn then

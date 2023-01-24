@@ -1,11 +1,13 @@
 -- a request wraps ngx.var and ngx.req, with helpers for userid module
 
+var ngx_var = ngx.var
+
 var bit = require('bit')
 var ffi = require('ffi')
 
 var read_uid = ->
 	-- uid is   xxx=hexstring_of_len32, where hexstring is a hex encoding of four *little-endian* four-byte integers underneath
-	var str = ngx.var.uid_set or ngx.var.uid_got
+	var str = ngx_var.uid_set or ngx_var.uid_got
 	if str
 		-- find the first =
 		var ind = string.find(str, '=')
@@ -41,7 +43,7 @@ var read_uid_binary = ->
 		--``
 		var printx = \x ->
 			print("0x", bit.tohex(x))
-		
+
 		--printx(a)
 		--printx(b)
 		--printx(c)
@@ -66,7 +68,7 @@ var userid = {
 	-- 16 bytes binary string
 	, id_binary = read_uid_binary
 	-- base64 encoded string, as seen in browser cookie
-	-- if you use `userid_mark` directive, that character replaces the first `=` padding at the end of the Base64. 
+	-- if you use `userid_mark` directive, that character replaces the first `=` padding at the end of the Base64.
 	-- U need to replace that yourself by finding the first =, then replace your mark char.
 	, id_base64 = -> return ngx.encode_base64(read_uid_binary())
 }
@@ -79,34 +81,34 @@ var userid = {
 var cookies = setmetatable({}, {
 	__metatable = false
 	, __index = \_, name ->
-		var v = ngx.var['cookie_' .. name]
+		var v = ngx_var['cookie_' .. name]
 		return v and ngx.unescape_uri(v)
 })
 
 var args = setmetatable({}, {
 	__metatable = false
 	, __index = \_, name ->
-		return ngx.var['arg_' .. name]
+		return ngx_var['arg_' .. name]
 })
 
 
 var headers = setmetatable({}, {
 	__metatable = false
 	, __index = \_, name ->
-		return ngx.var['http_' .. string.lower(string.gsub(name, "-", "_"))]
+		return ngx_var['http_' .. string.lower(string.gsub(name, "-", "_"))]
 })
 
 
 return ->
 	return setmetatable({
-		vars = ngx.var
+		vars = ngx_var
 		, headers = headers
 		, cookies = cookies
 		, args = args
-		, secure = -> return ngx.var.https == 'on'
+		, secure = -> return ngx_var.https == 'on'
 	}, {
 		__metatable = false
-		
+
 		, __index = \tbl, key ->
 			var fn = userid[key]
 			if fn

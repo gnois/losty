@@ -1,6 +1,7 @@
 --
 -- Generated from res.lt
 --
+local ngx_header = ngx.header
 local insert
 insert = function(tb, v)
     if "table" == type(v) then
@@ -26,12 +27,12 @@ local push = function(tb, k, v)
     end
 end
 local headers = setmetatable({}, {__metatable = false, __index = function(_, k)
-    return ngx.header[k]
+    return ngx_header[k]
 end, __newindex = function(_, k, v)
     if nil == v or type(v) == "table" and next(v) == nil then
-        ngx.header[k] = nil
+        ngx_header[k] = nil
     else
-        push(ngx.header, k, v)
+        push(ngx_header, k, v)
     end
 end})
 local nocache = function()
@@ -126,7 +127,7 @@ local send = function()
         end
         headers["Set-Cookie"] = arr
     end
-    ngx.send_headers()
+    return ngx.send_headers()
 end
 return function()
     jar = {}
