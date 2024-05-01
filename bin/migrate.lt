@@ -1,12 +1,149 @@
+--``
+How to use:
+
+-- suppress ngx lua warning
+setmetatable(_G, {__newindex = \t, n, v -> rawset(t, n, v)})
+
+var pg = require('losty.sql.pg')
+var cred = require('credential')
+
+return \dbg ->
+	var c = cred.PostgreSQL
+	return pg(c.database, c.username, c.password, c.host, nil, nil, dbg)
+
+mig(sql(true))
+
+``
+
+
+--``
+
+psql -U fren -d fren -P pager
+
+``
+
+
+package.path = package.path .. ";../?.lua"
 var to = require('losty.to')
 var str = require('losty.str')
 var tbl = require('losty.tbl')
 var c = require('losty.exec')
+var parse = require('cmdargs')
 
+
+var migrate = \db, migrations ->
+	assert('table' == type(migrations), "migration schemas must be an array of {sql, ...} where sql are strings")
+
+	var ok = true
+	var err
+	db.connect()
+	for _, v in ipairs(migrations)
+		var sql = to.trim(v)
+		if #sql > 0
+			ok, err = db.run(sql)
+			if tonumber(err) -- err is 0 when no statement to execute, maybe bcoz all are comments
+				print(c.onblue, c.yellow, c.bright, "        ==> ", err .. ' query ok', c.reset)
+			else
+				print(c.onred, c.white, c.bright, "        >>>> ", tbl.dump(err), c.reset)
+				break
+
+
+	db.disconnect()
+	if not ok and err ~= 0
+		return false
+	return true
+
+
+
+var usage = ->
+	io.stderr.write(@, ```
+Usage:
+	.../resty/bin/resty -I ../ migrate.lua [-e] m1 [m2.sql] [m3.lua]
+
+	Migrate files m1.lua [, m2.sql, m3.lua] in order.
+	Filename can specify SQL file or Lua file. Filename without extension is treated as a Lua file.
+
+	SQL scripts in each file are represented as an array of strings, which is iterated and sent to database.
+	Hence a Lua file should return an array of sql scripts.
+	A SQL file can have scripts delimited with `---` as array separator, or else is sent to database as a whole.
+
+	Optional switches:
+		-e   Error out if any file is empty, default is to continue to next file.
+```)
+
+
+return \db ->
+	var opts = parse(arg)
+	tbl.show(opts)
+	if #opts > 0
+		for f = 1, #opts
+			var scripts  -- array of sql scripts
+			var n = 1
+			var fname = opts[f]
+
+			if str.ends(fname, '.sql')
+				var file, err = io.open(fname, "r")
+				if not file
+					error(c.red .. err .. c.reset)
+
+				var nested = 0
+				var lines, l, i = {}, 1, 1
+				scripts = {}
+				for line in file.lines(@)
+					i = i + 1
+					for comment in string.gmatch(line, "/%*")
+						nested = nested + 1
+					for comment in string.gmatch(line, "%*/")
+						nested = nested - 1
+						--if nested < 0
+						--	error("Unmatched */ at line " .. i)
+
+					-- separator in effect only when not in comment
+					if nested == 0 and str.starts(line, "---") and #lines > 0
+						scripts[n] = table.concat(lines, "\n")
+						n = n + 1
+						lines = {}
+						l = 1
+					else
+						lines[l] = line
+						l = l + 1
+
+				--if nested > 0
+				--	error("Unterminated /*")
+				-- last chunk
+				if #lines > 0
+					scripts[n] = table.concat(lines, "\n")
+				file.close(@)
+			else
+				var file = string.gsub(to.trim(fname), '.lua$', '')
+				scripts = require(file)
+
+			if #scripts > 0
+				if not migrate(db, scripts)
+					error(c.red .. " Error in " .. fname .. c.reset)
+			else
+				var msg = fname .. " is empty."
+				if opts.e
+					error(c.red .. msg .. c.reset)
+				print(c.yellow .. msg .. c.reset)
+
+		print(c.green, "Migration successful.", c.reset)
+		-- so that subsequent lua code know
+		return true
+
+	usage()
+
+
+
+
+
+
+
+	
 --```
 var migrate = \db, migrations ->
 	assert('table' == type(migrations), "migration schemas must be a table of { [index] = [[sql]] } where index is sortable")
-	
+
 	db.connect()
 	var e = db.one("from pg_class where relname = 'migrations'")
 	if not e or not e[1]
@@ -18,7 +155,7 @@ var migrate = \db, migrations ->
 
 	var exists = {}
 	e = db.select("index FROM migrations")
-	if e 
+	if e
 		for _, row in ipairs(e)
 			exists[row.index] = true
 
@@ -32,142 +169,15 @@ var migrate = \db, migrations ->
 		if not exists[index]
 			print("Migrating ", index)
 			var ok, err = db.run(sql)
-			if ok 
+			if ok
 				db.insert("migrations (index) VALUES (:?)", index)
 			else
 				print(err)
 				break
 		else
 			print(index, " already migrated")
-	
+
 	db.disconnect()
 	return true
 
 --```
-
-
-var migrate = \db, migrations ->
-	assert('table' == type(migrations), "migration schemas must be an array of {sql, ...} where sql are strings")
-	
-	var ok = true
-	var err
-	db.connect()
-	for _, v in ipairs(migrations)
-		var sql = to.trim(v)
-		if #sql > 0
-			ok, err = db.run(sql)
-			if tonumber(err) -- err is 0 when no statement to execute, maybe bcoz all are comments
-				print(c.onblue, c.yellow, c.bright, "        ==> ", err .. ' query ok', c.reset)
-			else
-				print(c.onred, c.white, c.bright, "        >>>> ", tbl.dump(err), c.reset)
-				break
-			
-
-	db.disconnect()
-	if not ok and err ~= 0
-		return false
-	return true
-
-
-
-
-
-
-
-
-
-
-
-var usage = ->
-	io.stderr.write(@, ```
-Usage: 
-	.../resty/bin/resty -I ../ migrate.lua [-e] m1 [m2.sql] [m3.lua]
-	
-	Migrate files m1.lua [, m2.sql, m3.lua] in order.
-	Filename can specify SQL file or Lua file. Filename without extension is treated as a Lua file.
-	
-	SQL scripts in each file are represented as an array of strings, which is iterated and sent to database.
-	Hence a Lua file should return an array of sql scripts.
-	A SQL file can have scripts delimited with `---` as array separator, or else is sent to database as a whole.
-	
-	Optional switches:
-		-e   Error out if any file is empty, default is to continue to next file.
-```)
-
-
-return \db ->
-	var run = true
-	var e
-	var filenames = {}
-	var k = 1
-	while arg[k]
-		var a = arg[k]
-		if string.sub(a, 1, 1) == '-'
-			if string.sub(a, 2, 2) == 'e'
-				e = true
-			else
-				run = false
-		else
-			table.insert(filenames, a)
-		k = k + 1
-
-	if #filenames < 1
-		run = false
-
-	if run
-		for f = 1, #filenames
-			var scripts  -- array of sql scripts
-			var n = 1
-			var fname = filenames[f]
-			
-			if str.ends(fname, '.sql')
-				var file, err = io.open(fname, "r")
-				if not file
-					error(c.red .. err .. c.reset)
-				
-				var nested = 0
-				var lines, l, i = {}, 1, 1
-				scripts = {}
-				for line in file.lines(@)
-					i = i + 1
-					for comment in string.gmatch(line, "/%*")
-						nested = nested + 1
-					for comment in string.gmatch(line, "%*/")
-						nested = nested - 1
-						--if nested < 0
-						--	error("Unmatched */ at line " .. i)
-					
-					-- separator in effect only when not in comment
-					if nested == 0 and str.starts(line, "---") and #lines > 0
-						scripts[n] = table.concat(lines, "\n")
-						n = n + 1
-						lines = {}
-						l = 1
-					else
-						lines[l] = line
-						l = l + 1
-				
-				--if nested > 0
-				--	error("Unterminated /*")
-				-- last chunk
-				if #lines > 0
-					scripts[n] = table.concat(lines, "\n")
-				file.close(@)
-			else
-				var file = string.gsub(to.trim(fname), '.lua$', '')
-				scripts = require(file)
-			
-			if #scripts > 0
-				if not migrate(db, scripts)
-					error(c.red .. " Error in " .. fname .. c.reset)
-			else
-				var msg = fname .. " is empty."
-				if e
-					error(c.red .. msg .. c.reset)
-				print(c.yellow .. msg .. c.reset)
-
-		print(c.green, "Migration successful.", c.reset)
-		-- so that subsequent lua code know
-		return true
-
-	usage()
