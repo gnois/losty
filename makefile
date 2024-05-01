@@ -5,10 +5,12 @@
 
 # *nix
 #/ := $(strip /)
+#RMD := rm -fr
 #RM := rm
 #CP := cp
 # Windows
 / := $(strip \)
+RMD := rmdir /s /q
 RM := del
 CP := copy
 
@@ -24,13 +26,15 @@ PACKAGE := "package.path=package.path .. '/luaty/?.lua'"
 # SRC and DST path cannot end with $/ bcoz gnu make cannot understand target $(SRC)%.lua without the slash as separator
 SRC := .$/lt
 DST := .$/losty
-LT := $(wildcard $(SRC)/*.lt) $(wildcard $(SRC)/sql/*.lt)
+BIN := .$/bin
+LT := $(wildcard $(SRC)/*.lt) $(wildcard $(SRC)/sql/*.lt) $(wildcard $(BIN)/*.lt)
 #LUA := $(patsubst $(DST)/%.lt,$(DST)/%.lua,$(LT))
-LUA := $(patsubst $(DST)/%.lt,$(DST)/%.lua,$(subst $(SRC)/,$(DST)/,$(LT)))
+LUA := $(patsubst %.lt,%.lua,$(subst $(SRC)/,$(DST)/,$(LT)))
 TXT := $(DST)/stops_en.txt
 
+
 .PHONY: all clean
-#all: ; $(info $$LUA is [${LUA}])echo hello
+#all: ; $(info $$LUA is [${LUA}]) $(info $$LT is [${LT}])
 all: $(LUA) $(TXT)
 
 # Cannot use $< in recipe bcoz windows require backslash
@@ -40,8 +44,10 @@ $(DST)/%.lua: $(SRC)/%.lt
 $(DST)/stops_en.txt: $(SRC)/stops_en.txt
 	$(CP) $(SRC)$/stops_en.txt $(DST)$/
 
+$(BIN)/%.lua: $(BIN)/%.lt
+	$(LUAJIT) -e $(PACKAGE) $(LTFLAGS) $(BIN)$/$*.lt $(BIN)$/$*.lua
+
 
 clean:
-	$(RM) $(DST)$/*.lua
-	$(RM) $(DST)$/sql$/*.lua
-	$(RM) $(DST)$/*.txt
+	$(RMD) $(DST)
+	$(RM) $(BIN)$/*.lua
