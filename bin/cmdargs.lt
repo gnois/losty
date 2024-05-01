@@ -1,0 +1,75 @@
+--``
+
+-- Lua command line scripts   http://www.lua.org/manual/5.1/manual.html#6
+
+$ lua -la b.lua t1 t2
+
+The interpreter first runs the file a.lua, then creates a table
+
+arg = { [-2] = "lua", [-1] = "-la", [0] = "b.lua", [1] = "t1", [2] = "t2" }
+
+and finally runs the file b.lua. The script is called with arg[1], arg[2], ... as arguments; it can also access these arguments with the vararg expression '...'.
+
+``
+
+--``
+Parse cmd line switches:
+	$ lua prog.lua -w -x xfile1 -x xfile2 --y yfile other file
+
+Calling parse({...}) returns table
+	{[1] = 'other', [2] = 'file', w = true, x = ['xfile1', 'xfile2'], ['-y'] = 'yfile'}
+
+``
+
+
+-- insert key value into table
+var insert = \tbl, key, val ->
+	if tbl[key]
+		if 'table' == type(tbl[key])
+			table.insert(tbl[key], val)
+		else
+			tbl[key] = {tbl[key], val}
+	else
+		tbl[key] = val
+
+
+var parse = \args ->
+	var out = {}
+	var key
+
+	var a = 1
+	while args[a]
+		var x = args[a]
+		if string.sub(x, 1, 1) == '-'
+			if key
+				insert(out, key, true)
+			key = string.sub(x, 2)
+		else if key
+			insert(out, key, x)
+			key = nil
+		else
+			table.insert(out, x)
+		a = a + 1
+	-- last one
+	if key
+		insert(out, key, true)
+	return out
+
+
+
+var test = ->
+	var line = {'-w', '-x', 'xfile1', '-x', 'xfile2', '--y', 'yfile', 'other', 'file', '--long', 'switch', '--java=style'}
+	var o = parse(line)
+	var as = assert
+	as(o[1] == 'other')
+	as(o[2] == 'file')
+	as(o.w == true)
+	as(o.x[1] == 'xfile1')
+	as(o.x[2] == 'xfile2')
+	as(o['-y'] == 'yfile')
+	as(o['-long'] == 'switch')
+	as(o['-java=style'] == true)
+
+-- test()
+
+return parse
