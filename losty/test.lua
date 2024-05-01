@@ -54,35 +54,31 @@ return function(db, func)
     end
     local groups = 0
     local passes = 0
-    local test = function(desc, fn, commit)
+    local test = function(desc, fn, rollback)
         groups = groups + 1
         tests = 0
         fails = 0
         errors = 0
         local title = c.bright .. c.cyan .. groups .. ". " .. c.yellow .. "[[ " .. (desc or "?? no name ??") .. " ]]"
-        if commit then
-            title = title .. c.cyan .. " - WITH COMMIT"
+        if rollback then
+            title = title .. c.cyan .. " - WITH ROLLBACK"
         end
         print("                                         " .. title .. c.reset)
-        if q then
+        if q and rollback then
             q.begin()
         end
         local _, err = xpcall(fn, function(err)
             return debug.traceback(err, 2)
         end)
         if err then
-            if q then
+            if q and rollback then
                 q.rollback()
             end
             print(c.bright .. c.red, "\nERROR: " .. err .. "\n" .. c.reset)
             errors = errors + 1
         else
-            if q then
-                if commit then
-                    q.commit()
-                else
-                    q.rollback()
-                end
+            if q and rollback then
+                q.rollback()
             end
         end
         if fails == 0 and errors == 0 then
