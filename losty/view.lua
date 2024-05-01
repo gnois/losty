@@ -11,7 +11,6 @@ local create = coroutine.create
 local resume = coroutine.resume
 local gmatch = string.gmatch
 local gsub = string.gsub
-local normal_tags = set("a", "abbr", "address", "article", "aside", "audio", "b", "bdi", "bdo", "blockquote", "body", "button", "canvas", "caption", "cite", "code", "colgroup", "data", "datagrid", "datalist", "dd", "del", "details", "dfn", "div", "dl", "dt", "em", "eventsource", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "html", "i", "iframe", "ins", "kbd", "label", "legend", "li", "main", "mark", "map", "menu", "meter", "nav", "noscript", "object", "ol", "optgroup", "option", "output", "p", "pre", "progress", "q", "ruby", "rp", "rt", "s", "samp", "script", "section", "select", "small", "span", "strong", "style", "sub", "summary", "details", "sup", "table", "tbody", "td", "textarea", "tfoot", "th", "thead", "time", "title", "tr", "u", "ul", "var", "video")
 local void_tags = set("area", "base", "br", "col", "command", "embed", "hr", "img", "input", "keygen", "link", "meta", "param", "source", "track", "wbr")
 local parse = function(s)
     local r = create(function()
@@ -169,7 +168,7 @@ markup = function(nodes)
     end
     return ""
 end
-local view = function(func, args, naked, strict)
+local view = function(func, args)
     local env = {concat = concat, insert = insert, remove = remove}
     env = setmetatable(env, {__index = function(t, name)
         if void_tags.has(name) then
@@ -180,22 +179,17 @@ local view = function(func, args, naked, strict)
                 return void(name, attrs)
             end
         end
-        if normal_tags.has(name) then
-            return function(...)
-                return normal(name, ...)
-            end
+        local x = _G[name]
+        if x then
+            return x
         end
-        if strict then
-            error("Unrecognized html5 tag <" .. name .. ">")
+        return function(...)
+            return normal(name, ...)
         end
-        return _G[name]
     end})
     func = setfenv(func, env)
     local list = func(args)
     local html = markup(list)
-    if naked then
-        return html
-    end
-    return "<!DOCTYPE html> " .. html
+    return html
 end
 return view

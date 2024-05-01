@@ -13,106 +13,6 @@ var gsub = string.gsub
 --   select has no replacement
 --   Use concat, insert and remove without qualifying table
 --
-var normal_tags = set(
-	'a'
-	, 'abbr'
-	, 'address'
-	, 'article'
-	, 'aside'
-	, 'audio'
-	, 'b'
-	, 'bdi'
-	, 'bdo'
-	, 'blockquote'
-	, 'body'
-	, 'button'
-	, 'canvas'
-	, 'caption'
-	, 'cite'
-	, 'code'
-	, 'colgroup'
-	, 'data'
-	, 'datagrid'
-	, 'datalist'
-	, 'dd'
-	, 'del'
-	, 'details'
-	, 'dfn'
-	, 'div'
-	, 'dl'
-	, 'dt'
-	, 'em'
-	, 'eventsource'
-	, 'fieldset'
-	, 'figcaption'
-	, 'figure'
-	, 'footer'
-	, 'form'
-	, 'h1'
-	, 'h2'
-	, 'h3'
-	, 'h4'
-	, 'h5'
-	, 'h6'
-	, 'head'
-	, 'header'
-	, 'hgroup'
-	, 'html'
-	, 'i'
-	, 'iframe'
-	, 'ins'
-	, 'kbd'
-	, 'label'
-	, 'legend'
-	, 'li'
-	, 'main'
-	, 'mark'
-	, 'map'
-	, 'menu'
-	, 'meter'
-	, 'nav'
-	, 'noscript'
-	, 'object'
-	, 'ol'
-	, 'optgroup'
-	, 'option'
-	, 'output'
-	, 'p'
-	, 'pre'
-	, 'progress'
-	, 'q'
-	, 'ruby'
-	, 'rp'
-	, 'rt'
-	, 's'
-	, 'samp'
-	, 'script'
-	, 'section'
-	, 'select'
-	, 'small'
-	, 'span'
-	, 'strong'
-	, 'style'
-	, 'sub'
-	, 'summary'
-	, 'details'
-	, 'sup'
-	, 'table'
-	, 'tbody'
-	, 'td'
-	, 'textarea'
-	, 'tfoot'
-	, 'th'
-	, 'thead'
-	, 'time'
-	, 'title'
-	, 'tr'
-	, 'u'
-	, 'ul'
-	, 'var'
-	, 'video'
-)
-
 var void_tags = set(
 	'area'
 	, 'base'
@@ -151,7 +51,7 @@ var parse = \s ->
 				n = n + 1
 				if c == ']'
 					--if #acc > 2
-					if n > 3 
+					if n > 3
 						yield(acc)
 					acc = {}
 					n = 1
@@ -162,11 +62,11 @@ var parse = \s ->
 		var code, res = resume(r)
 		return res
 
-		
+
 var NoChild = \tag ->
 	return "<" .. tag .. "> cannot have child element"
 
-	
+
 -- void tag
 var void = \tag, attrs ->
 	var cell = {_tag = tag, attrs = {}}
@@ -199,7 +99,7 @@ var void = \tag, attrs ->
 			-- attr cannot be array
 			if attrs[1]
 				error(NoChild(tag), 2)
-				
+
 			for key, val in pairs(attrs)
 				-- attr cannot have {_tag=...}
 				if key == '_tag'
@@ -213,12 +113,12 @@ var void = \tag, attrs ->
 		else
 			var msg = tag .. '(' .. kind .. ')'
 			error("Attribute must be a table or a string: " .. msg, 2)
-		
+
 	if classes[1]
 		cell.attrs['class'] = concat(classes, ' ')
 
 	return cell
-	
+
 -- normal tag
 var normal = \tag, ... ->
 	var args = {...}
@@ -243,13 +143,13 @@ var normal = \tag, ... ->
 		else if 'table' == k
 			-- attr cannot be array and cannot have key `_tag`
 			attr = a[1] == nil and a._tag == nil
-	
+
 	--print('attr', attr)
 	var attrib
 	if attr
 		attrib = args[1]
 		remove(args, 1)
-	
+
 	var cell = void(tag, attrib)
 	cell._children = args
 	return cell
@@ -287,13 +187,13 @@ markup = \nodes ->
 	return ''
 
 
-var view = \func, args, naked, strict ->
+var view = \func, args ->
 	var env = {
 		concat = concat
 		, insert = insert
 		, remove = remove
 	}
-	env = setmetatable(env, { 
+	env = setmetatable(env, {
 		__index = \t, name ->
 			--print(name)
 			if void_tags.has(name)
@@ -301,22 +201,19 @@ var view = \func, args, naked, strict ->
 					if w or x or y or z
 						error(NoChild(name), 2)
 					return void(name, attrs)
-			if normal_tags.has(name)
-				return \... ->
-					return normal(name, ...)
-			if strict
-				error("Unrecognized html5 tag <" .. name .. ">")
-			return _G[name]
+			var x = _G[name]
+			if x
+				return x
+			return \... ->
+				return normal(name, ...)
 	})
 	func = setfenv(func, env)
 	-- not using pcall(), let it throw if error
 	var list = func(args)
 	--print(tbl.dump(list))
 	var html = markup(list)
-	
-	if naked
-		return html
-	return '<!DOCTYPE html> ' .. html
+
+	return html  -- caller to prepent '<!DOCTYPE html>
 
 
 
@@ -332,12 +229,12 @@ var test = ->
 	as(v(-> return br('')) == '<br>')  -- or string
 	as(v(-> return br({})) == '<br>') -- or table
 	as(v(-> return img({src='/a.png', alt='A'})) == '<img alt="A" src="/a.png">')  -- using table as attr
-	
+
 	-- error: void element cannot have children
 	as(pcall(v, -> return hr(hr())) == false)
 	as(pcall(v, -> return hr({div(), span()})) == false)
-	
-	
+
+
 	-- normal element
 	as(v(-> return div()) == '<div></div>')
 	as(v(-> return div("foo")) == '<div>foo</div>')  -- by default, args are children
@@ -351,13 +248,13 @@ var test = ->
 	as(v(-> return div("[title=\"bar\"]", 1)) == '<div title="bar">1</div>')  -- children can take number or str
 
 	as(v(-> return p(h1("blog"))) == '<p><h1>blog</h1></p>')  -- child can be a single element
-	
+
 	as(v(-> return nav(span('z'), span(1), span(false))) == '<nav><span>z</span><span>1</span><span>false</span></nav>') -- children can be args
 	as(v(-> return p({"AA", mark("mk")}, "YY", "ZZ")) == '<p>AA<mark>mk</mark>YYZZ</p>') -- children can be args
 	as(v(-> return p({"AA", mark("mk"), "ZZ"})) == '<p>AA<mark>mk</mark>ZZ</p>') -- children can be an array
 	as(v(-> return ul({ li("item1"), li("item2")})) == '<ul><li>item1</li><li>item2</li></ul>') -- children can be an array
-	as(v(-> return a({href = "/"}, strong(nil, "Home"))) == '<a href="/"><strong>Home</strong></a>') 
-	
+	as(v(-> return a({href = "/"}, strong(nil, "Home"))) == '<a href="/"><strong>Home</strong></a>')
+
 	as(v(-> return {img("[src=/img/tmp file.png]"), span("span1")}) == '<img src="/img/tmp file.png"><span>span1</span>') -- view function can return a list
 	as(v(-> return {"AAA", "bbb", p("para")}) == 'AAAbbb<p>para</p>')  -- list with plain string too
 
