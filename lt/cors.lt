@@ -1,0 +1,46 @@
+var insert = table.insert
+var concat = table.concat
+var hosts = {}
+var headers = {}
+var methods = {}
+var expose_headers = {}
+var max_age = 3600
+var credentials = true
+
+var K = {}
+K.host = \host ->
+	insert(hosts, host)
+
+K.method = \method->
+	insert(methods, method)
+
+K.header = \header ->
+	insert(headers, header)
+
+K.expose_header = \header ->
+	insert(expose_headers, header)
+
+K.max_age = \age ->
+	max_age = age
+
+K.credentials = \cred ->
+	credentials = cred
+
+K.run = ->
+	var origin = ngx.req.get_headers()["Origin"]
+	if not origin
+		return 
+
+	for _, v in pairs(hosts)
+		var from, to, err = ngx.re.find(origin, v, "jo")
+		if from
+			ngx.header["Access-Control-Allow-Origin"] = origin
+			ngx.header["Access-Control-Max-Age"] = max_age
+			ngx.header["Access-Control-Expose-Headers"] = concat(expose_headers, ",")
+			ngx.header["Access-Control-Allow-Headers"] = concat(headers, ",")
+			ngx.header["Access-Control-Allow-Methods"] = concat(methods, ",")
+			ngx.header["Access-Control-Allow-Credentials"] = tostring(credentials)
+			break
+
+return K
+
