@@ -17,27 +17,25 @@ local dump = function(value)
         local t = type(val)
         if t == "table" then
             if seen[val] then
-                return "recursive(" .. tostring(val) .. ")...\n"
+                return "recursive <" .. tostring(val) .. ">..."
             end
             seen[val] = true
             depth = depth + 1
-            local lines
-            do
-                local accum = {}
-                local len = 1
-                for k, v in pairs(val) do
-                    accum[len] = string.rep(" ", depth * 3) .. "[" .. tostring(k) .. "] = " .. dmp(v, depth)
-                    len = len + 1
-                end
-                lines = accum
+            local lines, len = {}, 0
+            for k, v in pairs(val) do
+                len = len + 1
+                lines[len] = string.rep(" ", depth * 2) .. tostring(k) .. " = " .. dmp(v, depth)
             end
             seen[val] = false
-            return "{\n" .. table.concat(lines) .. "\n" .. string.rep(" ", (depth - 1) * 3) .. "}\n"
+            if len > 0 then
+                return "{\n" .. table.concat(lines, "\n") .. "\n" .. string.rep(" ", (depth - 1) * 2) .. "}"
+            end
+            return "{}"
         end
         if t == "string" then
             return "\"" .. val .. "\""
         end
-        return tostring(val) .. "\n"
+        return tostring(val)
     end
     return dmp(value)
 end
@@ -103,5 +101,13 @@ K.val2key = function(t)
         o[v] = k
     end
     return o
+end
+K.keys = function(t)
+    local keys, n = {}, 0
+    for k, _ in pairs(t) do
+        n = n + 1
+        keys[n] = k
+    end
+    return keys
 end
 return K

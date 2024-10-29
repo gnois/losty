@@ -8,28 +8,27 @@ var dump = \value ->
 			return "nil\n"
 		if val == ngx.null
 			return "<ngx.null>\n"
-			
+
 		var t = type(val)
 		if t == "table"
 			if seen[val]
-				return "recursive(" .. tostring(val) .. ")...\n"
-			
+				return "recursive <" .. tostring(val) .. ">..."
+
 			seen[val] = true
 			depth = depth + 1
-			var lines
-			do
-				var accum = {}
-				var len = 1
-				for k, v in pairs(val)
-					accum[len] = string.rep(" ", depth * 3) .. "[" .. tostring(k) .. "] = " .. dmp(v, depth)
-					len = len + 1
-				lines = accum
-			
+			var lines, len = {}, 0
+			for k, v in pairs(val)
+				len = len + 1
+				lines[len] = string.rep(" ", depth * 2) .. tostring(k) .. " = " .. dmp(v, depth)
+
 			seen[val] = false
-			return "{\n" .. table.concat(lines) .. "\n" .. string.rep(" ", (depth - 1) * 3) .. "}\n"
+			if len > 0
+				return "{\n" .. table.concat(lines, "\n") .. "\n" .. string.rep(" ", (depth - 1) * 2) .. "}"
+			return "{}"
+
 		if t == "string"
 			return '"' .. val .. '"'
-		return tostring(val) .. "\n"
+		return tostring(val)
 
 	return dmp(value)
 
@@ -51,7 +50,7 @@ K.stack = ->
 	return {
 		push = \x ->
 			t[#t + 1] = x
-		
+
 		, pop = ->
 			if #t > 0
 				var x = t[#t]
@@ -95,6 +94,15 @@ K.val2key = \t ->
 	for k, v in pairs(t)
 		o[v] = k
 	return o
+
+
+-- collect all keys (NOT in order)
+K.keys = \t ->
+	var keys, n = {}, 0
+	for k, _ in pairs(t)
+		n = n + 1
+		keys[n] = k
+	return keys
 
 
 return K
