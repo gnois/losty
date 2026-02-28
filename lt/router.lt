@@ -139,7 +139,7 @@ var router = ->
 	var invalid = \path ->
 		if not path or #path < 1
 			return "is empty"
-		if not str_sub(path, 1, 1) == '/'
+		if str_sub(path, 1, 1) ~= '/'
 			return "does not start with '/'"
 		if str_find(path, '%s')
 			return "has space"
