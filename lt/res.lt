@@ -164,15 +164,20 @@ var bake = \c ->
 			z[y] = "Max-Age=" .. a
 			y = y + 1
 	var ss = c._samesite
+	var secure = c._secure
 	if ss ~= nil
 		if 'boolean' == type(ss)
 			ss = ss and "strict" or "none"
+		else
+			ss = string.lower(ss)
 		z[y] = "SameSite=" .. ss
 		y = y + 1
+		if ss == "none"
+			secure = true
 	if c._httponly
 		z[y] = "HttpOnly"
 		y = y + 1
-	if c._secure
+	if secure
 		z[y] = "Secure"
 
 	return table.concat(z, ";")
