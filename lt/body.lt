@@ -2,17 +2,33 @@ var upload = require('resty.upload')
 var cjson = require('cjson.safe')
 var str = require('losty.str')
 
+-- guard against oversized bodies; nginx client_max_body_size still applies, this is a secondary check
+var MaxBody = 10 * 1024 * 1024  -- 10MB soft cap
+var UploadTimeoutMs = 10000     -- allow slower multipart uploads
+
+var enforce_size = \req ->
+	var len = req.headers["Content-Length"]
+	len = len and tonumber(len)
+	if len and len > MaxBody
+		return nil, "request body too large"
+	return true
+
 var raw = \req ->
-	var data = req.get_body_data()
-	if not data
-		var file = req.get_body_file()
-		if file 
-			var fp, err = io.open(file, 'r')
-			if not fp
-				return fp, err
-			data = fp.read(@, '*a')
-			fp.close(@)
-	return data
+	var ok, err = enforce_size(req)
+	if ok
+		var data = req.get_body_data()
+		if not data
+			var file = req.get_body_file()
+			if file
+				var fp, err = io.open(file, 'r')
+				if not fp
+					return fp, err
+				data = fp.read(@, '*a')
+				fp.close(@)
+		if data and #data > MaxBody
+			return nil, "request body too large"
+		return data
+	return ok, err
 
 
 var json = \req ->
@@ -49,8 +65,9 @@ var content_disposition = \value ->
 var parser = ->
 	var input, err = upload.new(@, 4096)
 	if input
-		input.set_timeout(@, 2000) -- 2 sec
+		input.set_timeout(@, UploadTimeoutMs)
 		var t, data
+		var used = 0
 		do
 			t, data, err = input.read(@)
 			if t
@@ -64,6 +81,10 @@ var parser = ->
 					else
 						yield(string.lower(name), value)
 				else if 'body' == t
+					used = used + #data
+					if used > MaxBody
+						err = "request body too large"
+						break
 					yield(true, data)
 				else if 'part_end' == t
 					yield(false, nil)
@@ -79,7 +100,7 @@ return {
 	raw = \req ->
 		req.read_body()
 		return raw(req)
-		
+
 
 	-- chunked encoding
 	-- https://github.com/openresty/lua-nginx-module/blob/master/t/116-raw-req-socket.t
