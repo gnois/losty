@@ -12,7 +12,7 @@ var str = require('losty.str')
 
 -- AES salt length MUST BE MULTIPLE OF 8! else nginx gives intermittent error:
 -- ignoring stale global SSL error (SSL: error:06065064:digital envelope routines:EVP_DecryptFinal_ex:bad decrypt)
-var Len = 8
+var Len = 16
 
 var encode64 = ngx.encode_base64
 var decode64 = ngx.decode_base64
@@ -49,7 +49,7 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 					var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
 					var d = a and a.decrypt(@, data)
 					if d
-						if hmac(k, table.concat({salt, d, key})) == decode64(sig)
+						if str.safe_equal(hmac(k, table.concat({salt, d, key})), decode64(sig))
 							return json.decode(d)
 
 

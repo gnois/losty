@@ -16,13 +16,13 @@ return \secret, length ->
 			if length
 				return string.sub(sig, 1, length)
 			return sig
-		
+
 		, verify = \sig, str ->
 			assert(str)
 			if sig
 				var mac = enc.encode64(hmac(secret, str))
 				if length
-					return string.sub(sig, 1, length) == string.sub(mac, 1, length)
-				return sig == mac
+					return str.safe_equal(string.sub(sig, 1, length), string.sub(mac, 1, length))
+				return str.safe_equal(sig, mac)
 			return false
 	}

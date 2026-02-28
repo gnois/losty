@@ -26,6 +26,16 @@ K.render = \str, data ->
 		return v or '{'.. s ..'}'
 	))
 
+K.safe_equal = \a, b ->
+	if not a or not b
+		return false
+	if #a ~= #b
+		return false
+	var diff = 0
+	for i = 1, #a
+		diff = bit.bor(diff, bit.bxor(string.byte(a, i), string.byte(b, i)))
+	return diff == 0
+
 
 K.hash = \str ->
 	var hash = 0
@@ -74,8 +84,8 @@ K.findlast = \str, pattern, plain ->
 	var curr = 0
 	do
 		var nxt = string.find(str, pattern, curr + 1, plain)
-		if nxt 
-			curr = nxt 
+		if nxt
+			curr = nxt
 	until not nxt
 	if curr > 0
 		return curr
