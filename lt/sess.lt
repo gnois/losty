@@ -16,7 +16,18 @@ var Len = 16
 
 var encode64 = ngx.encode_base64
 var decode64 = ngx.decode_base64
-var hmac = ngx.hmac_sha1
+var hmac = ngx.hmac_sha256 or ngx.hmac_sha1
+if not hmac
+	error("ngx.hmac_sha256 or ngx.hmac_sha1 required", 2)
+
+var Cipher = aes.cipher(256, "cbc")
+var Hash = aes.hash.sha256
+
+var derive = \secret, salt ->
+	return {
+		enc = hmac(secret, "enc|" .. salt)
+		, mac = hmac(secret, "mac|" .. salt)
+	}
 
 
 -- size, mode, hash, rounds optional
@@ -31,9 +42,9 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 		var salt = rnd.bytes(Len)
 		var d, err = json.encode(value)
 		if d
-			var k = hmac(secret, salt)
-			var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
-			var sig = hmac(k, table.concat({salt, d, key}))
+			var k = derive(secret, salt)
+			var a = aes.new(@, k.enc, salt, Cipher, Hash) -- stronger defaults than legacy resty.aes defaults
+			var sig = hmac(k.mac, table.concat({salt, d, key}))
 			var data = a.encrypt(@, d)
 			return encode64(data) .. '|' .. encode64(salt), encode64(sig)
 		return '', err
@@ -45,11 +56,11 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 				var data = decode64(x[1])
 				var salt = decode64(x[2])
 				if data and salt and #salt == Len
-					var k = hmac(secret, salt)
-					var a = aes.new(@, k, salt) --, aes.cipher(size, mode), hash, rounds)
+					var k = derive(secret, salt)
+					var a = aes.new(@, k.enc, salt, Cipher, Hash)
 					var d = a and a.decrypt(@, data)
 					if d
-						if str.safe_equal(hmac(k, table.concat({salt, d, key})), decode64(sig))
+						if str.safe_equal(hmac(k.mac, table.concat({salt, d, key})), decode64(sig))
 							return json.decode(d)
 
 
