@@ -1,5 +1,6 @@
 -- url friendly sign
 var enc = require('losty.enc')
+var str = require('losty.str')
 var hmac = ngx.hmac_sha1
 
 -- length (optional) - limit string length to be returned, and signature length check later
