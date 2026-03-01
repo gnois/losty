@@ -1,6 +1,27 @@
 var insert = table.insert
 var concat = table.concat
 
+var add_vary_origin = ->
+	var vary = ngx.header["Vary"]
+	if not vary
+		ngx.header["Vary"] = "Origin"
+		return
+
+	var has_origin = false
+	if type(vary) == 'table'
+		for _, v in ipairs(vary)
+			if v and string.find(string.lower(v), "origin", 1, true)
+				has_origin = true
+				break
+		if not has_origin
+			vary[#vary + 1] = "Origin"
+			ngx.header["Vary"] = vary
+		return
+
+	vary = tostring(vary)
+	if not string.find(string.lower(vary), "origin", 1, true)
+		ngx.header["Vary"] = vary .. ", Origin"
+
 return ->
 	var hosts = {}
 	var headers = {}
@@ -42,7 +63,7 @@ return ->
 				ngx.header["Access-Control-Allow-Headers"] = concat(headers, ",")
 				ngx.header["Access-Control-Allow-Methods"] = concat(methods, ",")
 				ngx.header["Access-Control-Allow-Credentials"] = tostring(credentials)
-				ngx.header["Vary"] = "Origin"
+				add_vary_origin()
 				break
 
 	return K
