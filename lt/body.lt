@@ -2,33 +2,20 @@ var upload = require('resty.upload')
 var cjson = require('cjson.safe')
 var str = require('losty.str')
 
--- guard against oversized bodies; nginx client_max_body_size still applies, this is a secondary check
 var MaxBody = 10 * 1024 * 1024  -- 10MB soft cap
-var UploadTimeoutMs = 10000     -- allow slower multipart uploads
 
-var enforce_size = \req ->
-	var len = req.headers["Content-Length"]
-	len = len and tonumber(len)
-	if len and len > MaxBody
-		return nil, "request body too large"
-	return true
 
 var raw = \req ->
-	var ok, err = enforce_size(req)
-	if ok
-		var data = req.get_body_data()
-		if not data
-			var file = req.get_body_file()
-			if file
-				var fp, err = io.open(file, 'r')
-				if not fp
-					return fp, err
-				data = fp.read(@, '*a')
-				fp.close(@)
-		if data and #data > MaxBody
-			return nil, "request body too large"
-		return data
-	return ok, err
+	var data = req.get_body_data()
+	if not data
+		var file = req.get_body_file()
+		if file
+			var fp, err = io.open(file, 'r')
+			if not fp
+				return fp, err
+			data = fp.read(@, '*a')
+			fp.close(@)
+	return data
 
 
 var json = \req ->
@@ -65,7 +52,7 @@ var content_disposition = \value ->
 var parser = ->
 	var input, err = upload.new(@, 4096)
 	if input
-		input.set_timeout(@, UploadTimeoutMs)
+		input.set_timeout(@, 8000) -- 8 sec
 		var t, data
 		var used = 0
 		do
