@@ -18,13 +18,22 @@ var day_at = \ndays, hh, mm, ss ->
 
 
 var task
+var run_safe = \fn, ... ->
+	var ok, err = xpcall(->
+		fn(...)
+	, \e ->
+		return debug.traceback(e, 2)
+	)
+	if not ok
+		ngx.log(ngx.ERR, "schedule task failed: ", err)
+
 task = \premature, cycle, fn, ... ->
 	if premature
 		ngx.log(ngx.WARN, "schedule task premature end at worker ", ngx.worker.id())
 	else
-		fn(...)
+		run_safe(fn, ...)
 		if cycle and cycle > 0
-			var ok, err = ngx.timer.every(cycle, fn, ...)
+			var ok, err = ngx.timer.every(cycle, run_safe, fn, ...)
 			if not ok
 				ngx.log(ngx.ERR, "ngx.timer.every() failed: ", err)
 

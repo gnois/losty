@@ -111,6 +111,8 @@ return {
 						var parse = coroutine.create(parser)
 						return ->
 							var code, key, val = coroutine.resume(parse)
+							if not code
+								return nil, key
 							return key, val
 				return nil, "unfamiliar content-type " .. ctype
 			return nil, "missing content-type"
