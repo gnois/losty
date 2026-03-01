@@ -31,14 +31,13 @@ return \lock_name, cache_name, key ->
 		error("missing lua_shared_dict ".. cache_name)
 
 	var lock = locker(lock_name)
-	var crc = 1 -- in case value is nil, this nonzero flag indicates the value has been inserted
-	var expire = 0 -- how many secs to keep state, 0 is no expiry
+	var ctx_key = "losty_idemp_" .. cache_name .. "_" .. key
 
 	-- id must be nil or string
 	-- if already started, return false, "exists"
 	-- may return false, "no memory"
 	-- if ok, return 1
-	var start = \id ->
+	var start = \id, expire, crc ->
 		if id ~= nil
 			crc = crc32(id) % intmax
 		-- print(id, ' crc ', crc)
@@ -75,7 +74,7 @@ return \lock_name, cache_name, key ->
 		-- id - (optional) only used for safety check. nullable. in https://brandur.org/idempotency-keys, its usage would be similar to:
 		-- # Programs sending multiple requests with different parameters but the same idempotency key is a bug
 		--     if key.request_params != params
-	
+
 		-- sec - (required) hold secs before auto unlock, eg: 10
 		-- expiry - (optional) how many secs to keep state in secs, eg: 24 * 3600 is 24 hrs
 		acquire = \id, secs, expiry ->
@@ -84,48 +83,57 @@ return \lock_name, cache_name, key ->
 			if 'string' == type(c) -- error
 				return nil, c
 
-			-- get the crc if any, for save() later
-			crc = c
-			expire = expiry or 0
+			-- save request-scoped state for save() later
+			var crc = c or 1
+			expiry = expiry or 0
 			var ok, err = lock.lock(key, secs)
 			if ok
+				ngx.ctx[ctx_key] = {locked = true, crc = crc, expire = expiry}
 				if c == nil -- not found
-					return start(id), nil
+					return start(id, expiry, crc), nil
 				-- decode if saved state
 				if 'number' == type(val)
 					return val, nil
 				var out = json.decode(val)
 				return out.state, out.data
+			ngx.ctx[ctx_key] = nil
 			return ok, err
 
 
 		, release = ->
-			lock.unlock(key)
+			var st = ngx.ctx[ctx_key]
+			if st and st.locked
+				lock.unlock(key)
+				ngx.ctx[ctx_key] = nil
+				return true
+			return false, "not locked by request"
 
 		-- if exists
 		--   if saved, return nil, "not a number"
 		--   else  return 2, 3 ...
 		-- else nil, "not found"
 		, advance = ->
-			if lock.locked(key)
+			var st = ngx.ctx[ctx_key]
+			if st and st.locked and lock.locked(key)
 				return cache.incr(@, key, 1)
-			return false, "not locked"
+			return false, "not locked by request"
 
-		
+
 		-- state must be int
 		-- data is optional
 		--    if data is nil then can call advance() again
 		-- returns true if ok
 		, save = \state, data ->
-			if lock.locked(key)
+			var st = ngx.ctx[ctx_key]
+			if st and st.locked and lock.locked(key)
 				var val = state
 				if data ~= nil
 					val = json.encode({state = state, data = data})
-				var ok, err = cache.replace(@, key, val, expire, crc)
+				var ok, err = cache.replace(@, key, val, st.expire, st.crc)
 				if ok
 					return state
 				return ok, err
-			return false, "not locked"
+			return false, "not locked by request"
 	}
 
 

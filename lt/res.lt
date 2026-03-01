@@ -18,14 +18,10 @@ var push = \tb, k, v ->
 		tb[k] = v
 	else if 'table' == type(old)
 		insert(old, v)
-	else if 'table' == type(v)
-		-- old is surely scalar here
-		-- convert to table then append
+	else
 		var oldt = {old}
 		insert(oldt, v)
 		tb[k] = oldt
-	else
-		tb[k] = {v, old}
 
 
 --`` unused, ngx lua will do this
@@ -93,111 +89,105 @@ var redirect = \url, same_method ->
 -- it cannot be deleted from browser if any of these mismatch
 -- domain shd be nil, to exclude subdomain. if specified, subdomains are always included
 -- https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie
-var jar, order, o -- guarantee the order of cookie by creation, for encoding function that return multiple values (sess.lt)
-var cookie = \name, httponly, domain, path ->
-	if not name
-		error("cookie must have a name", 2)
-
-	var c = {
-		_name = name
-		, _httponly = httponly
-		, _domain = domain
-		, _path = path
-	}
-
-	var data = setmetatable({}, {
-		__metatable = false
-		-- expose attributes
-		, __index = c
-
-		-- non identity, not needed for delete cookie: age, samesite, secure
-		-- age in secs, nil means last till browser close, -ve means delete
-		-- samesite can be bool or string [lax|strict|none]. true=strict, false=none, nil means samesite not set (defaults to 'lax' by browser)
-		-- secure is bool, use req.secure()
-		-- value can be nil, string or function.
-		--   nil becomes empty string
-		--   if string, taken as is
-		--   if function, shd encode the data table
-		, __call = \t, age, samesite, secure, value ->
-			c._age = age
-			c._samesite = samesite
-			c._secure = secure
-			c._value = value
-			return t
-	})
-
-	if jar[name]
-		ngx.log(ngx.NOTICE, "Overwriting cookie " .. name)
-
-	-- ok if overwrite, still preserve order
-	o = o + 1
-	order[o] = name
-
-	jar[name] = data
-	return data
-
-
-
-var bake = \c ->
-	var val = c._value
-	if val
-		if 'function' == type(val)
-			val = val(c)
-	val = val and ngx.escape_uri(val) or ""
-
-	var z = { c._name .. "=" .. val }
-	var y = 2
-
-	if c._domain
-		z[y] = "Domain=" .. c._domain
-		y = y + 1
-	if c._path
-		z[y] = "Path=" .. c._path
-		y = y + 1
-	var a = tonumber(c._age)
-	if a
-		if a ~= 0
-			z[y] = "Expires=" .. ngx.cookie_time(ngx.time() + a)
-			y = y + 1
-		-- Max-Age cannot be zero or -ve
-		if a > 0
-			z[y] = "Max-Age=" .. a
-			y = y + 1
-	var ss = c._samesite
-	var secure = c._secure
-	if ss ~= nil
-		if 'boolean' == type(ss)
-			ss = ss and "strict" or "none"
-		else
-			ss = string.lower(ss)
-		z[y] = "SameSite=" .. ss
-		y = y + 1
-		if ss == "none"
-			secure = true
-	if c._httponly
-		z[y] = "HttpOnly"
-		y = y + 1
-	if secure
-		z[y] = "Secure"
-
-	return table.concat(z, ";")
-
-
-
--- send headers
-var send = ->
-	var arr = {}
-	if o > 0
-		for n, k in ipairs(order)
-			arr[n] = bake(jar[k])
-		headers['Set-Cookie'] = arr
-	return ngx.send_headers()
-
-
-
 return ->
-	jar = {}
-	order, o = {}, 0
+	-- per-response cookie state (must not be shared across requests)
+	var jar = {}
+	var order, o = {}, 0
+
+	var cookie = \name, httponly, domain, path ->
+		if not name
+			error("cookie must have a name", 2)
+
+		var c = {
+			_name = name
+			, _httponly = httponly
+			, _domain = domain
+			, _path = path
+		}
+
+		var data = setmetatable({}, {
+			__metatable = false
+			-- expose attributes
+			, __index = c
+
+			-- non identity, not needed for delete cookie: age, samesite, secure
+			-- age in secs, nil means last till browser close, -ve means delete
+			-- samesite can be bool or string [lax|strict|none]. true=strict, false=none, nil means samesite not set (defaults to 'lax' by browser)
+			-- secure is bool, use req.secure()
+			-- value can be nil, string or function.
+			--   nil becomes empty string
+			--   if string, taken as is
+			--   if function, shd encode the data table
+			, __call = \t, age, samesite, secure, value ->
+				c._age = age
+				c._samesite = samesite
+				c._secure = secure
+				c._value = value
+				return t
+		})
+
+		if jar[name]
+			ngx.log(ngx.NOTICE, "Overwriting cookie " .. name)
+
+		-- ok if overwrite, still preserve order
+		o = o + 1
+		order[o] = name
+
+		jar[name] = data
+		return data
+
+	var bake = \c ->
+		var val = c._value
+		if val
+			if 'function' == type(val)
+				val = val(c)
+		val = val and ngx.escape_uri(val) or ""
+
+		var z = { c._name .. "=" .. val }
+		var y = 2
+
+		if c._domain
+			z[y] = "Domain=" .. c._domain
+			y = y + 1
+		if c._path
+			z[y] = "Path=" .. c._path
+			y = y + 1
+		var a = tonumber(c._age)
+		if a
+			if a ~= 0
+				z[y] = "Expires=" .. ngx.cookie_time(ngx.time() + a)
+				y = y + 1
+			-- Max-Age cannot be zero or -ve
+			if a > 0
+				z[y] = "Max-Age=" .. a
+				y = y + 1
+		var ss = c._samesite
+		var secure = c._secure
+		if ss ~= nil
+			if 'boolean' == type(ss)
+				ss = ss and "strict" or "none"
+			else
+				ss = string.lower(ss)
+			z[y] = "SameSite=" .. ss
+			y = y + 1
+			if ss == "none"
+				secure = true
+		if c._httponly
+			z[y] = "HttpOnly"
+			y = y + 1
+		if secure
+			z[y] = "Secure"
+
+		return table.concat(z, ";")
+
+	var send = ->
+		var arr = {}
+		if o > 0
+			for n, k in ipairs(order)
+				arr[n] = bake(jar[k])
+			headers['Set-Cookie'] = arr
+		return ngx.send_headers()
+
 	var cookies = setmetatable({}, {
 		__index = jar
 		, __newindex = ->

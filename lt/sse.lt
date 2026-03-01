@@ -19,54 +19,63 @@ var EVstream = "text/event-stream"
 var timeout = 30
 var ping = "event:ping\ndata:\n\n"
 
--- lua_code_cache must be on, bcoz of these:
-var sema = semaphore.new()
-var content
 
-var pinging = ->
-	content = ping
+return ->
+	-- lua_code_cache must be on, bcoz of these:
+	var sema = semaphore.new()
+	var content = ping
 
-var publish = \gen, ... ->
-	var clients = sema.count(@)
-	if clients < 0
-		content = gen(...)
-		sema.post(@, -clients)
-		ngx.sleep(0.01)  -- post() is non blocking, so yield to wake up waiters immediately.
-		-- it would be perfect to have a sync version of post
+	var pinging = ->
+		var clients = sema.count(@)
+		if clients < 0
+			content = ping
+			sema.post(@, -clients)
+
+	var publish = \gen, ... ->
+		var clients = sema.count(@)
+		if clients < 0
+			content = gen(...) or ping
+			sema.post(@, -clients)
+			ngx.sleep(0.01)  -- post() is non blocking, so yield to wake up waiters immediately.
+			-- it would be perfect to have a sync version of post
+
+	var push = \str ->
+		ngx.print(str)
+		ngx.flush(true)
+
+	var subscribe = ->
+		var headers = ngx.req.get_headers()
+		var prefs = accept(headers["Accept"], {EVstream})
+
+		if tostring(prefs[1]) == EVstream
+			ngx.header["Content-Type"] = EVstream
+			ngx.header["Cache-Control"] = "no-cache"
+			ngx.status = 200
+			ngx.send_headers()
+			var alive = true
+			ngx.on_abort(->
+				alive = false
+				return ngx.exit(499)
+			)
+			-- first message
+			var sec = math.random(timeout - 10, timeout - 5)
+			push("retry:" .. tostring(sec) .. "000\n" .. ping)
+
+			while alive
+				var ok = sema.wait(@, timeout)  -- send a ping on timeout
+				if not ok
+					push(ping)
+				else
+					push(content)
+		else
+			ngx.status = ngx.HTTP_NOT_ACCEPTABLE -- not acceptable
+
+	return {
+		pinging = pinging
+		, pub = publish
+		, sub = subscribe
+	}
 
 
-var push = \str ->
-	ngx.print(str)
-	ngx.flush(true)
 
-var subscribe = ->
-	var headers = ngx.req.get_headers()
-	var prefs = accept(headers["Accept"], {EVstream})
-
-	if tostring(prefs[1]) == EVstream
-		ngx.header["Content-Type"] = EVstream
-		ngx.header["Cache-Control"] = "no-cache"
-		ngx.status = 200
-		ngx.send_headers()
-		var alive = true
-		ngx.on_abort(->
-			alive = false
-			return ngx.exit(499)
-		)
-		-- first message
-		var sec = math.random(timeout - 10, timeout - 5)
-		push("retry:" .. tostring(sec) .. "000\n" .. ping)
-
-		while alive
-			sema.wait(@, timeout)  -- send a ping on timeout
-			push(content)
-	else
-		ngx.status = ngx.HTTP_NOT_ACCEPTABLE -- not acceptable
-
-
-return {
-	pinging = pinging
-	, pub = publish
-	, sub = subscribe
-}
 
