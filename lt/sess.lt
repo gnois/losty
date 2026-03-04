@@ -23,6 +23,12 @@ if not hmac
 var Cipher = aes.cipher(256, "cbc")
 var Hash = aes.hash.sha256
 
+var normalize_secrets = \secret ->
+	if 'table' == type(secret)
+		assert(#secret > 0, "session secret list cannot be empty")
+		return secret
+	return {secret}
+
 var derive = \secret, salt ->
 	return {
 		enc = hmac(secret, "enc|" .. salt)
@@ -32,17 +38,21 @@ var derive = \secret, salt ->
 
 -- size, mode, hash, rounds optional
 -- key optional
-return \name, secret, key -> --, size, mode, hash, rounds)
+return \name, secret, key, samesite, force_secure -> --, size, mode, hash, rounds)
 	if not name
 		error("session name required", 2)
 	if not secret
 		error("session secret required", 2)
+	var secrets = normalize_secrets(secret)
+	samesite = samesite or "lax"
+	if force_secure == nil
+		force_secure = true
 
 	var encrypt = \value ->
 		var salt = rnd.bytes(Len)
 		var d, err = json.encode(value)
 		if d
-			var k = derive(secret, salt)
+			var k = derive(secrets[1], salt)
 			var a = aes.new(@, k.enc, salt, Cipher, Hash) -- stronger defaults than legacy resty.aes defaults
 			var sig = hmac(k.mac, table.concat({salt, d, key}))
 			var data = a.encrypt(@, d)
@@ -56,12 +66,13 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 				var data = decode64(x[1])
 				var salt = decode64(x[2])
 				if data and salt and #salt == Len
-					var k = derive(secret, salt)
-					var a = aes.new(@, k.enc, salt, Cipher, Hash)
-					var d = a and a.decrypt(@, data)
-					if d
-						if str.safe_equal(hmac(k.mac, table.concat({salt, d, key})), decode64(sig))
-							return json.decode(d)
+					for _, sec in ipairs(secrets)
+						var k = derive(sec, salt)
+						var a = aes.new(@, k.enc, salt, Cipher, Hash)
+						var d = a and a.decrypt(@, data)
+						if d
+							if str.safe_equal(hmac(k.mac, table.concat({salt, d, key})), decode64(sig))
+								return json.decode(d)
 
 
 	var name_ = name .. '_'
@@ -87,10 +98,10 @@ return \name, secret, key -> --, size, mode, hash, rounds)
 		-- age nil means last till browser close
 		-- samesite nil means 'lax'
 		, create = \req, res, age ->
-			var secure = req.secure()
+			var secure = force_secure and true or req.secure()
 			-- order is important, encrypt then sign
-			var data = make_(res)(age, nil, secure, encrypting)
-			make(res)(age, nil, secure, signing)
+			var data = make_(res)(age, samesite, secure, encrypting)
+			make(res)(age, samesite, secure, signing)
 			return data
 
 		-- age -ve means delete
