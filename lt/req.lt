@@ -4,6 +4,7 @@ var ngx_var = ngx.var
 
 var bit = require('bit')
 var ffi = require('ffi')
+var to = require('losty.to')
 
 var read_uid = ->
 	-- uid is   xxx=hexstring_of_len32, where hexstring is a hex encoding of four *little-endian* four-byte integers underneath
@@ -99,6 +100,43 @@ var headers = setmetatable({}, {
 })
 
 
+var trustfn = \trusted ->
+	if not trusted
+		return nil
+	if 'function' == type(trusted)
+		return trusted
+	if 'table' == type(trusted)
+		var set = {}
+		for _, v in ipairs(trusted)
+			if v
+				set[v] = true
+		return \ip ->
+			return set[ip] == true
+	error("trusted must be function or array of IP strings", 2)
+
+
+var client_ip = \trusted ->
+	var remote = ngx_var.remote_addr
+	var trusted_ip = trustfn(trusted)
+	if not trusted_ip or not trusted_ip(remote)
+		return remote
+
+	var xff = ngx_var.http_x_forwarded_for
+	if not xff
+		return remote
+
+	var chain = {}
+	for ip in string.gmatch(xff, "[^,]+")
+		chain[#chain + 1] = to.trim(ip)
+	chain[#chain + 1] = remote
+
+	for i = #chain, 1, -1
+		var ip = chain[i]
+		if ip and not trusted_ip(ip)
+			return ip
+	return chain[1]
+
+
 return ->
 	return setmetatable({
 		vars = ngx_var
@@ -106,6 +144,7 @@ return ->
 		, cookies = cookies
 		, args = args
 		, secure = -> return ngx_var.https == 'on'
+		, client_ip = client_ip
 	}, {
 		__metatable = false
 
