@@ -14,19 +14,34 @@ var Len = 16
 var make = \res ->
 	return res.cookie(Name, true, nil, '/')
 
-
-var write = \req, res ->
-	var key = rnd.bytes(Len)
-	make(res)(nil, true, req.secure(), encode64(key))
-	return key
-
 var read = \req ->
 	var key = req.cookies[Name]
 	if key
 		return decode64(key)
 
+var needs_csrf = \method ->
+	return not (method == 'GET' or method == 'HEAD' or method == 'OPTIONS' or method == 'TRACE')
 
-return \secret ->
+var same_origin = \req ->
+	var host = req.headers['Host'] or req.vars.host
+	if host
+		var scheme = req.secure() and 'https' or 'http'
+		var origin = req.headers['Origin']
+		var expect = scheme .. '://' .. host
+		if origin and #origin > 0
+			return origin == expect
+		var referer = req.headers['Referer']
+		if referer and #referer >= #expect
+			return string.sub(referer, 1, #expect) == expect
+	return false
+
+
+return \secret, strict, samesite, force_secure ->
+	if samesite == nil
+		samesite = true
+	if force_secure == nil
+		force_secure = true
+
 	return {
 		-- insert key in httponly cookie and return token (for use in form hidden input or ajax header)
 		-- cookie removed on browser close
@@ -34,7 +49,9 @@ return \secret ->
 		create = \req, res, expiry ->
 			var key = read(req)
 			if not key  -- leave fake keys alone
-				key = write(req, res)
+				key = rnd.bytes(Len)
+				var secure = force_secure and true or req.secure()
+				make(res)(nil, samesite, secure, encode64(key))
 			expiry = expiry or 0
 			if expiry > 0
 				expiry = ngx.time() + expiry
@@ -44,13 +61,16 @@ return \secret ->
 
 
 		, check = \req, res, token ->
+			if strict and needs_csrf(req.vars.request_method)
+				if not same_origin(req)
+					return false, "origin mismatch"
 			var key = read(req)
 			if token and key and #key == Len
 				var bag = wrap(secret, key)
 				var sig, data = string.match(token, "^(.*)%.(.*)$")
 				if data
 					var expiry = bag.unwrap(sig, data)
-					if expiry 
+					if expiry
 						if expiry == 0 or expiry > ngx.time()
 							return true
 						-- remove expired cookie
@@ -59,4 +79,4 @@ return \secret ->
 			-- leave cookie untouched
 			return false, "invalid"
 	}
-	
+
