@@ -23,7 +23,7 @@ eg: /page/%w-(%d)-(%d)
 
 
 There is no way to specify optional last segment, to avoid possible conflicts
-  /page/:?  <- 
+  /page/:?  <-
   /page
 specify both routes instead, with and without the optional segment
 
@@ -55,7 +55,7 @@ var router = ->
 			var func, bindings = resolve(path, child, matches, m)
 			if func
 				return func, bindings
-		
+
 		-- pattern match
 		var pattern
 		var toklen = #token
@@ -94,7 +94,7 @@ var router = ->
 		-- let lua check malformed pattern
 		return pcall(str_find, pattern, pattern)
 
-	
+
 	-- find similar node in array part
 	-- else create new
 	var find_create = \nodes, token ->
@@ -154,6 +154,8 @@ var router = ->
 				return nil, "unmatched method: " .. (method or "")
 			-- remove query string
 			path = string.gsub(path, "%?.*", "")
+			if str_find(path, '//')
+				return nil, "unmatched path: " .. (path or "")
 			var arr, matches = resolve(path, nodes, {}, 1)
 			if not arr
 				return nil, "unmatched path: " .. (path or "")
@@ -182,9 +184,9 @@ var test_invalid = ->
 	var G = "GET"
 	var c = \...->
 		var ok, err = pcall(...)
-		assert(not ok) 
+		assert(not ok)
 		print(err)
-	
+
 	c(r.set, G, "//", 1)
 	c(r.set, G, "/favicon ico", 2)
 
@@ -204,7 +206,7 @@ test_invalid()
 var test = ->
 	var r = router()
 	var G = "GET"
-	
+
 	r.set(G, "/", 1)
 	r.set(G, "/favicon.ico", 2)
 
@@ -212,7 +214,7 @@ var test = ->
 	r.set(G, "/page/", 11)  -- last backslash ignored. accumulate
 
 	r.set(G, "/page/near", 12)
-	
+
 	-- precedence
 	r.set(G, "/page/:%a+", 22)
 	r.set(G, "/page/:%a+", 23)
@@ -222,19 +224,19 @@ var test = ->
 	r.set(G, "/page/:%d+/:.+", 30)
 	r.set(G, "/page/:%d+/related", 32)
 	r.set(G, "/page/:(%d+)/related", 33)  -- outer capture parenthesis removed
-	
+
 	r.set(G, "/page/:.*/:^[+-]?/:%d*$", 50)
-	
+
 	r.set(G, "/:page%?", 60)
 	r.set(G, "/:p(%a+)/:%d(%d)", 61)
-	
+
 	tbl.show(r.set(G, "/:page%w*", 71))
 	tbl.show(r.set(G, "/:page%w*-(%d)", 72))
 
 	var res = {
 		{"/", 1}
 		, {"/favicon.ico", 2}
-		
+
 		, {"/page", {10, 11}}
 		, {"/page/", {10, 11}}  -- backslash ignored
 		, {"/page/near", 12}
@@ -250,7 +252,7 @@ var test = ->
 		, {"/pages200-2", 72, {'pages200-2', '2'}}
 		, {"/past/56", 61, {'past', 'ast', '56', '6'}}
 	}
-	
+
 	var eq = \n, t1, t2 ->
 		if n and t1 and t2
 			for i = 1, n
@@ -273,7 +275,7 @@ var test = ->
 			if matches and p[3]
 				tbl.show(matches)
 				assert(eq(math.max(#p[3], #matches), p[3], matches))
-	
+
 	print('\nOK')
 test()
 
