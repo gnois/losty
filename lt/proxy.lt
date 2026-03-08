@@ -1,0 +1,180 @@
+var bit = require('bit')
+var to = require('losty.to')
+
+var lower = string.lower
+
+var split_quoted = \txt, sep ->
+	var out = {}
+	if not txt
+		return out
+	var q = false
+	var esc = false
+	var acc = {}
+	for i = 1, #txt
+		var c = string.sub(txt, i, i)
+		if esc
+			acc[#acc + 1] = c
+			esc = false
+		else if c == '\\' and q
+			esc = true
+		else if c == '"'
+			q = not q
+			acc[#acc + 1] = c
+		else if c == sep and not q
+			out[#out + 1] = to.trim(table.concat(acc, ''))
+			acc = {}
+		else
+			acc[#acc + 1] = c
+	out[#out + 1] = to.trim(table.concat(acc, ''))
+	return out
+
+var unquote = \v ->
+	if not v
+		return v
+	if string.sub(v, 1, 1) == '"' and string.sub(v, -1, -1) == '"'
+		v = string.sub(v, 2, -2)
+	return v
+
+-- RFC 7239 Forwarded parser
+-- returns array of elements, each is key/value table (lowercased keys)
+var parse_forwarded = \header ->
+	var out = {}
+	for _, elem in ipairs(split_quoted(header, ','))
+		if #elem > 0
+			var e = {}
+			for _, part in ipairs(split_quoted(elem, ';'))
+				var k, v = string.match(part, '^%s*([^=]+)%s*=%s*(.-)%s*$')
+				if k and v
+					e[lower(to.trim(k))] = unquote(to.trim(v))
+			if next(e)
+				out[#out + 1] = e
+	return out
+
+var ipv4_u32 = \ip ->
+	var a, b, c, d = string.match(ip or '', '^(%d+)%.(%d+)%.(%d+)%.(%d+)$')
+	if not a
+		return nil
+	a = tonumber(a)
+	b = tonumber(b)
+	c = tonumber(c)
+	d = tonumber(d)
+	if a > 255 or b > 255 or c > 255 or d > 255
+		return nil
+	return bit.bor(bit.lshift(a, 24), bit.lshift(b, 16), bit.lshift(c, 8), d)
+
+var cidr_rule = \txt ->
+	var ip, p = string.match(txt or '', '^([^/]+)/(%d+)$')
+	if not ip
+		return nil
+	var base = ipv4_u32(ip)
+	if not base
+		return nil
+	p = tonumber(p)
+	if p < 0 or p > 32
+		return nil
+	var mask
+	if p == 0
+		mask = 0
+	else
+		mask = bit.tobit(bit.lshift(0xffffffff, 32 - p))
+	return {base = bit.band(base, mask), mask = mask}
+
+var trustfn = \trusted ->
+	if not trusted
+		return nil
+	if type(trusted) == 'function'
+		return trusted
+	if type(trusted) ~= 'table'
+		error('trusted must be function or array of IP/CIDR strings', 2)
+
+	var exact = {}
+	var cidrs = {}
+	for _, v in ipairs(trusted)
+		if v
+			v = to.trim(v)
+			var c = cidr_rule(v)
+			if c
+				cidrs[#cidrs + 1] = c
+			else
+				exact[v] = true
+
+	return \ip ->
+		if exact[ip]
+			return true
+		var n = ipv4_u32(ip)
+		if n
+			for _, c in ipairs(cidrs)
+				if bit.band(n, c.mask) == c.base
+					return true
+		return false
+
+var forwarded_chain = \header ->
+	var chain = {}
+	for _, e in ipairs(parse_forwarded(header))
+		var f = e['for']
+		if f
+			f = string.gsub(f, '^"(.*)"$', '%1')
+			if string.sub(f, 1, 1) == '['
+				f = string.match(f, '^%[([^%]]+)%]') or f
+			else
+				f = string.match(f, '^([^:]+)') or f
+			chain[#chain + 1] = f
+	return chain
+
+var xff_chain = \header ->
+	var chain = {}
+	for ip in string.gmatch(header or '', '[^,]+')
+		chain[#chain + 1] = to.trim(ip)
+	return chain
+
+var client_ip = \vars, headers, trusted ->
+	var remote = vars.remote_addr
+	var is_trusted = trustfn(trusted)
+	if not is_trusted or not is_trusted(remote)
+		return remote
+
+	var chain = forwarded_chain(vars.http_forwarded)
+	if #chain < 1
+		chain = xff_chain(vars.http_x_forwarded_for)
+	chain[#chain + 1] = remote
+
+	for i = #chain, 1, -1
+		var ip = chain[i]
+		if ip and not is_trusted(ip)
+			return ip
+	return chain[1] or remote
+
+var first = \csv ->
+	if not csv
+		return nil
+	var x = string.match(csv, '^%s*([^,]+)')
+	return x and to.trim(x)
+
+var canonical_url = \q, trusted ->
+	var vars = q.vars
+	var headers = q.headers
+	var remote = vars.remote_addr
+	var is_trusted = trustfn(trusted)
+	var trusted_remote = is_trusted and is_trusted(remote)
+
+	var fwd = trusted_remote and parse_forwarded(vars.http_forwarded) or {}
+	var f0 = fwd[1] or {}
+
+	var scheme = (trusted_remote and (f0['proto'] or first(vars.http_x_forwarded_proto))) or (q.secure() and 'https' or 'http')
+	scheme = lower(scheme or 'http')
+
+	var host = (trusted_remote and (f0['host'] or first(vars.http_x_forwarded_host))) or headers['Host'] or vars.host
+	host = host or ''
+
+	var uri = vars.request_uri or vars.uri or '/'
+	if string.sub(uri, 1, 1) ~= '/'
+		uri = '/' .. uri
+
+	return scheme .. '://' .. host .. uri
+
+return {
+	parse_forwarded = parse_forwarded
+	, trustfn = trustfn
+	, client_ip = client_ip
+	, canonical_url = canonical_url
+}
