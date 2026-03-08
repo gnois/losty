@@ -1,0 +1,39 @@
+-- replay protection helper based on ngx.shared dict nonces
+
+-- nginx.conf:
+--   lua_shared_dict replay 10m;
+
+return \dict_name, default_ttl ->
+	var dict = ngx.shared[dict_name]
+	if not dict
+		error("missing lua_shared_dict " .. tostring(dict_name), 2)
+	default_ttl = default_ttl or 300
+
+	var seen = \nonce, ttl ->
+		if not nonce or #nonce < 8
+			return false, "nonce required"
+		ttl = ttl or default_ttl
+		var ok, err = dict.safe_add(@, nonce, true, ttl)
+		if ok
+			return true
+		if err == "exists"
+			return false, "replay"
+		return false, err
+
+	return {
+		seen = seen
+		-- middleware helper
+		-- noncefn: function(q) -> string nonce, defaults to Idempotency-Key or X-Request-Id
+		, handler = \noncefn, ttl ->
+			return \q, r ->
+				var nonce
+				if noncefn
+					nonce = noncefn(q)
+				else
+					nonce = q.headers["Idempotency-Key"] or q.headers["X-Request-Id"]
+				var ok, err = seen(nonce, ttl)
+				if ok
+					return q.next()
+				r.status = ngx.HTTP_CONFLICT
+				return {fail = err}
+	}
