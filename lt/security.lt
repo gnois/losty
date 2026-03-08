@@ -1,0 +1,47 @@
+-- security-related HTTP response headers middleware
+
+var default = {
+	x_content_type_options = "nosniff"
+	, referrer_policy = "strict-origin-when-cross-origin"
+	, x_frame_options = "SAMEORIGIN"
+	, permissions_policy = "geolocation=(), microphone=(), camera=()"
+	, cross_origin_opener_policy = "same-origin"
+	, cross_origin_resource_policy = "same-site"
+	, cross_origin_embedder_policy = nil
+	, content_security_policy = nil
+	, hsts_max_age = 31536000
+	, hsts_include_subdomains = true
+	, hsts_preload = false
+}
+
+var set_if_empty = \headers, key, val ->
+	if val ~= nil and headers[key] == nil
+		headers[key] = val
+
+var hsts = \cfg, secure ->
+	if not secure or not cfg.hsts_max_age or cfg.hsts_max_age <= 0
+		return nil
+	var out = {"max-age=" .. tostring(cfg.hsts_max_age)}
+	if cfg.hsts_include_subdomains
+		out[#out + 1] = "includeSubDomains"
+	if cfg.hsts_preload
+		out[#out + 1] = "preload"
+	return table.concat(out, "; ")
+
+return \opts ->
+	opts = opts or {}
+	var cfg = {}
+	for k, v in pairs(default)
+		cfg[k] = opts[k] ~= nil and opts[k] or v
+
+	return \q, r ->
+		set_if_empty(r.headers, "X-Content-Type-Options", cfg.x_content_type_options)
+		set_if_empty(r.headers, "Referrer-Policy", cfg.referrer_policy)
+		set_if_empty(r.headers, "X-Frame-Options", cfg.x_frame_options)
+		set_if_empty(r.headers, "Permissions-Policy", cfg.permissions_policy)
+		set_if_empty(r.headers, "Cross-Origin-Opener-Policy", cfg.cross_origin_opener_policy)
+		set_if_empty(r.headers, "Cross-Origin-Resource-Policy", cfg.cross_origin_resource_policy)
+		set_if_empty(r.headers, "Cross-Origin-Embedder-Policy", cfg.cross_origin_embedder_policy)
+		set_if_empty(r.headers, "Content-Security-Policy", cfg.content_security_policy)
+		set_if_empty(r.headers, "Strict-Transport-Security", hsts(cfg, q.secure()))
+		return q.next()
