@@ -1,0 +1,81 @@
+-- signed URL helper with expiry + secret rotation
+
+var enc = require('losty.enc')
+var str = require('losty.str')
+
+var hmac = ngx.hmac_sha256 or ngx.hmac_sha1
+if not hmac
+	error("ngx.hmac_sha256 or ngx.hmac_sha1 required", 2)
+
+var normalize = \secrets ->
+	if not secrets
+		error("secret required", 2)
+	if type(secrets) == 'table'
+		assert(#secrets > 0, "secret list cannot be empty")
+		return secrets
+	return {secrets}
+
+var sign_with = \secret, payload, len ->
+	var sig = enc.encode64(hmac(secret, payload))
+	if len and len > 1
+		return string.sub(sig, 1, len)
+	return sig
+
+return \secrets, length ->
+	secrets = normalize(secrets)
+
+	return {
+		-- raw signature helpers (compat with losty.surl style)
+		sign_raw = \value ->
+			assert(value)
+			return sign_with(secrets[1], value, length)
+
+		, verify_raw = \sig, value ->
+			assert(value)
+			if sig
+				for _, sec in ipairs(secrets)
+					if str.safe_equal(sign_with(sec, value, length), sig)
+						return true
+			return false
+
+		-- path: canonical path/query string to bind
+		-- ttl: seconds from now, optional (0 or nil means no expiry)
+		-- extra: optional value to bind (eg user id)
+		sign = \path, ttl, extra ->
+			assert(path, "path required")
+			var exp = 0
+			if ttl and ttl > 0
+				exp = ngx.time() + ttl
+			var payload = enc.encode({p = path, x = extra, e = exp})
+			var sig = sign_with(secrets[1], payload, length)
+			return sig .. "." .. payload
+
+		-- token created by sign()
+		-- path must be same canonical path/query used when signing
+		-- extra (optional) must match if present in token
+		verify = \token, path, extra ->
+			if not token
+				return false, "missing token"
+			var sig, payload = string.match(token, "^(.*)%.(.*)$")
+			if not payload
+				return false, "malformed token"
+
+			var ok = false
+			for _, sec in ipairs(secrets)
+				if str.safe_equal(sign_with(sec, payload, length), sig)
+					ok = true
+					break
+			if not ok
+				return false, "bad signature"
+
+			var obj = enc.decode(payload)
+			if not obj
+				return false, "bad payload"
+			if path and obj.p ~= path
+				return false, "path mismatch"
+			if extra ~= nil and obj.x ~= extra
+				return false, "extra mismatch"
+			if obj.e and obj.e > 0 and obj.e <= ngx.time()
+				return false, "expired"
+			return true, obj
+	}

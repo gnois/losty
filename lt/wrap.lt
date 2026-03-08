@@ -1,5 +1,5 @@
 var enc = require('losty.enc')
-var surl = require('losty.surl')
+var sigurl = require('losty.sigurl')
 
 -- data and key is optionally encrypted
 
@@ -7,19 +7,19 @@ return \secret, key, length ->
 	if not (secret and key)
 		error("secret and key required", 2)
 
-	var pen = surl(secret, length)
-	
+	var pen = sigurl(secret, {length = length})
+
 	return {
 		-- encryption func optional
 		-- returns signature and json encoded key with payload
 		wrap = \data, func ->
 			var obj = {key = key, data = data}
 			var text = enc.encode(obj, func)
-			return pen.sign(text), text
+			return pen.sign_raw(text), text
 
 		, unwrap = \sig, text, func ->
 			assert(text)
-			if pen.verify(sig, text)
+			if pen.verify_raw(sig, text)
 				var obj = enc.decode(text, func)
 				if obj.key == key
 					return obj.data
