@@ -108,7 +108,7 @@ local router = function()
         if not path or #path < 1 then
             return "is empty"
         end
-        if not str_sub(path, 1, 1) == "/" then
+        if str_sub(path, 1, 1) ~= "/" then
             return "does not start with '/'"
         end
         if str_find(path, "%s") then
@@ -124,6 +124,9 @@ local router = function()
             return nil, "unmatched method: " .. (method or "")
         end
         path = string.gsub(path, "%?.*", "")
+        if str_find(path, "//") then
+            return nil, "unmatched path: " .. (path or "")
+        end
         local arr, matches = resolve(path, nodes, {}, 1)
         if not arr then
             return nil, "unmatched path: " .. (path or "")

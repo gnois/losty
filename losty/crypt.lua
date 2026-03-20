@@ -3,9 +3,9 @@
 --
 local aes = require("resty.aes")
 return function(key, salt, size, mode, hash, rounds)
-    size = size or 128
+    size = size or 256
     mode = mode or "cbc"
-    hash = hash or aes.hash.md5
+    hash = hash or aes.hash.sha256
     local cipher = aes.cipher(size, mode)
     local a = aes:new(key, salt, cipher, hash, rounds)
     return {encrypt = function(str)

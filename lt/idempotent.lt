@@ -11,7 +11,7 @@ flags - crc32 of identity for the key that needs to match when retrieving
 nginx.conf
 ----------
  http {
-    lua_shared_dict cache_name 50m;
+    lua_shared_dict dict_name 50m;
 
 ``
 
@@ -24,14 +24,14 @@ var intmax = 2147483647
 
 
 -- key is used to index shdict for lock and cache
-return \lock_name, cache_name, key ->
+return \lock_name, dict_name, key ->
 
-	var cache = ngx.shared[cache_name]
+	var cache = ngx.shared[dict_name]
 	if not cache
-		error("missing lua_shared_dict ".. cache_name)
+		error("missing lua_shared_dict " .. tostring(dict_name), 2)
 
 	var lock = locker(lock_name)
-	var ctx_key = "losty_idemp_" .. cache_name .. "_" .. key
+	var ctx_key = "losty_idemp_" .. dict_name .. "_" .. key
 
 	-- id must be nil or string
 	-- if already started, return false, "exists"

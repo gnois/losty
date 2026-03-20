@@ -10,7 +10,7 @@ return function(database, user, password, host, port, pool)
         local i = 0
         return (string.gsub(query, "%?", function()
             i = i + 1
-            if not args[i] then
+            if args[i] == nil then
                 return "NULL"
             end
             return ngx.quote_sql_str(args[i])

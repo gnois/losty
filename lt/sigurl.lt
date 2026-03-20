@@ -41,7 +41,7 @@ return \secrets, length ->
 		-- path: canonical path/query string to bind
 		-- ttl: seconds from now, optional (0 or nil means no expiry)
 		-- extra: optional value to bind (eg user id)
-		sign = \path, ttl, extra ->
+		, sign = \path, ttl, extra ->
 			assert(path, "path required")
 			var exp = 0
 			if ttl and ttl > 0
@@ -53,7 +53,7 @@ return \secrets, length ->
 		-- token created by sign()
 		-- path must be same canonical path/query used when signing
 		-- extra (optional) must match if present in token
-		verify = \token, path, extra ->
+		, verify = \token, path, extra ->
 			if not token
 				return false, "missing token"
 			var sig, payload = string.match(token, "^(.*)%.(.*)$")

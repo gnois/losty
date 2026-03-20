@@ -4,6 +4,7 @@
 local upload = require("resty.upload")
 local cjson = require("cjson.safe")
 local str = require("losty.str")
+local MaxBody = 10 * 1024 * 1024
 local raw = function(req)
     local data = req.get_body_data()
     if not data then
@@ -44,8 +45,9 @@ end
 local parser = function()
     local input, err = upload:new(4096)
     if input then
-        input:set_timeout(2000)
+        input:set_timeout(8000)
         local t, data
+        local used = 0
         repeat
             t, data, err = input:read()
             if t then
@@ -62,6 +64,11 @@ local parser = function()
                         yield(string.lower(name), value)
                     end
                 elseif "body" == t then
+                    used = used + #data
+                    if used > MaxBody then
+                        err = "request body too large"
+                        break
+                    end
                     yield(true, data)
                 elseif "part_end" == t then
                     yield(false, nil)
@@ -95,6 +102,9 @@ end, prepare = function(req)
                     local parse = coroutine.create(parser)
                     return function()
                         local code, key, val = coroutine.resume(parse)
+                        if not code then
+                            return nil, key
+                        end
                         return key, val
                     end
                 end

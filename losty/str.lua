@@ -27,6 +27,19 @@ K.render = function(str, data)
         return v or "{" .. s .. "}"
     end))
 end
+K.safe_equal = function(a, b)
+    if not a or not b then
+        return false
+    end
+    if #a ~= #b then
+        return false
+    end
+    local diff = 0
+    for i = 1, #a do
+        diff = bit.bor(diff, bit.bxor(string.byte(a, i), string.byte(b, i)))
+    end
+    return diff == 0
+end
 K.hash = function(str)
     local hash = 0
     if str then

@@ -10,4 +10,4 @@ rem C:\app\lua\luajit.exe -e "package.path=package.path .. '\\luaty\\?.lua'" \lu
 rem for /R %DST%\%SRC% %%V in (*.lua) do C:\app\lua\luajit.exe -b "%%V" "%%V"
 rem copy stops_en.txt %DST%\%SRC% /y
 
-\app\mingw64\bin\mingw32-make.exe SHELL=cmd %1
+mingw32-make.exe SHELL=cmd %1

@@ -8,6 +8,18 @@ var create = coroutine.create
 var resume = coroutine.resume
 var gmatch = string.gmatch
 var gsub = string.gsub
+
+var esc = \txt, quote ->
+	if txt == nil
+		return ''
+	txt = tostring(txt)
+	txt = gsub(txt, '&', '&amp;')
+	txt = gsub(txt, '<', '&lt;')
+	txt = gsub(txt, '>', '&gt;')
+	if quote
+		txt = gsub(txt, '"', '&quot;')
+		txt = gsub(txt, "'", '&#39;')
+	return txt
 --
 -- _G.table and _G.select are masked by html tag of the same name
 --   select has no replacement
@@ -167,7 +179,7 @@ markup = \nodes ->
 					o[n] = ' ' .. k
 					n = n + 1
 					if 'boolean' ~= type(v)
-						o[n] = '="' .. v .. '"'
+						o[n] = '="' .. esc(v, true) .. '"'
 						n = n + 1
 				o[n] = '>'
 				n = n + 1
@@ -181,7 +193,7 @@ markup = \nodes ->
 					o[n] = markup(c)
 					n = n + 1
 		else
-			o[n] = tostring(nodes)
+			o[n] = esc(nodes)
 			n = n + 1
 		return concat(o)
 	return ''
@@ -207,9 +219,16 @@ var view = \func, args ->
 			return \... ->
 				return normal(name, ...)
 	})
-	func = setfenv(func, env)
-	-- not using pcall(), let it throw if error
-	var list = func(args)
+	var oldenv = getfenv(func)
+	setfenv(func, env)
+	var ok, list = xpcall(->
+		return func(args)
+	, \err ->
+		return err
+	)
+	setfenv(func, oldenv)
+	if not ok
+		error(list, 2)
 	--print(tbl.dump(list))
 	var html = markup(list)
 
@@ -217,7 +236,7 @@ var view = \func, args ->
 
 
 
---```
+---```
 var test = ->
 	var v = \fn, a -> return view(fn, a, true)
 	var as = assert
@@ -228,7 +247,8 @@ var test = ->
 	as(v(-> return br(nil)) == '<br>')  -- attr can be nil
 	as(v(-> return br('')) == '<br>')  -- or string
 	as(v(-> return br({})) == '<br>') -- or table
-	as(v(-> return img({src='/a.png', alt='A'})) == '<img alt="A" src="/a.png">')  -- using table as attr
+	var htm = v(-> return img({src='/a.png', alt='A'}))
+	as(htm == '<img alt="A" src="/a.png">' or htm == '<img src="/a.png" alt="A">')  -- using table as attr
 
 	-- error: void element cannot have children
 	as(pcall(v, -> return hr(hr())) == false)

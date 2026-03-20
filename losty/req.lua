@@ -4,6 +4,8 @@
 local ngx_var = ngx.var
 local bit = require("bit")
 local ffi = require("ffi")
+local to = require("losty.to")
+local proxy = require("losty.proxy")
 local read_uid = function()
     local str = ngx_var.uid_set or ngx_var.uid_got
     if str then
@@ -42,7 +44,8 @@ local read_uid_binary = function()
     end
 end
 local userid = {id = read_uid, id_binary = read_uid_binary, id_base64 = function()
-    return ngx.encode_base64(read_uid_binary())
+    local v = read_uid_binary()
+    return v and ngx.encode_base64(v)
 end}
 local cookies = setmetatable({}, {__metatable = false, __index = function(_, name)
     local v = ngx_var["cookie_" .. name]
@@ -52,12 +55,39 @@ local args = setmetatable({}, {__metatable = false, __index = function(_, name)
     return ngx_var["arg_" .. name]
 end})
 local headers = setmetatable({}, {__metatable = false, __index = function(_, name)
-    return ngx_var["http_" .. string.lower(string.gsub(name, "-", "_"))]
+    local key = string.lower(string.gsub(name, "-", "_"))
+    if key == "content_type" then
+        return ngx_var.content_type
+    end
+    if key == "content_length" then
+        return ngx_var.content_length
+    end
+    return ngx_var["http_" .. key]
 end})
-return function()
-    return setmetatable({vars = ngx_var, headers = headers, cookies = cookies, args = args, secure = function()
+local client_ip = function(trusted)
+    return proxy.client_ip(ngx_var, headers, trusted)
+end
+local forwarded = function()
+    return proxy.parse_forwarded(ngx_var.http_forwarded)
+end
+local canonical_url = function(trusted)
+    return proxy.canonical_url({vars = ngx_var, headers = headers, secure = function()
         return ngx_var.https == "on"
-    end}, {__metatable = false, __index = function(tbl, key)
+    end}, trusted)
+end
+return function()
+    return setmetatable({
+        vars = ngx_var
+        , headers = headers
+        , cookies = cookies
+        , args = args
+        , secure = function()
+            return ngx_var.https == "on"
+        end
+        , client_ip = client_ip
+        , forwarded = forwarded
+        , canonical_url = canonical_url
+    }, {__metatable = false, __index = function(tbl, key)
         local fn = userid[key]
         if fn then
             local v = fn()

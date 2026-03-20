@@ -11,6 +11,20 @@ local create = coroutine.create
 local resume = coroutine.resume
 local gmatch = string.gmatch
 local gsub = string.gsub
+local esc = function(txt, quote)
+    if txt == nil then
+        return ""
+    end
+    txt = tostring(txt)
+    txt = gsub(txt, "&", "&amp;")
+    txt = gsub(txt, "<", "&lt;")
+    txt = gsub(txt, ">", "&gt;")
+    if quote then
+        txt = gsub(txt, "\"", "&quot;")
+        txt = gsub(txt, "'", "&#39;")
+    end
+    return txt
+end
 local void_tags = set("area", "base", "br", "col", "command", "embed", "hr", "img", "input", "keygen", "link", "meta", "param", "source", "track", "wbr")
 local parse = function(s)
     local r = create(function()
@@ -142,7 +156,7 @@ markup = function(nodes)
                     o[n] = " " .. k
                     n = n + 1
                     if "boolean" ~= type(v) then
-                        o[n] = "=\"" .. v .. "\""
+                        o[n] = "=\"" .. esc(v, true) .. "\""
                         n = n + 1
                     end
                 end
@@ -161,7 +175,7 @@ markup = function(nodes)
                 end
             end
         else
-            o[n] = tostring(nodes)
+            o[n] = esc(nodes)
             n = n + 1
         end
         return concat(o)
@@ -187,9 +201,97 @@ local view = function(func, args)
             return normal(name, ...)
         end
     end})
-    func = setfenv(func, env)
-    local list = func(args)
+    local oldenv = getfenv(func)
+    setfenv(func, env)
+    local ok, list = xpcall(function()
+        return func(args)
+    end, function(err)
+        return err
+    end)
+    setfenv(func, oldenv)
+    if not ok then
+        error(list, 2)
+    end
     local html = markup(list)
     return html
 end
+local test = function()
+    local v = function(fn, a)
+        return view(fn, a, true)
+    end
+    local as = assert
+    local pr = print
+    as(v(function()
+        return br()
+    end) == "<br>")
+    as(v(function()
+        return br(nil)
+    end) == "<br>")
+    as(v(function()
+        return br("")
+    end) == "<br>")
+    as(v(function()
+        return br({})
+    end) == "<br>")
+    local htm = v(function()
+        return img({src = "/a.png", alt = "A"})
+    end)
+    as(htm == "<img alt=\"A\" src=\"/a.png\">" or htm == "<img src=\"/a.png\" alt=\"A\">")
+    as(pcall(v, function()
+        return hr(hr())
+    end) == false)
+    as(pcall(v, function()
+        return hr({div(), span()})
+    end) == false)
+    as(v(function()
+        return div()
+    end) == "<div></div>")
+    as(v(function()
+        return div("foo")
+    end) == "<div>foo</div>")
+    as(v(function()
+        return div(".foo", "")
+    end) == "<div class=\"foo\"></div>")
+    as(pcall(v, function()
+        return div("   .foo", "")
+    end) == false)
+    as(v(function()
+        return div("#id1.foo", "")
+    end) == "<div class=\"foo\" id=\"id1\"></div>")
+    as(v(function()
+        return div("[class=foo][title=bar]", {})
+    end) == "<div title=\"bar\" class=\"foo\"></div>")
+    as(v(function()
+        return div("[id=id1][title='bar']", "x")
+    end) == "<div title=\"bar\" id=\"id1\">x</div>")
+    as(v(function()
+        return div("[title=\"bar\"]", 1)
+    end) == "<div title=\"bar\">1</div>")
+    as(v(function()
+        return p(h1("blog"))
+    end) == "<p><h1>blog</h1></p>")
+    as(v(function()
+        return nav(span("z"), span(1), span(false))
+    end) == "<nav><span>z</span><span>1</span><span>false</span></nav>")
+    as(v(function()
+        return p({"AA", mark("mk")}, "YY", "ZZ")
+    end) == "<p>AA<mark>mk</mark>YYZZ</p>")
+    as(v(function()
+        return p({"AA", mark("mk"), "ZZ"})
+    end) == "<p>AA<mark>mk</mark>ZZ</p>")
+    as(v(function()
+        return ul({li("item1"), li("item2")})
+    end) == "<ul><li>item1</li><li>item2</li></ul>")
+    as(v(function()
+        return a({href = "/"}, strong(nil, "Home"))
+    end) == "<a href=\"/\"><strong>Home</strong></a>")
+    as(v(function()
+        return {img("[src=/img/tmp file.png]"), span("span1")}
+    end) == "<img src=\"/img/tmp file.png\"><span>span1</span>")
+    as(v(function()
+        return {"AAA", "bbb", p("para")}
+    end) == "AAAbbb<p>para</p>")
+    print("pass")
+end
+test()
 return view

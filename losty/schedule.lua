@@ -13,13 +13,23 @@ local day_at = function(ndays, hh, mm, ss)
     return os.time(t)
 end
 local task
+local run_safe = function(fn, ...)
+    local ok, err = xpcall(function()
+        fn(...)
+    end, function(e)
+        return debug.traceback(e, 2)
+    end)
+    if not ok then
+        ngx.log(ngx.ERR, "schedule task failed: ", err)
+    end
+end
 task = function(premature, cycle, fn, ...)
     if premature then
         ngx.log(ngx.WARN, "schedule task premature end at worker ", ngx.worker.id())
     else
-        fn(...)
+        run_safe(fn, ...)
         if cycle and cycle > 0 then
-            local ok, err = ngx.timer.every(cycle, fn, ...)
+            local ok, err = ngx.timer.every(cycle, run_safe, fn, ...)
             if not ok then
                 ngx.log(ngx.ERR, "ngx.timer.every() failed: ", err)
             end

@@ -3,13 +3,15 @@
 --
 local _M = {_VERSION = "0.01"}
 local mt = {__index = _M}
-_M.new = function(dict_name, initial, ttl)
+_M.new = function(dict_name, initial, ttl, max_delay)
     local dict = ngx.shared[dict_name]
     if not dict then
         return nil, "shared dict not found"
     end
     assert(initial >= 0 and ttl > 0)
-    local self = {dict = dict, initial = initial, ttl = ttl}
+    max_delay = max_delay or 60000
+    assert(max_delay > 0)
+    local self = {dict = dict, initial = initial, ttl = ttl, max_delay = max_delay}
     return setmetatable(self, mt)
 end
 _M.incoming = function(self, key, commit)
@@ -20,6 +22,9 @@ _M.incoming = function(self, key, commit)
     if last and count then
         local elapsed = now - tonumber(last)
         local exp = math.pow(2, count + self.initial) * 1000
+        if exp > self.max_delay then
+            exp = self.max_delay
+        end
         local wait = exp + math.random(1, math.ceil(exp / 3))
         delay = wait - elapsed
     end
