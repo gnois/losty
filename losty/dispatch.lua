@@ -4,18 +4,18 @@
 local dispatch = function(hn, req, res, ...)
     local i, n = 0, #hn
     local nargs, aargs = 0
+    local unpack = table.unpack or unpack
     local invoke = function(...)
-        local np = select("#", ...)
-        if np > 0 then
-            local p = {...}
-            aargs = aargs or {}
-            for j = 1, np do
-                aargs[nargs + j] = p[j]
-            end
-            nargs = nargs + np
-        end
         i = i + 1
         if i <= n then
+            local np = select("#", ...)
+            if np > 0 then
+                aargs = aargs or {}
+                for j = 1, np do
+                    aargs[nargs + j] = select(j, ...)
+                end
+                nargs = nargs + np
+            end
             if aargs then
                 return hn[i](req, res, unpack(aargs, 1, nargs))
             end

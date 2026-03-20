@@ -2,17 +2,18 @@
 var dispatch = \hn, req, res, ... ->
 	var i, n = 0, #hn
 	var nargs, aargs = 0
+	var unpack = table.unpack or unpack
 
 	var invoke = \... ->
-		var np = select('#', ...) -- select() count nils in ...
-		if np > 0
-			var p = {...}
-			aargs = aargs or {}
-			for j = 1, np
-				aargs[nargs + j] = p[j]
-			nargs = nargs + np
 		i = i + 1
 		if i <= n
+			var np = select('#', ...) -- select() count nils in ...
+			if np > 0
+				aargs = aargs or {}
+				for j = 1, np
+					aargs[nargs + j] = select(j, ...)
+				nargs = nargs + np
+
 			if aargs
 				-- unpack() accepts tables of up to 8000 elements only in Lua 5.1 and LuaJIT
 				return hn[i](req, res, unpack(aargs, 1, nargs))  -- preserve all nils

@@ -36,16 +36,48 @@ var str_sub = string.sub
 var str_find = string.find
 var str_match = string.match
 
+var next_segment = \path ->
+	if not path or path == '' or path == '/'
+		return nil, ''
+
+	var n = #path
+	var i = 1
+	while i <= n and str_sub(path, i, i) == '/'
+		i = i + 1
+	if i > n
+		return nil, ''
+
+	var j = i
+	while j <= n and str_sub(path, j, j) ~= '/'
+		j = j + 1
+	if j <= n
+		return str_sub(path, i, j - 1), str_sub(path, j)
+	return str_sub(path, i), ''
+
 var COLON = ":"
 var LEAF = "#"
 
 var router = ->
 	var tree = {}
 
+	var bind = \matches, m, token, toklen, s, e, ... ->
+		if s == 1 and e == toklen
+			matches[m] = token
+			m = m + 1
+			var n = select('#', ...)
+			for i = 1, n
+				var v = select(i, ...)
+				if v == nil
+					break
+				matches[m] = v
+				m = m + 1
+			return true, m
+		return false, m
+
 	var resolve
 	resolve = \path, nodes, matches, m ->
-		var _, token
-		_, _, token, path = str_find(path, "([^/]+)(.*)")
+		var token
+		token, path = next_segment(path)
 		if not token
 			return nodes[LEAF], matches
 
@@ -63,16 +95,9 @@ var router = ->
 			pattern, child = next(node)
 			-- save the index in case backtrack
 			var prev = m
-			if (\s, e, ... ->
-				-- print(pattern, token, s, e, ...)
-				if s == 1 and e == toklen
-					matches[m] = token
-					m = m + 1
-					for ___, v in ipairs({...})
-						matches[m] = v
-						m = m + 1
-					return true
-			)(str_find(token, pattern))
+			var ok
+			ok, m = bind(matches, m, token, toklen, str_find(token, pattern))
+			if ok
 				var func, bindings = resolve(path, child, matches, m)
 				if func
 					return func, bindings
@@ -119,7 +144,7 @@ var router = ->
 					token = str_sub(token, 2)
 				var ok, err = check(token)
 				if not ok
-					error(err .. " in " .. path, 2)
+					error(err .. " in " .. path, 5)
 
 				nodes = find_create(nodes, token)
 			else
@@ -148,14 +173,17 @@ var router = ->
 
 
 	return {
-		match = \method, path ->
+		match = \method, path, strict ->
 			var nodes = tree[method]
 			if not nodes
 				return nil, "unmatched method: " .. (method or "")
+			if strict and str_find(path, '//')
+				return nil, "disallowed double slash path: " .. (path or "")
 			-- remove query string
-			path = string.gsub(path, "%?.*", "")
-			if str_find(path, '//')
-				return nil, "unmatched path: " .. (path or "")
+			path = path or ""
+			var q = str_find(path, "?", 1, true)
+			if q
+				path = str_sub(path, 1, q - 1)
 			var arr, matches = resolve(path, nodes, {}, 1)
 			if not arr
 				return nil, "unmatched path: " .. (path or "")
@@ -164,14 +192,13 @@ var router = ->
 		, set = \method, path, ... ->
 			var err = invalid(path)
 			if err
-				error("route '" .. path .. "' " .. err, 2)
+				error("route '" .. path .. "' " .. err, 4)
 			if not tree[method]
 				tree[method] = {}
 			install(tree[method], path, ...)
 			return tree[method]
 	}
 
-return router
 
 
 --```
@@ -265,7 +292,7 @@ var test = ->
 	for _, p in ipairs(res)
 		print(p[1])
 		var prm = p[2]
-		var arr, matches = r.match(G, p[1])
+		var arr, matches = r.match(G, p[1])  -- if strict mode, will throw disallowed double slash path: /page/22//related
 		assert(arr or not prm, matches)
 		if arr or prm
 			if type(prm) ~= 'table'
@@ -279,5 +306,7 @@ var test = ->
 	print('\nOK')
 test()
 
-
 ---```
+
+
+return router
