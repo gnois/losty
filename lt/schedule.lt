@@ -1,5 +1,6 @@
 
 var SecPerDay = 24 * 60 * 60
+var unpack = table.unpack or unpack
 
 -- get epoch of ndays later, at specific point of time
 var day_at = \ndays, hh, mm, ss ->
@@ -18,24 +19,38 @@ var day_at = \ndays, hh, mm, ss ->
 
 
 var task
-var run_safe = \fn, ... ->
+var run_safe = \premature, fn, ... ->
+	if premature
+		ngx.log(ngx.WARN, "scheduled task ended prematurely at worker ", ngx.worker.id())
+		return
+
+	if type(fn) ~= 'function'
+		ngx.log(ngx.ERR, " invalid scheduled task: expected function, got ", type(fn))
+		return
+
+	var nargs = select('#', ...)
+	var args
+	if nargs > 0
+		args = {...}
+
 	var ok, err = xpcall(->
-		fn(...)
+		if args
+			fn(unpack(args, 1, nargs))
+		else
+			fn()
 	, \e ->
 		return debug.traceback(e, 2)
 	)
 	if not ok
 		ngx.log(ngx.ERR, "schedule task failed: ", err)
 
+
 task = \premature, cycle, fn, ... ->
-	if premature
-		ngx.log(ngx.WARN, "schedule task premature end at worker ", ngx.worker.id())
-	else
-		run_safe(fn, ...)
-		if cycle and cycle > 0
-			var ok, err = ngx.timer.every(cycle, run_safe, fn, ...)
-			if not ok
-				ngx.log(ngx.ERR, "ngx.timer.every() failed: ", err)
+	run_safe(premature, fn, ...)
+	if not premature and cycle and cycle > 0
+		var ok, err = ngx.timer.every(cycle, run_safe, fn, ...)
+		if not ok
+			ngx.log(ngx.ERR, "ngx.timer.every() failed: ", err)
 
 
 

@@ -2,6 +2,7 @@
 -- Generated from schedule.lt
 --
 local SecPerDay = 24 * 60 * 60
+local unpack = table.unpack or unpack
 local day_at = function(ndays, hh, mm, ss)
     local later = os.time() + ndays * SecPerDay
     local t = os.date("*t", later)
@@ -13,9 +14,26 @@ local day_at = function(ndays, hh, mm, ss)
     return os.time(t)
 end
 local task
-local run_safe = function(fn, ...)
+local run_safe = function(premature, fn, ...)
+    if premature then
+        ngx.log(ngx.WARN, "scheduled task ended prematurely at worker ", ngx.worker.id())
+        return 
+    end
+    if type(fn) ~= "function" then
+        ngx.log(ngx.ERR, " invalid scheduled task: expected function, got ", type(fn))
+        return 
+    end
+    local nargs = select("#", ...)
+    local args
+    if nargs > 0 then
+        args = {...}
+    end
     local ok, err = xpcall(function()
-        fn(...)
+        if args then
+            fn(unpack(args, 1, nargs))
+        else
+            fn()
+        end
     end, function(e)
         return debug.traceback(e, 2)
     end)
@@ -24,15 +42,11 @@ local run_safe = function(fn, ...)
     end
 end
 task = function(premature, cycle, fn, ...)
-    if premature then
-        ngx.log(ngx.WARN, "schedule task premature end at worker ", ngx.worker.id())
-    else
-        run_safe(fn, ...)
-        if cycle and cycle > 0 then
-            local ok, err = ngx.timer.every(cycle, run_safe, fn, ...)
-            if not ok then
-                ngx.log(ngx.ERR, "ngx.timer.every() failed: ", err)
-            end
+    run_safe(premature, fn, ...)
+    if not premature and cycle and cycle > 0 then
+        local ok, err = ngx.timer.every(cycle, run_safe, fn, ...)
+        if not ok then
+            ngx.log(ngx.ERR, "ngx.timer.every() failed: ", err)
         end
     end
 end
