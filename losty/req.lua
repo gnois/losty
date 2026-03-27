@@ -18,6 +18,9 @@ local read_uid = function()
         end
     end
 end
+local read_request_id = function()
+    return ngx_var.http_x_request_id or ngx_var.request_id or read_uid()
+end
 local binary = function(v)
     local int32 = ffi.typeof("int32_t")
     local int32slot = ffi.typeof("int32_t[1]")
@@ -43,7 +46,7 @@ local read_uid_binary = function()
         return bytes16
     end
 end
-local userid = {id = read_uid, id_binary = read_uid_binary, id_base64 = function()
+local userid = {id = read_uid, request_id = read_request_id, id_binary = read_uid_binary, id_base64 = function()
     local v = read_uid_binary()
     return v and ngx.encode_base64(v)
 end}

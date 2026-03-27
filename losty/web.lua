@@ -6,6 +6,7 @@ local dispatch = require("losty.dispatch")
 local statuses = require("losty.status")
 local req = require("losty.req")
 local res = require("losty.res")
+local unpack = table.unpack or unpack
 local METHODS = {
     "GET"
     , "POST"
@@ -33,6 +34,33 @@ local send_body = function(body)
     end
     return ngx.print(body)
 end
+local is_exec_intent = function(body)
+    return type(body) == "table" and body.__losty_exec == true and body.uri
+end
+local run_exec_intent = function(r, body)
+    if body.headers then
+        for k, v in pairs(body.headers) do
+            r.headers[k] = v
+        end
+    end
+    if body.args ~= nil then
+        return ngx.exec(body.uri, body.args)
+    end
+    return ngx.exec(body.uri)
+end
+local run_defers = function(q)
+    local hooks = q._defer_hooks
+    if hooks then
+        for i = #hooks, 1, -1 do
+            local ok, err = xpcall(hooks[i], function(trace)
+                return debug.traceback(trace, 2)
+            end)
+            if not ok then
+                ngx.log(ngx.ERR, err)
+            end
+        end
+    end
+end
 local route = function(prefix)
     local phase = ngx.get_phase()
     if phase ~= "init" then
@@ -53,6 +81,21 @@ local run = function(error_page, check)
     local handlers, body, ok, trace
     local q = req()
     local r = res()
+    q._defer_hooks = {}
+    q.defer = function(fn, ...)
+        if "function" ~= type(fn) then
+            error("defer requires function", 2)
+        end
+        local np = select("#", ...)
+        if np == 0 then
+            table.insert(q._defer_hooks, fn)
+        else
+            local args = {...}
+            table.insert(q._defer_hooks, function()
+                return fn(unpack(args, 1, np))
+            end)
+        end
+    end
     local method = q.vars.request_method
     handlers, q.match = rt.match(method == "HEAD" and "GET" or method, q.vars.uri)
     if handlers then
@@ -67,6 +110,10 @@ local run = function(error_page, check)
         end
     else
         r.status = 404
+    end
+    run_defers(q)
+    if is_exec_intent(body) then
+        return run_exec_intent(r, body)
     end
     local code = r.status
     if error_page == true and body == nil and code >= 400 then

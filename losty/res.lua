@@ -50,6 +50,12 @@ local redirect = function(url, same_method)
     end
     headers["Location"] = url
 end
+local exec = function(uri, args, extra_headers)
+    if not uri then
+        error("uri required", 2)
+    end
+    return {__losty_exec = true, uri = uri, args = args, headers = extra_headers}
+end
 return function()
     local jar = {}
     local order, o = {}, 0
@@ -146,6 +152,7 @@ return function()
         , cookie = cookie
         , cookies = cookies
         , redirect = redirect
+        , exec = exec
         , send = send
     }, {__metatable = false, __index = function(_, k)
         if "status" == k then

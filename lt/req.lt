@@ -20,6 +20,9 @@ var read_uid = ->
 	-- no need to log
 	--ngx.log(ngx.ERR, "req.id_xxx() functions requires nginx directive `userid on;`")
 
+var read_request_id = ->
+	return ngx_var.http_x_request_id or ngx_var.request_id or read_uid()
+
 -- convert an int32 into a 4-byte lua string
 var binary = \v ->
 	var int32 = ffi.typeof("int32_t")
@@ -67,6 +70,7 @@ var read_uid_binary = ->
 var userid = {
 	-- hex format
 	id = read_uid
+	, request_id = read_request_id
 	-- 16 bytes binary string
 	, id_binary = read_uid_binary
 	-- base64 encoded string, as seen in browser cookie

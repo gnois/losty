@@ -3,6 +3,7 @@ var dispatch = require('losty.dispatch')
 var statuses = require('losty.status')
 var req = require('losty.req')
 var res = require('losty.res')
+var unpack = table.unpack or unpack
 
 var METHODS = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'} -- 'TRACE', 'CONNECT'
 
@@ -21,6 +22,28 @@ var send_body = \body ->
 			if not ok
 				return ok, err
 	return ngx.print(body)
+
+
+var is_exec_intent = \body ->
+	return type(body) == 'table' and body.__losty_exec == true and body.uri
+
+var run_exec_intent = \r, body ->
+	if body.headers
+		for k, v in pairs(body.headers)
+			r.headers[k] = v
+	if body.args ~= nil
+		return ngx.exec(body.uri, body.args)
+	return ngx.exec(body.uri)
+
+var run_defers = \q ->
+	var hooks = q._defer_hooks
+	if hooks
+		for i = #hooks, 1, -1
+			var ok, err = xpcall(hooks[i], \trace ->
+				return debug.traceback(trace, 2)
+			)
+			if not ok
+				ngx.log(ngx.ERR, err)
 
 
 var route = \prefix ->
@@ -44,6 +67,20 @@ var run = \error_page, check ->
 	var handlers, body, ok, trace
 	var q = req()
 	var r = res()
+
+	q._defer_hooks = {}
+	q.defer = \fn, ... ->
+		if 'function' ~= type(fn)
+			error("defer requires function", 2)
+		var np = select('#', ...)
+		if np == 0
+			table.insert(q._defer_hooks, fn)
+		else
+			var args = {...}
+			table.insert(q._defer_hooks, ->
+				return fn(unpack(args, 1, np))
+			)
+
 	var method = q.vars.request_method
 	handlers, q.match = rt.match(method == 'HEAD' and 'GET' or method, q.vars.uri)
 	if handlers
@@ -57,6 +94,11 @@ var run = \error_page, check ->
 			ngx.log(ngx.ERR, trace)
 	else
 		r.status = 404
+
+	run_defers(q)
+
+	if is_exec_intent(body)
+		return run_exec_intent(r, body)
 
 	var code = r.status
 	if error_page == true and body == nil and code >= 400
