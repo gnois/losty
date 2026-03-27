@@ -9,6 +9,20 @@ var METHODS = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'} -- 'TRACE', '
 -- Module-level singleton: require() caches this module, so one router per worker
 var rt = router()
 
+var send_body = \body ->
+	if type(body) == 'function'
+		while true
+			var chunk = body()
+			if chunk == nil
+				return true
+			var ok, err = ngx.print(chunk)
+			if ok
+				ok, err = ngx.flush(true)
+			if not ok
+				return ok, err
+	return ngx.print(body)
+
+
 var route = \prefix ->
 	var phase = ngx.get_phase()
 	if phase ~= 'init'
@@ -67,7 +81,7 @@ var run = \error_page, check ->
 	ok, err = r.send() -- send cookies and headers
 	if ok
 		if method ~= 'HEAD' and not empty and body ~= nil
-			ok, err = ngx.print(body)
+			ok, err = send_body(body)
 		if ok
 			ok, err = ngx.eof()
 

@@ -15,6 +15,24 @@ local METHODS = {
     , "OPTIONS"
 }
 local rt = router()
+local send_body = function(body)
+    if type(body) == "function" then
+        while true do
+            local chunk = body()
+            if chunk == nil then
+                return true
+            end
+            local ok, err = ngx.print(chunk)
+            if ok then
+                ok, err = ngx.flush(true)
+            end
+            if not ok then
+                return ok, err
+            end
+        end
+    end
+    return ngx.print(body)
+end
 local route = function(prefix)
     local phase = ngx.get_phase()
     if phase ~= "init" then
@@ -69,7 +87,7 @@ local run = function(error_page, check)
     ok, err = r.send()
     if ok then
         if method ~= "HEAD" and not empty and body ~= nil then
-            ok, err = ngx.print(body)
+            ok, err = send_body(body)
         end
         if ok then
             ok, err = ngx.eof()
