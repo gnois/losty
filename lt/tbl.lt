@@ -27,7 +27,7 @@ var dump = \value ->
 			return "{}"
 
 		if t == "string"
-			return '"' .. val .. '"'
+			return '"' .. string.gsub(val, '["\\]', '\\%0') .. '"'
 		return tostring(val)
 
 	return dmp(value)

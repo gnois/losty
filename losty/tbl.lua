@@ -33,7 +33,7 @@ local dump = function(value)
             return "{}"
         end
         if t == "string" then
-            return "\"" .. val .. "\""
+            return "\"" .. string.gsub(val, "[\"\\]", "\\%0") .. "\""
         end
         return tostring(val)
     end

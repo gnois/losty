@@ -22,7 +22,7 @@ K.render = \str, data ->
 		var keys = split(s, "%.")
 		var v = data[keys[1]]
 		for i = 2, #keys
-			v = v[keys[i]]
+			v = v and v[keys[i]]  -- guard against nil intermediate
 		return v or '{'.. s ..'}'
 	))
 
@@ -41,7 +41,7 @@ K.hash = \str ->
 	var hash = 0
 	if str
 		for c in string.gmatch(str, '.')
-			hash = (bit.lshift(hash, 5) - hash) + c
+			hash = (bit.lshift(hash, 5) - hash) + string.byte(c)
 	return hash
 
 -- iterate every character in str

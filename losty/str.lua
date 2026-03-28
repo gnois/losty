@@ -22,7 +22,7 @@ K.render = function(str, data)
         local keys = split(s, "%.")
         local v = data[keys[1]]
         for i = 2, #keys do
-            v = v[keys[i]]
+            v = v and v[keys[i]]
         end
         return v or "{" .. s .. "}"
     end))
@@ -44,7 +44,7 @@ K.hash = function(str)
     local hash = 0
     if str then
         for c in string.gmatch(str, ".") do
-            hash = bit.lshift(hash, 5) - hash + c
+            hash = bit.lshift(hash, 5) - hash + string.byte(c)
         end
     end
     return hash
