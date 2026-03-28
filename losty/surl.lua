@@ -3,7 +3,7 @@
 --
 local sigurl = require("losty.sigurl")
 return function(secret, length)
-    local pen = sigurl(secret, {length = length})
+    local pen = sigurl(secret, length)
     return {sign = function(value)
         return pen.sign_raw(value)
     end, verify = function(sig, value)

@@ -11,7 +11,13 @@ local f = function(lock_name, key, expiry, read, write, ...)
         if ok then
             val, err = read(key)
             if val == nil then
-                val, err = write(key, ...)
+                local write_ok, wval, werr = pcall(write, key, ...)
+                if write_ok then
+                    val, err = wval, werr
+                else
+                    err = wval
+                    val = nil
+                end
             end
             lock:unlock()
         end

@@ -6,6 +6,7 @@ local dispatch = require("losty.dispatch")
 local statuses = require("losty.status")
 local req = require("losty.req")
 local res = require("losty.res")
+local cjson = require("cjson.safe")
 local unpack = table.unpack or unpack
 local METHODS = {
     "GET"
@@ -36,10 +37,15 @@ local send_body = function(body)
 end
 local prepare_body = function(r, body)
     if type(body) == "table" and type(next(body)) == "string" then
-        if r.headers["Content-Type"] == nil then
-            r.headers["Content-Type"] = "application/json"
+        local encoded, err = cjson.encode(body)
+        if encoded then
+            if r.headers["Content-Type"] == nil then
+                r.headers["Content-Type"] = "application/json"
+            end
+            return encoded
         end
-        return require("cjson").encode(body)
+        ngx.log(ngx.ERR, "prepare_body: failed to encode response as JSON: ", err)
+        return nil
     end
     return body
 end

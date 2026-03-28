@@ -14,16 +14,28 @@ local decode64 = function(value)
 end
 return {encode64 = encode64, decode64 = decode64, encode = function(obj, func)
     assert(obj)
-    local str = json.encode(obj)
+    local str, err = json.encode(obj)
+    if not str then
+        return nil, err
+    end
     if func then
-        str = func(str)
+        str, err = func(str)
+        if not str then
+            return nil, err
+        end
     end
     return encode64(str)
 end, decode = function(str, func)
     assert(str)
     str = decode64(str)
+    if not str then
+        return nil, "invalid base64"
+    end
     if func then
         str = func(str)
+        if not str then
+            return nil, "decryption failed"
+        end
     end
     return json.decode(str)
 end}

@@ -1,7 +1,7 @@
 -- Cache lock abstraction, from
 -- https://github.com/openresty/lua-resty-lock#for-cache-locks
 
---`` 
+--``
 nginx.conf
 
 http {
@@ -32,7 +32,12 @@ var f = \lock_name, key, expiry, read, write, ...->
 			-- lock acquired. while waiting, someone might have created the target
 			val, err = read(key)
 			if val == nil
-				val, err = write(key, ...)
+				var write_ok, wval, werr = pcall(write, key, ...)
+				if write_ok
+					val, err = wval, werr
+				else
+					err = wval  -- error message
+					val = nil
 
 			lock.unlock(@)
 

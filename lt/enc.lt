@@ -24,13 +24,17 @@ var decode64 = \value ->
 return {
 	encode64 = encode64
 	, decode64 = decode64
-	
+
 	-- func can be crypt(key).encrypt
 	, encode = \obj, func ->
 		assert(obj)
-		var str = json.encode(obj)
+		var str, err = json.encode(obj)
+		if not str
+			return nil, err
 		if func
-			str = func(str)
+			str, err = func(str)
+			if not str
+				return nil, err
 		return encode64(str)
 
 
@@ -38,8 +42,12 @@ return {
 	, decode = \str, func ->
 		assert(str)
 		str = decode64(str)
+		if not str
+			return nil, 'invalid base64'
 		if func
 			str = func(str)
+			if not str
+				return nil, 'decryption failed'
 		return json.decode(str)
 }
 

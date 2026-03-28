@@ -3,6 +3,7 @@ var dispatch = require('losty.dispatch')
 var statuses = require('losty.status')
 var req = require('losty.req')
 var res = require('losty.res')
+var cjson = require('cjson.safe')
 var unpack = table.unpack or unpack
 
 var METHODS = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'} -- 'TRACE', 'CONNECT'
@@ -31,9 +32,13 @@ var send_body = \body ->
 var prepare_body = \r, body ->
 	if type(body) == 'table' and type(next(body)) == 'string'
 		-- dict-like table -> JSON
-		if r.headers['Content-Type'] == nil -- may have application/ld+json, application/vnd.api+json
-			r.headers['Content-Type'] = 'application/json'
-		return require('cjson').encode(body)
+		var encoded, err = cjson.encode(body)
+		if encoded
+			if r.headers['Content-Type'] == nil -- may have application/ld+json, application/vnd.api+json
+				r.headers['Content-Type'] = 'application/json'
+			return encoded
+		ngx.log(ngx.ERR, 'prepare_body: failed to encode response as JSON: ', err)
+		return nil
 	return body
 
 

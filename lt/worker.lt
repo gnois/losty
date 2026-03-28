@@ -1,4 +1,5 @@
 -- call in init_worker_by_lua
 ngx.update_time()
-var seed = ((ngx.now() % 1) * 11111 % 1) * 11111 * ngx.worker.pid() -- shift left to take the decimals for entropy
-math.randomseed(seed)
+-- ngx.now() * 1000 gives millisecond precision; adding worker.pid() makes each worker distinct
+-- Avoids float manipulation and is non-zero as long as nginx has been running (pid > 0)
+math.randomseed(ngx.now() * 1000 + ngx.worker.pid())
