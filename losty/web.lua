@@ -34,19 +34,17 @@ local send_body = function(body)
     end
     return ngx.print(body)
 end
-local is_exec_intent = function(body)
-    return type(body) == "table" and body.__losty_exec == true and body.uri
-end
-local run_exec_intent = function(r, body)
-    if body.headers then
-        for k, v in pairs(body.headers) do
-            r.headers[k] = v
+local prepare_body = function(r, body)
+    if type(body) == "table" and type(next(body)) == "string" then
+        if r.headers["Content-Type"] == nil then
+            r.headers["Content-Type"] = "application/json"
         end
+        return require("cjson").encode(body)
     end
-    if body.args ~= nil then
-        return ngx.exec(body.uri, body.args)
-    end
-    return ngx.exec(body.uri)
+    return body
+end
+local is_exec_intent = function(body)
+    return type(body) == "table" and body.__ngx_exec == true and body.uri
 end
 local run_defers = function(q)
     local hooks = q._defer_hooks
@@ -113,8 +111,12 @@ local run = function(error_page, check)
     end
     run_defers(q)
     if is_exec_intent(body) then
-        return run_exec_intent(r, body)
+        if body.args ~= nil then
+            return ngx.exec(body.uri, body.args)
+        end
+        return ngx.exec(body.uri)
     end
+    body = prepare_body(r, body)
     local code = r.status
     if error_page == true and body == nil and code >= 400 then
         return ngx.exit(code)

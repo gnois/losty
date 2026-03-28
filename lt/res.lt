@@ -82,14 +82,15 @@ var redirect = \url, same_method ->
 		ngx.status = ngx.HTTP_SEE_OTHER
 	headers['Location'] = url
 
-var exec = \uri, args, extra_headers ->
+
+-- setting headers before ngx.exec() has no effect on subrequest
+var exec = \uri, args ->
 	if not uri
 		error("uri required", 2)
 	return {
-		__losty_exec = true
+		__ngx_exec = true
 		, uri = uri
 		, args = args
-		, headers = extra_headers
 	}
 
 -- see http://www.nczonline.net/blog/2009/05/05/http-cookies-explained/ section 'Cookie maintenance and lifecycle'

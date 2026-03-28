@@ -50,25 +50,29 @@ opm get gnois/losty
 
 ## Quickstart
 
+Routes are registered once at init time, and requests are served per connection. nginx.conf therefore has two distinct blocks:
+
 nginx.conf
 ```
 events {
    worker_connections 4096;
 }
 http {
+   init_by_lua_block {
+      local web = require('losty.web')            -- line 1
+      local w = web.route('/t')                   -- line 2
+      w.get('/hi', function(q, r)                 -- line 3
+         r.status = 200
+         r.headers["content-type"] = "text/plain"
+         return "Hi world"
+      end)
+   }
    server {
       listen 80;
 
       location / {
          content_by_lua_block {
-            local web = require('losty.web')()      -- line 1
-            local w = web.route('/t')               -- line 2
-            w.get('/hi', function(q, r)             -- line 3
-               r.status = 200
-               r.headers["content-type"] = "text/plain"
-               return "Hi world"
-            end)
-            web.run()
+            require('losty.web').run()
          }
       }
    }
@@ -82,17 +86,17 @@ See [losty-starters](https://github.com/gnois/losty-starters) repo for more exam
 
 ## Introduction
 
-Losty can be used in content_by_lua* directive in OpenResty. It matches HTTP requests to user defined routes, which associates one or more handler functions that process the request.
+Losty can be used with `init_by_lua_block` and `content_by_lua_block` directives in OpenResty. Routes are registered once in `init_by_lua_block`, then each incoming request is handled by calling `run()` from `content_by_lua_block`. It matches HTTP requests to user defined routes, which associates one or more handler functions that process the request.
 Similar to frameworks like Koajs, handlers need to be explicitly invoked downstream, and then control flows back upstream.
 
-line 1, 2 and 3 in the Quickstart is the basic pattern to setup route handlers within a content_by_lua* block.
-Line 1 returns a simple key/value table having only 2 functions, `route()` and `run()`.
+Lines 1, 2 and 3 in the Quickstart show the basic pattern to register route handlers.
+`require('losty.web')` returns a simple key/value table with two functions, `route()` and `run()`.
 
 `route()` may be called multiple times, each taking an optional path prefix for grouping purpose. In the quickstart, `/t` is the prefix used to group route handlers under `/t/...` url.
 If any combined prefix and path resolves to the same string, their associated handlers are accumulated (but still has to be explicitly invoked). For eg:
 
 ```
-local web = require('losty.web')()
+local web = require('losty.web')
 local w = web.route()
 w.get('/a/b', function(q, r)
    r.status = 403
@@ -157,7 +161,7 @@ Requests below are matched.
 ```
 Notice the last route receives multiple captures within a single segment.
 
-Path matching is deterministic. They are matched in order of declaration, and non-pattern path gets a higher precedence.
+Path are matched in order of declaration, and non-pattern path gets a higher precedence.
 
 
 
@@ -197,14 +201,11 @@ end
 The above handlers can be chained like this:
 
 ```
-w.post('/path', function(q, r)
-   r.headers["Content-Type"] = "application/json"
-   return q.next()
-end, form, database, function(q, r, body, db)
+w.post('/path', form, database, function(q, r, body, db)
    -- use body and db
    db.insert("users(name) values (:?)", body.name)
    r.status = 201
-   return json.encode({ok = true})
+   return {ok = true}    -- dict table is auto-encoded to JSON
 end)
 ```
 Notice how the form `body` and `db` are appended and passed as arguments to the following handlers, and the last handler returns JSON as response body.
@@ -219,10 +220,34 @@ Other frameworks normally use a context table that is extended with keys and pas
 If the response body is large, or may not be available all at once, we can return a function from the handler, and Losty will loop the function as iterator, returning its result in streaming fashion until its result is nil.
 
 
+### Response body auto-detection
+
+Handlers simply return a value — Losty infers how to send it:
+
+| Return value | Behaviour |
+|---|---|
+| `string` or `number` | Sent as-is. Set `Content-Type` header yourself. |
+| `function` | Called repeatedly as an iterator and streamed until it returns `nil`. |
+| array table (integer keys) | Each element sent as a string chunk (used by `view()` output). |
+| dict table (string keys) | Auto JSON-encoded. `Content-Type: application/json` set if not already present. |
+| `nil` | No body. |
+
+```
+-- no json.encode() or Content-Type needed for a simple JSON endpoint
+w.get('/api/status', function(q, r)
+   r.status = 200
+   return {ok = true, version = '1.0'}
+end)
+```
+
+For richer control — ETags, cache headers, content negotiation — use the `losty.content` middleware (`content.json`, `content.html`, `content.form`, `content.dual`) instead, which builds on top of this.
+
+
 
 ### Request Table
 Inside handlers, the passed in request table (q) is a thin wrapper for ngx.var and ngx.req, from which all properties are accessible.
 
+Request table includes `q.request_id`, resolved from `X-Request-Id` header, then `$request_id`, then userid cookie fallback.
 
 ### Response Table
 Inside handlers, the passed in response table (r) is a thin helper used to set HTTP headers and cookies, and wraps `ngx.status`. Setting `ngx.status` directly also works as expected.
@@ -263,16 +288,15 @@ Session is implemented via a pair of cookies, one bearing the encrypted data, wh
 This allows javascript to detect cookie changes, and act accordingly without additional server round trip.
 
 ```
-var session = require('losty.sess')
-var sess = session('candy', "This IS secret", "this-is_key")
+local session = require('losty.sess')
+local sess = session('candy', "This IS secret", "this-is_key")
 
 w.post('/login', function(q, r)
-   r.headers["Content-Type"] = "application/json"
-   var s = sess(q, r, 3600 * 24 * 7) -- age 7 days
+   local s = sess(q, r, 3600 * 24 * 7) -- age 7 days
    s.data = "userid"
    s.extra = {other = "info"}
    r.redirect('/')
-)
+end)
 ```
 In the above example, there will be a cookie named 'candy' within document.cookie readable by javascript, holding the signature of this session cookie.
 The actual encrypted data is stored in other cookie named 'candy_', which is httponly.
@@ -285,7 +309,21 @@ Both cookies is matched to ensure the session is not tampered with.
 Response headers including cookies and sessions are accumulated and finally set into `ngx.headers` before response is returned.
 Setting `ngx.headers` directly prior to returning response should also work as expected.
 
-Note that calling `ngx.exec()`, `ngx.redirect()`, `ngx.exit()`, `ngx.flush()`, `ngx.say()`, `ngx.print()` or `ngx.eof()` in a handler would short circuit the Losty dispatcher flow and return control to Nginx immediately. A valid example would be to use `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages.
+Note that calling `ngx.exec()`, `ngx.redirect()`, `ngx.exit()`, `ngx.flush()`, `ngx.say()`, `ngx.print()` or `ngx.eof()` in a handler would short circuit the Losty dispatcher flow and return control to Nginx immediately. An example would be to use `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages. Or calling `return ngx.exec()` to internally redirect to another location. Is recommended to always use `return` to be explicit that control is no longer in Losty. In such case, external resources like db connection that depend on normal return path from middlewares might not be released.
+
+ To allow Losty dispatcher flow to complete, use `r.exec(uri, args)` instead of `ngx.exec()`. Note that headers set before `r.exec()` have no effect on the subrequest. Use `q.defer(fn, ...)` to register cleanup callbacks in middleware. Deferred callbacks run in LIFO order after dispatcher returns (even when handler throws and Losty sets 500). Use this for releasing external resources.
+
+Example:
+```
+w.get('/download/:id', function(q, r)
+   local db = pg(...)
+   db.connect()
+   q.defer(function() db.disconnect() end)
+
+   r.headers['Content-Type'] = 'application/octet-stream'
+   return r.exec('/_protected/' .. q.match[1])
+end)
+```
 
 
 

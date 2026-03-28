@@ -24,16 +24,22 @@ var send_body = \body ->
 	return ngx.print(body)
 
 
-var is_exec_intent = \body ->
-	return type(body) == 'table' and body.__losty_exec == true and body.uri
+-- auto-detect response type from body
+--   string/number/array  -> send as-is (caller sets Content-Type if desired)
+--   function       -> streaming iterator (handled in send_body)
+--   table (dict)   -> JSON-encode + Content-Type: application/json
+var prepare_body = \r, body ->
+	if type(body) == 'table' and type(next(body)) == 'string'
+		-- dict-like table -> JSON
+		if r.headers['Content-Type'] == nil -- may have application/ld+json, application/vnd.api+json
+			r.headers['Content-Type'] = 'application/json'
+		return require('cjson').encode(body)
+	return body
 
-var run_exec_intent = \r, body ->
-	if body.headers
-		for k, v in pairs(body.headers)
-			r.headers[k] = v
-	if body.args ~= nil
-		return ngx.exec(body.uri, body.args)
-	return ngx.exec(body.uri)
+
+var is_exec_intent = \body ->
+	return type(body) == 'table' and body.__ngx_exec == true and body.uri
+
 
 var run_defers = \q ->
 	var hooks = q._defer_hooks
@@ -98,7 +104,11 @@ var run = \error_page, check ->
 	run_defers(q)
 
 	if is_exec_intent(body)
-		return run_exec_intent(r, body)
+		if body.args ~= nil
+			return ngx.exec(body.uri, body.args)
+		return ngx.exec(body.uri)
+
+	body = prepare_body(r, body)
 
 	var code = r.status
 	if error_page == true and body == nil and code >= 400

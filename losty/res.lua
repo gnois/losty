@@ -50,11 +50,11 @@ local redirect = function(url, same_method)
     end
     headers["Location"] = url
 end
-local exec = function(uri, args, extra_headers)
+local exec = function(uri, args)
     if not uri then
         error("uri required", 2)
     end
-    return {__losty_exec = true, uri = uri, args = args, headers = extra_headers}
+    return {__ngx_exec = true, uri = uri, args = args}
 end
 return function()
     local jar = {}
