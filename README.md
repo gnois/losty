@@ -268,18 +268,36 @@ data.id = xxx
 data.token = yyy
 ```
 
-Step 1. r.cookie is called with a name, and optional httponly, domain and path. These 4 parameters make up the identity of a cookie, which is required for deletion.
+Step 1. `r.cookie` is called with a name, and optional httponly, domain and path. These 4 parameters make up the identity of a cookie, which is required for deletion.
 
 Step 2. r.cookie returns a function, which must be called to specify age, samesite, secure and cookie value.
 - The age can be nil, +ve or -ve number
   * +ve is the number of secs for the cookie to last
   * nil means the cookie will be deleted upon browser close
-  * -ve means it will be deleted when the response is returned, and samesite, secure and value is not needed. eg:  ck(-100)
+  * -ve means it will be deleted when the response is returned, and samesite, secure and value is not needed. eg: `ck(-100)`
 
-- If the age not a -ve number, the cookie value can be specified as either:
-  * a simple string, treated as is
-  * an encoding function, such as json.encode(), which encodes the cookie as key/value object, as seen in `data` above
+Step 3. If age is not -ve, determine what to store in the cookie, either using the cookie value (4th parameter) above, or setting key/values in the returned `data` object. If the value is:
+  * **omitted or nil** — if key/values are set on `data` , they will be JSON-encoded as the cookie value. If no keys are set, the cookie is an empty string.
+  * **string** — used as-is; any keys set on `data` are ignored.
+  * **function** — called with `data` as argument; use this for custom encoding or deferred evaluation.
 
+For eg:
+
+```
+-- auto JSON: set keys on data after calling ck
+local data = ck(3600, 'lax', true)
+data.id = 123
+data.role = 'admin'
+-- cookie value becomes URI-escaped JSON: {"id":123,"role":"admin"}
+
+-- explicit string value
+ck(3600, 'lax', true, 'hello')
+
+-- custom encoder
+data = ck(3600, 'lax', true, json.encode)   -- same effect as auto JSON
+data.id = 100
+```
+The cookie value is always URI-escaped before being sent.
 
 
 ### Session

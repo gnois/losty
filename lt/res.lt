@@ -1,4 +1,5 @@
 -- a res() is merely status and header
+var cjson = require('cjson')
 var ngx_header = ngx.header
 
 var insert
@@ -126,9 +127,10 @@ return ->
 			-- samesite can be bool or string [lax|strict|none]. true=strict, false=none, nil means samesite not set (defaults to 'lax' by browser)
 			-- secure is bool, use req.secure()
 			-- value can be nil, string or function.
-			--   nil becomes empty string
-			--   if string, taken as is
-			--   if function, shd encode the data table
+			--   nil + keys set on data table -> auto JSON-encoded
+			--   nil + no keys set -> empty string
+			--   if string, taken as is (keys set on data are ignored)
+			--   if function, called with data table as argument
 			, __call = \t, age, samesite, secure, value ->
 				c._age = age
 				c._samesite = samesite
@@ -151,6 +153,8 @@ return ->
 		if val
 			if 'function' == type(val)
 				val = val(c)
+		else if next(c) ~= nil  -- raw keys on data table -> auto JSON
+			val = cjson.encode(c)
 		val = val and ngx.escape_uri(val) or ""
 
 		var z = { c._name .. "=" .. val }

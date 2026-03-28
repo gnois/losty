@@ -1,6 +1,7 @@
 --
 -- Generated from res.lt
 --
+local cjson = require("cjson")
 local ngx_header = ngx.header
 local insert
 insert = function(tb, v)
@@ -86,6 +87,8 @@ return function()
             if "function" == type(val) then
                 val = val(c)
             end
+        elseif next(c) ~= nil then
+            val = cjson.encode(c)
         end
         val = val and ngx.escape_uri(val) or ""
         local z = {c._name .. "=" .. val}
