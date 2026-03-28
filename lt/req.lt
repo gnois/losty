@@ -7,6 +7,9 @@ var ffi = require('ffi')
 var to = require('losty.to')
 var proxy = require('losty.proxy')
 
+var int32slot_t = ffi.typeof("int32_t[1]")
+var int32_size = ffi.sizeof("int32_t")
+
 var read_uid = ->
 	-- uid is   xxx=hexstring_of_len32, where hexstring is a hex encoding of four *little-endian* four-byte integers underneath
 	var str = ngx_var.uid_set or ngx_var.uid_got
@@ -25,9 +28,7 @@ var read_request_id = ->
 
 -- convert an int32 into a 4-byte lua string
 var binary = \v ->
-	var int32 = ffi.typeof("int32_t")
-	var int32slot = ffi.typeof("int32_t[1]")
-	return ffi.string(int32slot(bit.bswap(v)), ffi.sizeof(int32))
+	return ffi.string(int32slot_t(bit.bswap(v)), int32_size)
 
 -- https://blog.swiftype.com/2014/02/24/webserveruid-easy-unique-browser-ids-for-rails-better-analytics/
 -- https://github.com/swiftype/web_server_uid/blob/master/lib/web_server_uid.rb

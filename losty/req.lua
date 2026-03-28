@@ -6,6 +6,8 @@ local bit = require("bit")
 local ffi = require("ffi")
 local to = require("losty.to")
 local proxy = require("losty.proxy")
+local int32slot_t = ffi.typeof("int32_t[1]")
+local int32_size = ffi.sizeof("int32_t")
 local read_uid = function()
     local str = ngx_var.uid_set or ngx_var.uid_got
     if str then
@@ -22,9 +24,7 @@ local read_request_id = function()
     return ngx_var.http_x_request_id or ngx_var.request_id or read_uid()
 end
 local binary = function(v)
-    local int32 = ffi.typeof("int32_t")
-    local int32slot = ffi.typeof("int32_t[1]")
-    return ffi.string(int32slot(bit.bswap(v)), ffi.sizeof(int32))
+    return ffi.string(int32slot_t(bit.bswap(v)), int32_size)
 end
 local read_uid_binary = function()
     local uid = read_uid()
