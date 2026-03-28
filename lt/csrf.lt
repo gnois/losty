@@ -50,6 +50,8 @@ return \secret, strict, samesite, force_secure ->
 			var key = read(req)
 			if not key  -- leave fake keys alone
 				key = rnd.bytes(Len)
+				if not key
+					return nil, 'failed to generate random bytes'
 				var secure = force_secure and true or req.secure()
 				make(res)(nil, samesite, secure, encode64(key))
 			expiry = expiry or 0

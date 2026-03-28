@@ -1,24 +1,47 @@
 var aes = require('resty.aes')
+var rnd = require('resty.random')
+var encode64 = ngx.encode_base64
+var decode64 = ngx.decode_base64
 
 --``
--- all can be nil
-salt = <string>
-size = <int> 128, 192, 256 bits key sizes
-mode = <string> ecb, cbc, cfb1, cfb8, cfb128, ofb, or ctr (not available with 256 bit keys)
-hash = <aes.hash> md5, sha1, sha224, sha256, sha384, sha512
-rounds = <int>
+-- size, mode, hash, rounds all optional
+-- size = <int> 128, 192, 256 bits key sizes
+-- mode = <string> ecb, cbc, cfb1, cfb8, cfb128, ofb, or ctr (not available with 256 bit keys)
+-- hash = <aes.hash> md5, sha1, sha224, sha256, sha384, sha512
+-- rounds = <int>
+--
+-- A random 16-byte salt is generated per encrypt() call and prepended (base64) to the
+-- ciphertext so that EVP_BytesToKey derives a fresh IV each time, preventing identical
+-- plaintexts from producing identical ciphertexts under the same key.
 ``
-return \key, salt, size, mode, hash, rounds ->
+var SaltLen = 16
+
+return \key, size, mode, hash, rounds ->
 	size = size or 256
 	mode = mode or "cbc"
 	hash = hash or aes.hash.sha256
 	var cipher = aes.cipher(size, mode)
-	var a = aes.new(@, key, salt, cipher, hash, rounds)
 
 	return {
 		encrypt = \str ->
-			return a.encrypt(@, str)
-		
+			var salt = rnd.bytes(SaltLen)
+			if not salt
+				return nil, 'failed to generate random bytes'
+			var a = aes.new(@, key, salt, cipher, hash, rounds)
+			var ct = a and a.encrypt(@, str)
+			if not ct
+				return nil, 'encryption failed'
+			-- prepend base64(salt) + '.' so decrypt can recover the salt
+			return encode64(salt) .. '.' .. encode64(ct)
+
 		, decrypt = \str ->
-			return a.decrypt(@, str)
+			var s, ct = string.match(str, '^([^.]+)%.(.*)')
+			if not s
+				return nil, 'malformed ciphertext'
+			var salt = decode64(s)
+			var data = decode64(ct)
+			if not salt or not data
+				return nil, 'malformed ciphertext'
+			var a = aes.new(@, key, salt, cipher, hash, rounds)
+			return a and a.decrypt(@, data)
 	}

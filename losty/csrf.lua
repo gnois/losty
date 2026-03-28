@@ -46,6 +46,9 @@ return function(secret, strict, samesite, force_secure)
         local key = read(req)
         if not key then
             key = rnd.bytes(Len)
+            if not key then
+                return nil, "failed to generate random bytes"
+            end
             local secure = force_secure and true or req.secure()
             make(res)(nil, samesite, secure, encode64(key))
         end

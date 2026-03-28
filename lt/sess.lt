@@ -50,12 +50,15 @@ return \name, secret, key, samesite, force_secure -> --, size, mode, hash, round
 
 	var encrypt = \value ->
 		var salt = rnd.bytes(Len)
+		if not salt
+			return '', 'failed to generate random bytes'
 		var d, err = json.encode(value)
 		if d
 			var k = derive(secrets[1], salt)
 			var a = aes.new(@, k.enc, salt, Cipher, Hash) -- stronger defaults than legacy resty.aes defaults
-			var sig = hmac(k.mac, table.concat({salt, d, key}))
 			var data = a.encrypt(@, d)
+			-- EtM: MAC over ciphertext, not plaintext, to prevent CBC padding oracle
+			var sig = hmac(k.mac, table.concat({salt, data, key}))
 			return encode64(data) .. '|' .. encode64(salt), encode64(sig)
 		return '', err
 
@@ -68,10 +71,11 @@ return \name, secret, key, samesite, force_secure -> --, size, mode, hash, round
 				if data and salt and #salt == Len
 					for _, sec in ipairs(secrets)
 						var k = derive(sec, salt)
-						var a = aes.new(@, k.enc, salt, Cipher, Hash)
-						var d = a and a.decrypt(@, data)
-						if d
-							if str.safe_equal(hmac(k.mac, table.concat({salt, d, key})), decode64(sig))
+						-- EtM: verify MAC before decrypting
+						if str.safe_equal(hmac(k.mac, table.concat({salt, data, key})), decode64(sig))
+							var a = aes.new(@, k.enc, salt, Cipher, Hash)
+							var d = a and a.decrypt(@, data)
+							if d
 								return json.decode(d)
 
 

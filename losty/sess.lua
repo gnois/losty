@@ -38,12 +38,15 @@ return function(name, secret, key, samesite, force_secure)
     end
     local encrypt = function(value)
         local salt = rnd.bytes(Len)
+        if not salt then
+            return "", "failed to generate random bytes"
+        end
         local d, err = json.encode(value)
         if d then
             local k = derive(secrets[1], salt)
             local a = aes:new(k.enc, salt, Cipher, Hash)
-            local sig = hmac(k.mac, table.concat({salt, d, key}))
             local data = a:encrypt(d)
+            local sig = hmac(k.mac, table.concat({salt, data, key}))
             return encode64(data) .. "|" .. encode64(salt), encode64(sig)
         end
         return "", err
@@ -57,10 +60,10 @@ return function(name, secret, key, samesite, force_secure)
                 if data and salt and #salt == Len then
                     for _, sec in ipairs(secrets) do
                         local k = derive(sec, salt)
-                        local a = aes:new(k.enc, salt, Cipher, Hash)
-                        local d = a and a:decrypt(data)
-                        if d then
-                            if str.safe_equal(hmac(k.mac, table.concat({salt, d, key})), decode64(sig)) then
+                        if str.safe_equal(hmac(k.mac, table.concat({salt, data, key})), decode64(sig)) then
+                            local a = aes:new(k.enc, salt, Cipher, Hash)
+                            local d = a and a:decrypt(data)
+                            if d then
                                 return json.decode(d)
                             end
                         end
