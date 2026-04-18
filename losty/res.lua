@@ -35,7 +35,9 @@ end, __newindex = function(_, k, v)
     end
 end})
 local nocache = function()
-    headers["Cache-Control"] = "no-cache"
+    headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    headers["Pragma"] = "no-cache"
+    headers["Expires"] = "0"
 end
 local cache = function(status, sec)
     ngx.status = status
