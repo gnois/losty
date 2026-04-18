@@ -13,8 +13,17 @@ local parse = function(s, sep)
     local r = create(function()
         local acc, n = {}, 0
         local bracket = false
+        local esc = false
         for c in gmatch(s, ".") do
-            if c == "\"" then
+            if esc then
+                esc = false
+                n = n + 1
+                acc[n] = c
+            elseif c == "\\" and bracket then
+                esc = true
+                n = n + 1
+                acc[n] = c
+            elseif c == "\"" then
                 bracket = not bracket
                 n = n + 1
                 acc[n] = c
@@ -35,7 +44,7 @@ local parse = function(s, sep)
         end
     end)
     return function()
-        local code, res = resume(r)
+        local res = select(2, resume(r))
         return res
     end
 end
@@ -71,7 +80,11 @@ local parse_media = function(mt, i)
                 if k and v then
                     k = lower(k)
                     if k == "q" then
-                        m.q = tonumber(v)
+                        local q = tonumber(v)
+                        if not q or q < 0 or q > 1 then
+                            return 
+                        end
+                        m.q = q
                     else
                         m.params[k] = v
                     end
@@ -106,9 +119,6 @@ local specify = function(mt, i, spec)
         elseif spec.subtype ~= "*" then
             return 
         end
-        if #spec.params > 0 and not mt.params then
-            return 
-        end
         for k, v in pairs(spec.params) do
             local w = mt.params[k]
             if w and (v == "*" or w == v or w == string.match(v, "^\"%s*(.*)%s*\"$")) then
@@ -121,22 +131,21 @@ local specify = function(mt, i, spec)
     end
 end
 local prioritize = function(media, i, accepts)
-    local mt = parse_media(media)
+    local parsed = parse_media(media, i)
+    local mt = {media = parsed and parsed.media or media, subtype = parsed and parsed.subtype or "", q = parsed and parsed.q or 1, i = i, params = parsed and parsed.params or {}}
+    setmetatable(mt, media_mt)
     local prio = {i = i, o = 0, q = 0, s = 0}
     for _, acc in ipairs(accepts) do
         local spec = specify(mt, i, acc)
         if spec then
-            if spec.s >= prio.s then
+            if spec.s > prio.s then
                 prio = spec
-            elseif spec.s == prio.s and spec.q >= prio.q then
+            elseif spec.s == prio.s and spec.q > prio.q then
                 prio = spec
-            elseif spec.s == prio.s and spec.q == prio.q and spec.o >= prio.o then
+            elseif spec.s == prio.s and spec.q == prio.q and spec.o < prio.o then
                 prio = spec
             end
         end
-    end
-    if not mt then
-        mt = setmetatable({media = media, subtype = ""}, media_mt)
     end
     mt.i = prio.i
     mt.o = prio.o
