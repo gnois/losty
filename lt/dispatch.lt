@@ -2,7 +2,6 @@
 var dispatch = \hn, req, res, ... ->
 	var i, n = 0, #hn
 	var nargs, aargs = 0
-	var unpack = table.unpack or unpack
 
 	var invoke = \... ->
 		i = i + 1

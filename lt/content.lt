@@ -4,9 +4,28 @@ var strz = require('losty.str')
 var body = require('losty.body')
 var accept = require('losty.accept')
 var dispatch = require('losty.dispatch')
+var statuses = require('losty.status')
 
 var HTML = "text/html"
 var JSON = "application/json"
+var PROBLEM = "application/problem+json"
+
+
+var with_text_charset = \mime ->
+	if mime
+		var txt = string.lower(mime)
+		if string.find(txt, '^text/') and not string.find(txt, ';%s*charset%s*=')
+			return mime .. '; charset=utf-8'
+	return mime
+
+
+-- opt-in middleware: set Content-Type explicitly
+-- for text/* media types, appends ; charset=utf-8 unless already present
+var mime = \kind ->
+	var ctype = with_text_charset(kind)
+	return \req, res ->
+		res.headers["Content-Type"] = ctype
+		return req.next()
 
 var reject = \_, res ->
 	res.status = ngx.HTTP_NOT_ACCEPTABLE
@@ -71,6 +90,23 @@ var dual = \... ->
 		return json(req, res) -- even if pref has no application/json
 
 
+-- RFC 7807 application/problem+json responder (opt-in)
+var problem = \req, res ->
+	var out = req.next()
+	res.headers["Content-Type"] = PROBLEM
+	if type(out) == 'table'
+		if out.type == nil
+			out.type = 'about:blank'
+		var code = tonumber(out.status) or res.status
+		if code and code > 0
+			if out.status == nil
+				out.status = code
+			if out.title == nil
+				out.title = statuses.text(code)
+		out = cjson.encode(out)
+	return out
+
+
 
 var form = \req, res ->
 	-- val is an iterator function for multipart/form-data
@@ -86,8 +122,12 @@ var form = \req, res ->
 return {
 	form = form
 	, reject = reject
+	, mime = mime
+	, text = \kind ->
+		return mime(kind or 'text/plain')
 	, html = html
 	, json = json
+	, problem = problem
 	-- url generates text/html and application/json response depending on Accept headers
 	-- Note that reject will only be called if dual() is the last handler, meaning no more json handler
 	, dual = \... ->

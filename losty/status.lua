@@ -64,7 +64,7 @@ local status = {
 return {text = function(code)
     return status[code] or ""
 end, is_empty = function(code)
-    return code == 204 or code == 205 or code == 304
+    return 100 <= code and code < 200 or code == 204 or code == 205 or code == 304
 end, is_redirect = function(code)
     return 300 <= code and code <= 303 or code == 305 or code == 307 or code == 308
 end, is_retry = function(code)

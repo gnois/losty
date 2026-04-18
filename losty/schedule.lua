@@ -2,7 +2,6 @@
 -- Generated from schedule.lt
 --
 local SecPerDay = 24 * 60 * 60
-local unpack = table.unpack or unpack
 local day_at = function(ndays, hh, mm, ss)
     local later = os.time() + ndays * SecPerDay
     local t = os.date("*t", later)

@@ -4,7 +4,6 @@
 local upload = require("resty.upload")
 local cjson = require("cjson.safe")
 local str = require("losty.str")
-local unpack = table.unpack or unpack
 local MaxBody = 10 * 1024 * 1024
 local raw = function(req)
     local data = req.get_body_data()
