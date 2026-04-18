@@ -1,0 +1,17 @@
+-- env is edited by gen.lua (called from run.sh/run.bat dev|prod)
+
+local specs = {
+    dev = {
+        ENV    = 'dev'
+        , SECRET = '@@APP_NAME@@-dev-secret-change-me'
+        , PORT   = 8080
+    }
+    , prod = {
+        ENV    = 'prod'
+        -- Change before deploying. Do NOT commit real secrets.
+        , SECRET = 'change-me'
+        , PORT   = 8080
+    }
+}
+
+return specs['{env}'] or specs.dev

@@ -1,0 +1,49 @@
+server {
+   server_name .{domain};
+   listen {listen};
+   {certs}
+   {includes}
+
+   access_log off;
+
+   #error_page 500 502 503 504 /pub/50x.html;
+
+   root static/;
+   location = /favicon.ico {
+      alias static/favicon.ico;
+   }
+
+   # path with xxx.yyy is 404
+   location ~ ^/.+\..+$ {
+      return 404;
+   }
+
+   location / {
+      etag off;
+      try_files $uri.html @lua;
+   }
+
+   location @lua {
+      userid on;
+      userid_name wid;
+      userid_path /;
+      userid_mark W;
+      userid_expires max;
+      # disable to improve I/O perf
+      # access_log logs/access.log custom;
+
+      content_by_lua_block {
+         require("app").run()
+      }
+   }
+
+   location /public/ {
+      # /public/123456/path/abc.png
+      location ~ ^/public/(\d+)/(.*)$ {
+         expires 3d;
+         alias static/;
+         try_files $2 =404;
+      }
+   }
+}
+
