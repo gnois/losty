@@ -3,10 +3,7 @@
 --
 local enc = require("losty.enc")
 local str = require("losty.str")
-local hmac = ngx.hmac_sha256 or ngx.hmac_sha1
-if not hmac then
-    error("ngx.hmac_sha256 or ngx.hmac_sha1 required", 2)
-end
+local hmac = ngx.hmac_sha1
 local normalize = function(secrets)
     if not secrets then
         error("secret required", 2)

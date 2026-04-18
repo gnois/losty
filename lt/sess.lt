@@ -16,12 +16,11 @@ var Len = 16
 
 var encode64 = ngx.encode_base64
 var decode64 = ngx.decode_base64
-var hmac = ngx.hmac_sha256 or ngx.hmac_sha1
-if not hmac
-	error("ngx.hmac_sha256 or ngx.hmac_sha1 required", 2)
+var hmac = ngx.hmac_sha1
 
-var Cipher = aes.cipher(256, "cbc")
-var Hash = aes.hash.sha256
+-- ngx.hmac_sha1 outputs 20 bytes; use first 16 as AES-128-CBC key
+var Cipher = aes.cipher(128, "cbc")
+var Key_len = 16
 
 var normalize_secrets = \secret ->
 	if 'table' == type(secret)
@@ -31,7 +30,7 @@ var normalize_secrets = \secret ->
 
 var derive = \secret, salt ->
 	return {
-		enc = hmac(secret, "enc|" .. salt)
+		enc = string.sub(hmac(secret, "enc|" .. salt), 1, Key_len)
 		, mac = hmac(secret, "mac|" .. salt)
 	}
 
@@ -50,17 +49,21 @@ return \name, secret, key, samesite, force_secure -> --, size, mode, hash, round
 
 	var encrypt = \value ->
 		var salt = rnd.bytes(Len)
-		if not salt
-			return '', 'failed to generate random bytes'
-		var d, err = json.encode(value)
-		if d
-			var k = derive(secrets[1], salt)
-			var a = aes.new(@, k.enc, salt, Cipher, Hash) -- stronger defaults than legacy resty.aes defaults
-			var data = a.encrypt(@, d)
-			-- EtM: MAC over ciphertext, not plaintext, to prevent CBC padding oracle
-			var sig = hmac(k.mac, table.concat({salt, data, key}))
-			return encode64(data) .. '|' .. encode64(salt), encode64(sig)
-		return '', err
+		if salt
+			var d, err = json.encode(value)
+			if d
+				var a, data
+				var k = derive(secrets[1], salt)
+				a, err = aes.new(@, k.enc, nil, Cipher, {iv = salt})
+				if a
+					data, err = a.encrypt(@, d)
+					if data
+						-- EtM: MAC over ciphertext, not plaintext, to prevent CBC padding oracle
+						var mac_input = key and table.concat({salt, data, key}) or table.concat({salt, data})
+						var sig = hmac(k.mac, mac_input)
+						return encode64(data) .. '|' .. encode64(salt), encode64(sig)
+			return nil, err
+		return nil, 'failed to generate random bytes'
 
 	var decrypt = \payload, sig ->
 		if payload and sig
@@ -72,12 +75,17 @@ return \name, secret, key, samesite, force_secure -> --, size, mode, hash, round
 					for _, sec in ipairs(secrets)
 						var k = derive(sec, salt)
 						-- EtM: verify MAC before decrypting
-						if str.safe_equal(hmac(k.mac, table.concat({salt, data, key})), decode64(sig))
-							var a = aes.new(@, k.enc, salt, Cipher, Hash)
-							var d = a and a.decrypt(@, data)
-							if d
-								return json.decode(d)
-
+						var mac_input = key and table.concat({salt, data, key}) or table.concat({salt, data})
+						if str.safe_equal(hmac(k.mac, mac_input), decode64(sig))
+							var a, err = aes.new(@, k.enc, nil, Cipher, {iv = salt})
+							if a
+								var d
+								d, err = a.decrypt(@, data)
+								if d
+									return json.decode(d)
+							return nil, err
+					return nil, 'unmatched signature'
+		return nil, 'invalid payload'
 
 	var name_ = name .. '_'
 
@@ -90,8 +98,10 @@ return \name, secret, key, samesite, force_secure -> --, size, mode, hash, round
 	var signing = -> return signature
 	-- update signature
 	var encrypting = \value ->
-		var payload
+		var payload, err
 		payload, signature = encrypt(value)
+		if not payload
+			ngx.log(ngx.ERR, 'sess encrypt failed: ', err)
 		return payload
 
 
