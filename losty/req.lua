@@ -4,7 +4,6 @@
 local ngx_var = ngx.var
 local bit = require("bit")
 local ffi = require("ffi")
-local to = require("losty.to")
 local proxy = require("losty.proxy")
 local int32slot_t = ffi.typeof("int32_t[1]")
 local int32_size = ffi.sizeof("int32_t")
@@ -68,7 +67,7 @@ local headers = setmetatable({}, {__metatable = false, __index = function(_, nam
     return ngx_var["http_" .. key]
 end})
 local client_ip = function(trusted)
-    return proxy.client_ip(ngx_var, headers, trusted)
+    return proxy.client_ip(ngx_var, trusted)
 end
 local forwarded = function()
     return proxy.parse_forwarded(ngx_var.http_forwarded)

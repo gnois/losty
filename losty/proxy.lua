@@ -113,12 +113,12 @@ local trustfn = function(trusted)
             if c then
                 cidrs[#cidrs + 1] = c
             else
-                exact[v] = true
+                exact[lower(v)] = true
             end
         end
     end
     return function(ip)
-        if exact[ip] then
+        if ip and exact[lower(ip)] then
             return true
         end
         local n = ipv4_u32(ip)
@@ -132,17 +132,48 @@ local trustfn = function(trusted)
         return false
     end
 end
+local is_ipv6_literal = function(txt)
+    if not txt or not string.find(txt, ":", 1, true) then
+        return false
+    end
+    if string.find(txt, "[^0-9a-fA-F:%.]") then
+        return false
+    end
+    return true
+end
+local normalize_ip = function(raw)
+    if raw then
+        local ip = to.trim(raw)
+        if ip == "" or ip == "unknown" or string.sub(ip, 1, 1) == "_" then
+            return nil
+        end
+        ip = string.gsub(ip, "^\"(.*)\"$", "%1")
+        if string.sub(ip, 1, 1) == "[" then
+            local host = string.match(ip, "^%[([^%]]+)%]")
+            if host and host ~= "" then
+                if is_ipv6_literal(host) then
+                    return lower(host)
+                end
+            end
+            return nil
+        end
+        local a, b, c, d, p = string.match(ip, "^(%d+)%.(%d+)%.(%d+)%.(%d+):(%d+)$")
+        if a then
+            ip = a .. "." .. b .. "." .. c .. "." .. d
+        end
+        if ipv4_u32(ip) then
+            return ip
+        end
+        if is_ipv6_literal(ip) then
+            return lower(ip)
+        end
+    end
+end
 local forwarded_chain = function(header)
     local chain = {}
     for _, e in ipairs(parse_forwarded(header)) do
-        local f = e["for"]
+        local f = normalize_ip(e["for"])
         if f then
-            f = string.gsub(f, "^\"(.*)\"$", "%1")
-            if string.sub(f, 1, 1) == "[" then
-                f = string.match(f, "^%[([^%]]+)%]") or f
-            else
-                f = string.match(f, "^([^:]+)") or f
-            end
             chain[#chain + 1] = f
         end
     end
@@ -151,11 +182,51 @@ end
 local xff_chain = function(header)
     local chain = {}
     for ip in string.gmatch(header or "", "[^,]+") do
-        chain[#chain + 1] = to.trim(ip)
+        ip = normalize_ip(ip)
+        if ip then
+            chain[#chain + 1] = ip
+        end
     end
     return chain
 end
-local client_ip = function(vars, headers, trusted)
+local first = function(csv)
+    if csv then
+        local x = string.match(csv, "^%s*([^,]+)")
+        return x and to.trim(x)
+    end
+end
+local normalize_scheme = function(raw)
+    if raw then
+        local s = lower(to.trim(raw))
+        if s == "http" or s == "https" then
+            return s
+        end
+    end
+end
+local normalize_host = function(raw)
+    if raw then
+        local h = to.trim(string.gsub(raw, "^\"(.*)\"$", "%1"))
+        if h == "" or string.find(h, "[%s/%?#@]") or string.find(h, "[^%w%.%-%[%]:]") then
+            return nil
+        end
+        return lower(h)
+    end
+end
+local fallback_host = function(vars, remote)
+    local host = normalize_host(vars and vars.host)
+    if host then
+        return host
+    end
+    local ip = normalize_ip(remote)
+    if ip then
+        if string.find(ip, ":", 1, true) then
+            return "[" .. ip .. "]"
+        end
+        return ip
+    end
+    return "localhost"
+end
+local client_ip = function(vars, trusted)
     local remote = vars.remote_addr
     local is_trusted = trustfn(trusted)
     if not is_trusted or not is_trusted(remote) then
@@ -172,14 +243,7 @@ local client_ip = function(vars, headers, trusted)
             return ip
         end
     end
-    return chain[1] or remote
-end
-local first = function(csv)
-    if not csv then
-        return nil
-    end
-    local x = string.match(csv, "^%s*([^,]+)")
-    return x and to.trim(x)
+    return remote
 end
 local canonical_url = function(q, trusted)
     local vars = q.vars
@@ -189,10 +253,20 @@ local canonical_url = function(q, trusted)
     local trusted_remote = is_trusted and is_trusted(remote)
     local fwd = trusted_remote and parse_forwarded(vars.http_forwarded) or {}
     local f0 = fwd[1] or {}
-    local scheme = trusted_remote and (f0["proto"] or first(vars.http_x_forwarded_proto)) or (q.secure() and "https" or "http")
-    scheme = lower(scheme or "http")
-    local host = trusted_remote and (f0["host"] or first(vars.http_x_forwarded_host)) or headers["Host"] or vars.host
-    host = host or ""
+    local scheme = nil
+    if trusted_remote then
+        scheme = normalize_scheme(f0["proto"]) or normalize_scheme(first(vars.http_x_forwarded_proto))
+    end
+    if not scheme then
+        scheme = q.secure() and "https" or "http"
+    end
+    local host = nil
+    if trusted_remote then
+        host = normalize_host(f0["host"]) or normalize_host(first(vars.http_x_forwarded_host))
+    end
+    if not host then
+        host = normalize_host(headers["Host"]) or fallback_host(vars, remote)
+    end
     local uri = vars.request_uri or vars.uri or "/"
     if string.sub(uri, 1, 1) ~= "/" then
         uri = "/" .. uri

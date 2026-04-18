@@ -4,7 +4,6 @@ var ngx_var = ngx.var
 
 var bit = require('bit')
 var ffi = require('ffi')
-var to = require('losty.to')
 var proxy = require('losty.proxy')
 
 var int32slot_t = ffi.typeof("int32_t[1]")
@@ -114,7 +113,7 @@ var headers = setmetatable({}, {
 
 
 var client_ip = \trusted ->
-	return proxy.client_ip(ngx_var, headers, trusted)
+	return proxy.client_ip(ngx_var, trusted)
 
 var forwarded = ->
 	return proxy.parse_forwarded(ngx_var.http_forwarded)
