@@ -16,8 +16,17 @@ var parse = \s, sep ->
 	var r = create( ->
 		var acc, n = {}, 0
 		var bracket = false
+		var esc = false
 		for c in gmatch(s, '.')
-			if c == '"'
+			if esc
+				esc = false
+				n = n + 1
+				acc[n] = c
+			else if c == '\\' and bracket
+				esc = true
+				n = n + 1
+				acc[n] = c
+			else if c == '"'
 				bracket = not bracket
 				n = n + 1
 				acc[n] = c
@@ -34,7 +43,7 @@ var parse = \s, sep ->
 			yield(concat(acc))
 	)
 	return ->
-		var code, res = resume(r)
+		var res = select(2, resume(r))
 		return res
 
 
@@ -51,7 +60,7 @@ var split = \str, sep ->
 var media_re = `^\s*([^\s\/;]+)\/([^;\s]+)\s*(?:;(.*))?$`
 
 var media_mt = {
-	__tostring = \m -> 
+	__tostring = \m ->
 		var out = { m.media .. '/' .. m.subtype }
 		var o = 2
 		for k, v in pairs(m.params)
@@ -71,7 +80,7 @@ var parse_media = \mt, i ->
 			, i = i
 			, params = {}
 		}
-		
+
 		if arr[3]
 			var params = split(arr[3], ';')
 			for _, param in ipairs(params)
@@ -79,7 +88,10 @@ var parse_media = \mt, i ->
 				if k and v
 					k = lower(k)
 					if k == 'q'
-						m.q = tonumber(v)
+						var q = tonumber(v)
+						if not q or q < 0 or q > 1
+							return
+						m.q = q
 					else
 						m.params[k] = v
 
@@ -111,8 +123,6 @@ var specify = \mt, i, spec ->
 			return
 
 		-- all params shd match
-		if #spec.params > 0 and not mt.params
-			return
 		for k, v in pairs(spec.params)
 			var w = mt.params[k]
 			-- try unquoted "v" if needed, () is needed bcoz string.match may return nil and equals w=nil
@@ -131,7 +141,16 @@ var specify = \mt, i, spec ->
 
 
 var prioritize = \media, i, accepts ->
-	var mt = parse_media(media)
+	var parsed = parse_media(media, i)
+	var mt = {
+		media = parsed and parsed.media or media
+		, subtype = parsed and parsed.subtype or ''
+		, q = parsed and parsed.q or 1
+		, i = i
+		, params = parsed and parsed.params or {}
+	}
+	setmetatable(mt, media_mt)
+
 	var prio = {
 		i = i
 		, o = 0
@@ -142,22 +161,20 @@ var prioritize = \media, i, accepts ->
 		var spec = specify(mt, i, acc)
 		if spec
 			--print(spec.s, ',', spec.q, ',', spec.o, ',', spec.i)
-			if spec.s >= prio.s
+			if spec.s > prio.s
 				prio = spec
-			else if spec.s == prio.s and spec.q >= prio.q
+			else if spec.s == prio.s and spec.q > prio.q
 				prio = spec
-			else if spec.s == prio.s and spec.q == prio.q and spec.o >= prio.o
+			else if spec.s == prio.s and spec.q == prio.q and spec.o < prio.o
 				prio = spec
 
 	--print(' final -->  ', prio.s, ',', prio.q, ',', prio.o, ',', prio.i)
-	if not mt
-		mt = setmetatable({ media = media, subtype = '' }, media_mt)
 	mt.i = prio.i
 	mt.o = prio.o
 	mt.q = prio.q
 	mt.s = prio.s
 	return mt
-	
+
 
 
 -- remove media types where q = 0, then sort
@@ -168,7 +185,7 @@ var sort_with_q = \list ->
 		if l.q > 0
 			a = a + 1
 			acc[a] = l
-	table.sort(acc, \x, y -> 
+	table.sort(acc, \x, y ->
 		if x.q
 			if y.q
 				if x.q ~= y.q
@@ -178,7 +195,7 @@ var sort_with_q = \list ->
 				return true
 		else if y.q
 			return false
-		
+
 		if x.s
 			if y.s
 				if x.s ~= y.s
@@ -205,7 +222,7 @@ var sort_with_q = \list ->
 			return true
 		else if y.i
 			return false
-		
+
 		-- keep order
 		return true
 	)
@@ -234,7 +251,7 @@ var choose = \accept, avails ->
 --````
 
 var tests = ->
-	
+
 	var prn = \j, v ->
 		print(j, ' - ', tostring(v))
 		for k, vv in pairs(v)
@@ -245,7 +262,7 @@ var tests = ->
 				print('  ', '}')
 			else
 				print('  ', k, ' : ', vv)
-	
+
 	var data = {
 		'text/plain;q=0.1, application/json;q=0.5, text/html, */*'
 		, 'audio/*; q=0.2, audio/basic'
@@ -275,7 +292,7 @@ var tests = ->
 		, {'app/json;q=0.2, text/html', nil, {'text/html', 'app/json'}}
 		, {'text/plain;q=0.1, app/json;q=0.5, text/html, */*', nil, {'text/html', '*/*', 'app/json', 'text/plain'}}
 
-		
+
 		, {nil, {'app/json', 'text/html'}, {'app/json', 'text/html'}}
 		, {'app/json', {'text/html'}, nil}
 		, {'app/json', {'app/json', 'text/html'}, {'app/json'}}
@@ -285,7 +302,7 @@ var tests = ->
 		, {'text/plain, application/json;q=0.5, text/html, */*;q=0.1', {'image/jpeg', 'image/gif'}, {'image/jpeg', 'image/gif'}}
 		, {'text/plain, application/json;q=0.5, text/html, */*;q=0.1', {'text/html', 'text/plain'}, {'text/plain', 'text/html'}}
 		, {'text/plain, application/json;q=0.5, text/html, */*;q=0.1', {'image/jpeg', 'text/html', 'text/plain'}, {'text/plain', 'text/html', 'image/jpeg'}}
-		
+
 		, {'/*;q=0.8, text/*, image/*', {'application/json', 'text/html', 'text/plain', 'text/xml', 'application/xml', 'image/gif', 'image/jpeg', 'image/png', 'audio/mp3', 'application/javascript', 'text/javascript'}, {'text/html', 'text/plain', 'text/xml', 'text/javascript', 'image/gif', 'image/jpeg', 'image/png', 'application/json', 'application/xml', 'audio/mp3', 'application/javascript'}}
 		, {'text/*, text/plain;q=0', {'text/html', 'text/plain'}, {'text/html'}}
 		, {'text/*, text/plain;q=0.5', {'text/html', 'text/plain', 'text/xml'}, {'text/html', 'text/xml', 'text/plain'}}
@@ -306,7 +323,7 @@ var tests = ->
 	--``
 	for _, test in ipairs(data)
 		print("\n  Choosing: ", test[1] or 'nil', " < > ", test[2] and concat(test[2], ',') or 'nil')
-		
+
 		var chosen = choose(test[1], test[2])
 		if #chosen > 0
 			if test[3]
