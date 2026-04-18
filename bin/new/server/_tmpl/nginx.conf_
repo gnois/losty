@@ -1,0 +1,81 @@
+# Template processed by gen.lua: {var} placeholders are replaced at run time.
+# Edit this file, then run ./gen.sh or gen.bat to regenerate conf/nginx.conf.
+
+user www;   # www-data;
+daemon {daemon};
+pcre_jit on;
+worker_processes auto;
+worker_rlimit_nofile 13635;  # worker_processes * worker_connections,  default to max in freebsd (13635)
+
+pid logs/nginx.pid;
+error_log logs/error.log {errorlevel}; #stderr notice;
+
+events {
+   worker_connections 4096;  # cannot exceed open file resource limit: 13635, and needed for ngx.timer
+   multi_accept on;  #ignored if use kqueue
+}
+
+
+
+http {
+   lua_package_path '@@LOSTY_PATH@@/?.lua;./?.lua;;';
+
+   include mime.conf;
+   default_type text/plain;
+
+   charset utf-8;
+   charset_types text/* application/*;
+
+   log_format custom '$http_x_forwarded_for - $remote_addr - $remote_user [$time_local] $http_host "$request" $status $body_bytes_sent $request_time "$http_referer" "$http_user_agent"';
+
+   # strip away nginx version in header. doesn't work when error 404 or 500
+   server_tokens off;
+   reset_timedout_connection on;
+   client_header_timeout   30;
+   client_body_timeout     60;
+   send_timeout            60;
+   keepalive_timeout       30;
+   # same value to avoid saving body to disk
+   client_max_body_size    20m;
+   client_body_buffer_size 20m;
+
+   tcp_nopush on;
+   tcp_nodelay on;
+   directio 512;
+   sendfile on;
+   sendfile_max_chunk 128k;
+   #### https://github.com/openresty/lua-nginx-module/issues/587
+   # proxy_pass with proxy_cache and aio has bug, resp status 200, but always body.truncated = true
+   #aio on;
+   #aio threads;
+
+   # So a file is cached for 3 sec. Eg user cannot see updated image if less than 3 sec
+   open_file_cache max=1000 inactive=20s;
+   open_file_cache_valid 3s;
+   open_file_cache_min_uses 3;
+   open_file_cache_errors on;
+
+   resolver 8.8.8.8 8.8.4.4 208.67.222.222 208.67.220.220 valid=60s ipv6=off;
+   resolver_timeout 2s;
+
+   lua_socket_connect_timeout 10s;
+   lua_socket_read_timeout 10s;
+   lua_socket_send_timeout 10s;
+
+   # SSE will not work if off
+   lua_code_cache {code_cache};
+
+   # must be in http block. if less than 16k, Error ngx_slab_alloc() failed: no memory
+   lua_shared_dict users 10m;
+
+   init_worker_by_lua_block {
+      require("losty.worker")
+   }
+
+   # Register routes once per worker (not once per request).
+   init_by_lua_block {
+      require('app')
+   }
+
+   include www.conf;
+}

@@ -1,0 +1,234 @@
+--``
+losty CLI - scaffold a new Losty web app.
+
+Usage:
+  luajit bin/losty.lt <path> [-lua] [-domain example.com]
+
+Options:
+  -lua              Scaffold in plain Lua  (default: Luaty .lt)
+  -domain <tld>     Domain for nginx server_name (prompted if omitted)
+
+Once scaffolded, use the generated run.sh / run.bat inside the app directory
+to start, stop and reload nginx — no dependency on this CLI at runtime.
+``
+
+-- Bootstrap: resolve bin/cmdargs.lua from the script's own directory so
+-- `require('cmdargs')` works regardless of the caller's cwd.
+var script_dir = ->
+	var src = debug.getinfo(1, 'S').source
+	if src.sub(@, 1, 1) == '@'
+		src = src.sub(@, 2)
+	if not (src.match(@, '^[/\\]') or src.match(@, '^%a:[/\\]'))
+		var sep = package.config.sub(@, 1, 1)
+		var ph  = io.popen(sep == '\\' and 'cd' or 'pwd')
+		var cwd = ph.read(@, '*l') or '.'
+		ph.close(@)
+		src = cwd .. sep .. src
+	-- strip Windows drive letter (C:) and normalise to forward slashes
+	src = src.gsub(@, '^%a:', '').gsub(@, '\\', '/')
+	return src.match(@, '(.*)/[^/]+$') or '/'
+
+var _bin = script_dir()
+package.path = _bin .. '/?.lua;' .. package.path
+
+var parse = require('cmdargs')
+
+var IS_WIN = package.config.sub(@, 1, 1) == '\\'
+var SEP    = IS_WIN and '\\' or '/'
+
+
+-- ── path helpers ──────────────────────────────────────────────────────────────
+
+var join = \... ->
+	var parts = {...}
+	for i = 1, #parts
+		parts[i] = parts[i].gsub(@, '[/\\]', SEP)
+	return table.concat(parts, SEP)
+
+var dirname = \path ->
+	return path.match(@, '(.*)[/\\][^/\\]+') or ''
+
+var basename = \path ->
+	path = path.match(@, '^(.*[^/\\])') or path
+	return path.match(@, '[/\\]([^/\\]+)$') or path
+
+var SCRIPT_DIR = _bin
+var _parent    = dirname(SCRIPT_DIR)
+var LOSTY_ROOT = _parent ~= '' and _parent or '.'
+var TMPL_ROOT  = join(SCRIPT_DIR, 'new')
+
+
+-- ── filesystem helpers ────────────────────────────────────────────────────────
+
+var mkdir_p = \path ->
+	path = path.gsub(@, '[/\\]', SEP)
+	if IS_WIN
+		os.execute('if not exist "' .. path .. '" mkdir "' .. path .. '" > nul 2>&1')
+	else
+		os.execute('mkdir -p "' .. path .. '" 2>/dev/null')
+
+var read_file = \path ->
+	var f, err = io.open(path, 'r')
+	if not f
+		return nil, err
+	var data = f.read(@, '*a')
+	f.close(@)
+	return data
+
+var write_file = \path, data ->
+	var dir = dirname(path)
+	if dir ~= ''
+		mkdir_p(dir)
+	var f, err = io.open(path, 'w')
+	if not f
+		return false, err
+	f.write(@, data)
+	f.close(@)
+	return true
+
+
+-- ── template rendering ────────────────────────────────────────────────────────
+-- @@VAR_NAME@@ avoids collision with Lua {} syntax and nginx {var} notation.
+
+var render = \text, vars ->
+	return (text.gsub(@, '@@([%u%d_]+)@@', \k ->
+		return tostring(vars[k] or ('@@' .. k .. '@@'))
+	))
+
+
+-- ── template file copying ─────────────────────────────────────────────────────
+
+var copy_tmpl_files = \file_list, src_dir, dest_dir, vars ->
+	for _, rel in ipairs(file_list)
+		var src  = join(src_dir, rel)
+		var dest = join(dest_dir, rel)
+		var data, err = read_file(src)
+		if data == nil
+			io.stderr.write(@, '  WARN: missing template ' .. src .. ': ' .. tostring(err) .. '\n')
+		else
+			data = render(data, vars)
+			var ok, werr = write_file(dest, data)
+			if ok
+				print('  create  ' .. rel)
+			else
+				io.stderr.write(@, '  ERROR writing ' .. dest .. ': ' .. tostring(werr) .. '\n')
+
+var load_manifest = ->
+	var path = join(TMPL_ROOT, 'manifest.lua')
+	var chunk, err = loadfile(path)
+	if not chunk
+		error('Cannot load template manifest at ' .. path .. ': ' .. tostring(err))
+	return chunk()
+
+
+-- ── commands ──────────────────────────────────────────────────────────────────
+
+var HELP = ```
+losty - Losty web framework CLI
+
+Usage:
+  luajit bin/losty.lt <path> [-lua] [-domain example.com]
+
+Options:
+  -lua              Scaffold in plain Lua (default: Luaty .lt files)
+  -domain <tld>     Domain for nginx server_name (e.g. example.com);
+                    prompted interactively if omitted
+
+Examples:
+  luajit bin/losty.lt apps/myapp -domain example.com
+  luajit bin/losty.lt /srv/www/myapp -lua
+
+Once scaffolded, cd into the app directory and use the generated scripts:
+  ./run.sh dev      # *nix: generate conf + start nginx in dev mode
+  ./run.sh prod     # *nix: generate conf + start nginx in prod mode
+  ./run.sh -s reload
+  run dev           # Windows
+```
+
+var cmd_new = \opts ->
+	var path = opts[1]
+	if not path
+		io.write(HELP)
+		os.exit(0)
+	if path.match(@, '[/\\]$')
+		io.stderr.write(@, 'error: path must not end with a separator\n')
+		os.exit(1)
+	var name = basename(path)
+	if not name.match(@, '^[%a][%w_%-]*$')
+		io.stderr.write(@, 'error: app name (last path segment) must start with a letter and contain only letters, digits, - or _\n')
+		os.exit(1)
+
+	var use_lua = opts.lua == true
+	var flavor  = use_lua and 'lua' or 'lt'
+	var is_abs  = path.match(@, '^[/\\]') or path.match(@, '^%a:[/\\]')
+	var dest    = is_abs and path or join('.', path)
+
+	var domain = opts.domain
+	if not domain
+		io.write('Domain name (e.g. example.com): ')
+		io.flush()
+		domain = io.read('*l') or 'example.com'
+
+	var vars = {
+		APP_NAME   = name
+		, DOMAIN     = domain
+		, LOSTY_PATH = LOSTY_ROOT.gsub(@, '\\', '/')
+		, YEAR       = tostring(os.date('%Y'))
+		, FLAVOR     = flavor
+	}
+
+	print('Scaffolding "' .. name .. '" (' .. (use_lua and 'Lua' or 'Luaty') .. ') ...')
+
+	var manifest = load_manifest()
+	copy_tmpl_files(manifest.common, join(TMPL_ROOT, 'server'), dest, vars)
+	copy_tmpl_files(manifest[flavor], join(TMPL_ROOT, flavor), dest, vars)
+
+	-- make run.sh executable on *nix
+	if not IS_WIN
+		os.execute('chmod +x "' .. join(dest, 'run.sh') .. '" 2>/dev/null')
+
+	var compile_note = use_lua and '' or ``
+  Luaty workflow:
+	 - After editing .lt files, compile before restart:
+		luajit /path/to/luaty/lt.lua -f app.lt app.lua
+		luajit /path/to/luaty/lt.lua -f views/home.lt views/home.lua
+		luajit /path/to/luaty/lt.lua -f views/auth.lt views/auth.lua
+		luajit /path/to/luaty/lt.lua -f views/protected.lt views/protected.lua
+``
+
+	print(string.format(``
+Done!
+
+Next steps:
+  1) Enter app directory
+	  cd %s
+
+  2) Start server
+	  ./run.sh dev        # *nix
+	  run dev             # Windows
+
+  3) Open in browser
+	  http://localhost:8080
+
+  4) Continue development
+	  - Edit routes and auth flow in app.%s
+	  - Edit page templates in views/*.%s
+%s
+  5) Production run
+	  ./run.sh prod       # *nix
+	  run prod            # Windows
+``
+		, path
+		, flavor
+		, flavor
+		, compile_note
+	))
+
+
+var opts = parse(arg or {})
+
+if not opts[1] or opts.h or opts.help
+	io.write(HELP)
+	os.exit(0)
+
+cmd_new(opts)
