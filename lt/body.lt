@@ -1,7 +1,6 @@
 var upload = require('resty.upload')
 var cjson = require('cjson.safe')
 var str = require('losty.str')
-var unpack = table.unpack or unpack
 
 var MaxBody = 10 * 1024 * 1024  -- 10MB soft cap
 

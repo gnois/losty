@@ -7,8 +7,26 @@ local strz = require("losty.str")
 local body = require("losty.body")
 local accept = require("losty.accept")
 local dispatch = require("losty.dispatch")
+local statuses = require("losty.status")
 local HTML = "text/html"
 local JSON = "application/json"
+local PROBLEM = "application/problem+json"
+local with_text_charset = function(mime)
+    if mime then
+        local txt = string.lower(mime)
+        if string.find(txt, "^text/") and not string.find(txt, ";%s*charset%s*=") then
+            return mime .. "; charset=utf-8"
+        end
+    end
+    return mime
+end
+local mime = function(kind)
+    local ctype = with_text_charset(kind)
+    return function(req, res)
+        res.headers["Content-Type"] = ctype
+        return req.next()
+    end
+end
 local reject = function(_, res)
     res.status = ngx.HTTP_NOT_ACCEPTABLE
 end
@@ -47,6 +65,26 @@ local dual = function(...)
         return json(req, res)
     end
 end
+local problem = function(req, res)
+    local out = req.next()
+    res.headers["Content-Type"] = PROBLEM
+    if type(out) == "table" then
+        if out.type == nil then
+            out.type = "about:blank"
+        end
+        local code = tonumber(out.status) or res.status
+        if code and code > 0 then
+            if out.status == nil then
+                out.status = code
+            end
+            if out.title == nil then
+                out.title = statuses.text(code)
+            end
+        end
+        out = cjson.encode(out)
+    end
+    return out
+end
 local form = function(req, res)
     local val, err = body.prepare(req)
     if val or "DELETE" == req.vars.request_method then
@@ -55,6 +93,17 @@ local form = function(req, res)
     res.status = ngx.HTTP_BAD_REQUEST
     return {fail = err or "no request body"}
 end
-return {form = form, reject = reject, html = html, json = json, dual = function(...)
-    return dual(html, ...), reject
-end}
+return {
+    form = form
+    , reject = reject
+    , mime = mime
+    , text = function(kind)
+        return mime(kind or "text/plain")
+    end
+    , html = html
+    , json = json
+    , problem = problem
+    , dual = function(...)
+        return dual(html, ...), reject
+    end
+}

@@ -1,6 +1,5 @@
 
 var SecPerDay = 24 * 60 * 60
-var unpack = table.unpack or unpack
 
 -- get epoch of ndays later, at specific point of time
 var day_at = \ndays, hh, mm, ss ->

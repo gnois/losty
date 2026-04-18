@@ -4,7 +4,6 @@ var statuses = require('losty.status')
 var req = require('losty.req')
 var res = require('losty.res')
 var cjson = require('cjson.safe')
-var unpack = table.unpack or unpack
 
 var METHODS = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'} -- 'TRACE', 'CONNECT'
 
@@ -44,6 +43,12 @@ var prepare_body = \r, body ->
 
 var is_exec_intent = \body ->
 	return type(body) == 'table' and body.__ngx_exec == true and body.uri
+
+
+var has_body = \body ->
+	if body == nil or (type(body) == 'string' and body == '')
+		return false
+	return true
 
 
 var run_defers = \q ->
@@ -116,7 +121,7 @@ var run = \error_page, check ->
 	body = prepare_body(r, body)
 
 	var code = r.status
-	if error_page == true and body == nil and code >= 400
+	if error_page == true and code >= 400 and not has_body(body)
 		-- https://github.com/openresty/lua-nginx-module/issues/875
 		-- doc: for error_page to work, you must not generate and send your own response via the ngx.status and ngx.say/ngx.print API
 		-- for 408, even error_page will not be sent
@@ -128,6 +133,9 @@ var run = \error_page, check ->
 	if check
 		if code == 0 -- ngx.status defaults to 0
 			error("Response status required")
+
+		if statuses.is_redirect(code) and r.headers['Location'] == nil
+			error("Location header required for redirect status")
 
 		-- status < 200 or >= 300 can have no content, so no content-type needed
 		if body ~= nil or (code >= 200 and code < 300)

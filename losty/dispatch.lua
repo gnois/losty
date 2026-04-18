@@ -4,7 +4,6 @@
 local dispatch = function(hn, req, res, ...)
     local i, n = 0, #hn
     local nargs, aargs = 0
-    local unpack = table.unpack or unpack
     local invoke = function(...)
         i = i + 1
         if i <= n then

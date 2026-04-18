@@ -7,7 +7,6 @@ local statuses = require("losty.status")
 local req = require("losty.req")
 local res = require("losty.res")
 local cjson = require("cjson.safe")
-local unpack = table.unpack or unpack
 local METHODS = {
     "GET"
     , "POST"
@@ -51,6 +50,12 @@ local prepare_body = function(r, body)
 end
 local is_exec_intent = function(body)
     return type(body) == "table" and body.__ngx_exec == true and body.uri
+end
+local has_body = function(body)
+    if body == nil or type(body) == "string" and body == "" then
+        return false
+    end
+    return true
 end
 local run_defers = function(q)
     local hooks = q._defer_hooks
@@ -124,13 +129,16 @@ local run = function(error_page, check)
     end
     body = prepare_body(r, body)
     local code = r.status
-    if error_page == true and body == nil and code >= 400 then
+    if error_page == true and code >= 400 and not has_body(body) then
         return ngx.exit(code)
     end
     local empty = statuses.is_empty(code)
     if check then
         if code == 0 then
             error("Response status required")
+        end
+        if statuses.is_redirect(code) and r.headers["Location"] == nil then
+            error("Location header required for redirect status")
         end
         if body ~= nil or code >= 200 and code < 300 then
             if not empty and r.headers["Content-Type"] == nil then
