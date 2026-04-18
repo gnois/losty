@@ -3,9 +3,7 @@
 var enc = require('losty.enc')
 var str = require('losty.str')
 
-var hmac = ngx.hmac_sha256 or ngx.hmac_sha1
-if not hmac
-	error("ngx.hmac_sha256 or ngx.hmac_sha1 required", 2)
+var hmac = ngx.hmac_sha1
 
 var normalize = \secrets ->
 	if not secrets

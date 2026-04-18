@@ -8,12 +8,9 @@ local str = require("losty.str")
 local Len = 16
 local encode64 = ngx.encode_base64
 local decode64 = ngx.decode_base64
-local hmac = ngx.hmac_sha256 or ngx.hmac_sha1
-if not hmac then
-    error("ngx.hmac_sha256 or ngx.hmac_sha1 required", 2)
-end
-local Cipher = aes.cipher(256, "cbc")
-local Hash = aes.hash.sha256
+local hmac = ngx.hmac_sha1
+local Cipher = aes.cipher(128, "cbc")
+local Key_len = 16
 local normalize_secrets = function(secret)
     if "table" == type(secret) then
         assert(#secret > 0, "session secret list cannot be empty")
@@ -22,7 +19,7 @@ local normalize_secrets = function(secret)
     return {secret}
 end
 local derive = function(secret, salt)
-    return {enc = hmac(secret, "enc|" .. salt), mac = hmac(secret, "mac|" .. salt)}
+    return {enc = string.sub(hmac(secret, "enc|" .. salt), 1, Key_len), mac = hmac(secret, "mac|" .. salt)}
 end
 return function(name, secret, key, samesite, force_secure)
     if not name then
@@ -38,18 +35,24 @@ return function(name, secret, key, samesite, force_secure)
     end
     local encrypt = function(value)
         local salt = rnd.bytes(Len)
-        if not salt then
-            return "", "failed to generate random bytes"
+        if salt then
+            local d, err = json.encode(value)
+            if d then
+                local a, data
+                local k = derive(secrets[1], salt)
+                a, err = aes:new(k.enc, nil, Cipher, {iv = salt})
+                if a then
+                    data, err = a:encrypt(d)
+                    if data then
+                        local mac_input = key and table.concat({salt, data, key}) or table.concat({salt, data})
+                        local sig = hmac(k.mac, mac_input)
+                        return encode64(data) .. "|" .. encode64(salt), encode64(sig)
+                    end
+                end
+            end
+            return nil, err
         end
-        local d, err = json.encode(value)
-        if d then
-            local k = derive(secrets[1], salt)
-            local a = aes:new(k.enc, salt, Cipher, Hash)
-            local data = a:encrypt(d)
-            local sig = hmac(k.mac, table.concat({salt, data, key}))
-            return encode64(data) .. "|" .. encode64(salt), encode64(sig)
-        end
-        return "", err
+        return nil, "failed to generate random bytes"
     end
     local decrypt = function(payload, sig)
         if payload and sig then
@@ -60,17 +63,24 @@ return function(name, secret, key, samesite, force_secure)
                 if data and salt and #salt == Len then
                     for _, sec in ipairs(secrets) do
                         local k = derive(sec, salt)
-                        if str.safe_equal(hmac(k.mac, table.concat({salt, data, key})), decode64(sig)) then
-                            local a = aes:new(k.enc, salt, Cipher, Hash)
-                            local d = a and a:decrypt(data)
-                            if d then
-                                return json.decode(d)
+                        local mac_input = key and table.concat({salt, data, key}) or table.concat({salt, data})
+                        if str.safe_equal(hmac(k.mac, mac_input), decode64(sig)) then
+                            local a, err = aes:new(k.enc, nil, Cipher, {iv = salt})
+                            if a then
+                                local d
+                                d, err = a:decrypt(data)
+                                if d then
+                                    return json.decode(d)
+                                end
                             end
+                            return nil, err
                         end
                     end
+                    return nil, "unmatched signature"
                 end
             end
         end
+        return nil, "invalid payload"
     end
     local name_ = name .. "_"
     local make = function(res)
@@ -84,8 +94,11 @@ return function(name, secret, key, samesite, force_secure)
         return signature
     end
     local encrypting = function(value)
-        local payload
+        local payload, err
         payload, signature = encrypt(value)
+        if not payload then
+            ngx.log(ngx.ERR, "sess encrypt failed: ", err)
+        end
         return payload
     end
     return {read = function(req)
