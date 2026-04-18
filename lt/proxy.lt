@@ -96,10 +96,10 @@ var trustfn = \trusted ->
 			if c
 				cidrs[#cidrs + 1] = c
 			else
-				exact[v] = true
+				exact[lower(v)] = true
 
 	return \ip ->
-		if exact[ip]
+		if ip and exact[lower(ip)]
 			return true
 		var n = ipv4_u32(ip)
 		if n
@@ -108,26 +108,84 @@ var trustfn = \trusted ->
 					return true
 		return false
 
+var is_ipv6_literal = \txt ->
+	if not txt or not string.find(txt, ':', 1, true)
+		return false
+	if string.find(txt, '[^0-9a-fA-F:%.]')
+		return false
+	return true
+
+
+var normalize_ip = \raw ->
+	if raw
+		var ip = to.trim(raw)
+		if ip == '' or ip == 'unknown' or string.sub(ip, 1, 1) == '_'
+			return nil
+		ip = string.gsub(ip, '^"(.*)"$', '%1')
+
+		if string.sub(ip, 1, 1) == '['
+			var host = string.match(ip, '^%[([^%]]+)%]')
+			if host and host ~= ''
+				if is_ipv6_literal(host)
+					return lower(host)
+			return nil
+
+		var a, b, c, d, p = string.match(ip, '^(%d+)%.(%d+)%.(%d+)%.(%d+):(%d+)$')
+		if a
+			ip = a .. '.' .. b .. '.' .. c .. '.' .. d
+
+		if ipv4_u32(ip)
+			return ip
+		if is_ipv6_literal(ip)
+			return lower(ip)
+
+
 var forwarded_chain = \header ->
 	var chain = {}
 	for _, e in ipairs(parse_forwarded(header))
-		var f = e['for']
+		var f = normalize_ip(e['for'])
 		if f
-			f = string.gsub(f, '^"(.*)"$', '%1')
-			if string.sub(f, 1, 1) == '['
-				f = string.match(f, '^%[([^%]]+)%]') or f
-			else
-				f = string.match(f, '^([^:]+)') or f
 			chain[#chain + 1] = f
 	return chain
 
 var xff_chain = \header ->
 	var chain = {}
 	for ip in string.gmatch(header or '', '[^,]+')
-		chain[#chain + 1] = to.trim(ip)
+		ip = normalize_ip(ip)
+		if ip
+			chain[#chain + 1] = ip
 	return chain
 
-var client_ip = \vars, headers, trusted ->
+var first = \csv ->
+	if csv
+		var x = string.match(csv, '^%s*([^,]+)')
+		return x and to.trim(x)
+
+var normalize_scheme = \raw ->
+	if raw
+		var s = lower(to.trim(raw))
+		if s == 'http' or s == 'https'
+			return s
+
+var normalize_host = \raw ->
+	if raw
+		var h = to.trim(string.gsub(raw, '^"(.*)"$', '%1'))
+		if h == '' or string.find(h, '[%s/%?#@]') or string.find(h, '[^%w%.%-%[%]:]')
+			return nil
+		return lower(h)
+
+var fallback_host = \vars, remote ->
+	var host = normalize_host(vars and vars.host)
+	if host
+		return host
+	var ip = normalize_ip(remote)
+	if ip
+		if string.find(ip, ':', 1, true)
+			return '[' .. ip .. ']'
+		return ip
+	return 'localhost'
+
+var client_ip = \vars, trusted ->
 	var remote = vars.remote_addr
 	var is_trusted = trustfn(trusted)
 	if not is_trusted or not is_trusted(remote)
@@ -142,13 +200,7 @@ var client_ip = \vars, headers, trusted ->
 		var ip = chain[i]
 		if ip and not is_trusted(ip)
 			return ip
-	return chain[1] or remote
-
-var first = \csv ->
-	if not csv
-		return nil
-	var x = string.match(csv, '^%s*([^,]+)')
-	return x and to.trim(x)
+	return remote
 
 var canonical_url = \q, trusted ->
 	var vars = q.vars
@@ -160,11 +212,17 @@ var canonical_url = \q, trusted ->
 	var fwd = trusted_remote and parse_forwarded(vars.http_forwarded) or {}
 	var f0 = fwd[1] or {}
 
-	var scheme = (trusted_remote and (f0['proto'] or first(vars.http_x_forwarded_proto))) or (q.secure() and 'https' or 'http')
-	scheme = lower(scheme or 'http')
+	var scheme = nil
+	if trusted_remote
+		scheme = normalize_scheme(f0['proto']) or normalize_scheme(first(vars.http_x_forwarded_proto))
+	if not scheme
+		scheme = q.secure() and 'https' or 'http'
 
-	var host = (trusted_remote and (f0['host'] or first(vars.http_x_forwarded_host))) or headers['Host'] or vars.host
-	host = host or ''
+	var host = nil
+	if trusted_remote
+		host = normalize_host(f0['host']) or normalize_host(first(vars.http_x_forwarded_host))
+	if not host
+		host = normalize_host(headers['Host']) or fallback_host(vars, remote)
 
 	var uri = vars.request_uri or vars.uri or '/'
 	if string.sub(uri, 1, 1) ~= '/'
