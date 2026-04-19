@@ -176,14 +176,19 @@ Next steps:
   3) Open in browser
 	  http://localhost:8080
 
-  4) Continue development
+  4) Reload/quit server (from another terminal)
+	  ./run.sh reload|quit       # *nix
+	  run reload|quit            # Windows
+
+  5) Continue development
 	  - Edit routes and auth flow in app.%s
 	  - Edit page templates in views/*.%s
+	  - Add certificates %s.cer and %s.key in conf/certs/ for HTTPS
 %s
-  5) Production run
+  6) Production run
 	  ./run.sh prod       # *nix
 	  run prod            # Windows
-]=], path, flavor, flavor, compile_note))
+]=], path, flavor, flavor, domain, domain, compile_note))
 end
 local opts = parse(arg or {})
 if not opts[1] or opts.h or opts.help then

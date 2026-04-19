@@ -4,13 +4,11 @@ local specs = {
     dev = {
         ENV    = 'dev'
         , SECRET = '@@APP_NAME@@-dev-secret-change-me'
-        , PORT   = 8080
     }
     , prod = {
         ENV    = 'prod'
         -- Change before deploying. Do NOT commit real secrets.
-        , SECRET = 'change-me'
-        , PORT   = 8080
+        , SECRET = '@@APP_NAME@@-prod-secret-change-me!'
     }
 }
 
