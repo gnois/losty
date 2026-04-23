@@ -24,6 +24,7 @@ var escape = {
 			return '"' .. str_gsub(val, '"', '""') .. '"'
 		error("cannot escape identifier " .. tostring(val))
 
+	-- strip mode char from val
 	, any = \val, mode ->
 		-- transform comments, strip semicolon
 		var s = str_gsub(val, "/%*", "/ *")

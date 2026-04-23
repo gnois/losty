@@ -1,28 +1,57 @@
--- determine forward or back slash
+-- determine forward or back slash, only works for Lua 5.2
 var Slash = package.config.sub(@, 1, 1)
+os.Win = Slash == '\\'
+os.Nix = not os.Win
+
+var localize = \path ->
+	if os.Win
+		return string.gsub(path, '/', Slash)
+	return string.gsub(path, '\\', Slash)
+
+
+var fail = \op, path, err ->
+	if path
+		return false, op .. ' ' .. path .. ' error: ' .. err
+	return false, op .. 'failed: ' .. err
 
 return {
 	Slash = Slash
+	, localize = localize
 
 	-- read whole file
 	, read = \path ->
-		var f = assert(io.open(path, "r"))
-		var text = f.read(@, "*all")
-		f.close(@)
-		return text
+		var lp = localize(path)
+		var f, err = io.open(lp, "r")
+		if f
+			var text
+			text, err = f.read(@, "*all")
+			io.close(f)
+			if text
+				return text
+			return fail('read', lp, err)
+		return fail('open', lp, err)
 
 
 	-- write whole file
 	, write = \path, text ->
-		var f = assert(io.open(path, "w"))
-		f.write(@, text)
-		f.close(@)
+		var lp = localize(path)
+		var f, err = io.open(lp, "w")
+		if f
+			var ok
+			ok, err = f.write(@, text)
+			io.close(f)
+			if ok
+				return ok
+			return fail('write', lp, err)
+		return fail('open', lp, err)
 
 
-	, localize = \path ->
-		if Slash == '\\'
-			return string.gsub(path, '/', Slash)
-		return string.gsub(path, '\\', Slash)
+	, exist = \path ->
+		var f = io.open(path, "r")
+		if f
+			io.close(f)
+			return true
+		return false
 
 
 	-- get the filename given a path like abc/def

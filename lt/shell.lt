@@ -1,0 +1,134 @@
+-- https://github.com/garious/flake/blob/master/luau/xpexec.lua
+var file = require('losty.file')
+var K = {}
+
+-- usage:
+-- var file = require(losty.file)
+-- var text, err = file.read(script_path() .. "abc.txt")
+-- ...
+K.script_path = ->
+	var path = string.sub(debug.getinfo(2, "S").source, 2)
+	return string.match(path, "(.*/)")
+
+
+--
+-- Note that shell syntax such as ">", "|", "&" or ";", should not be
+-- escaped using these quoting functions.
+-- Quote a command argument for UNIX-like environments.
+--
+K.quote = \argt ->
+	if argt and string.match(argt, "[!\"#%$&'%(%)%*;<>%?%[\\%]`{|}~%s]")
+		argt = "'" .. string.gsub(argt, "[']", "'\\''") .. "'"
+	return argt
+
+
+
+
+-- use os.execute
+var exec = \cmd ->
+--``
+	https://github.com/keplerproject/lua-compat-5.3/wiki/os.execute
+
+	os.execute in Lua 5.1 only one value returned
+	But in Lua 5.2 and 5.3 returns three values:
+	A boolean indicating sucessful/unsuccessful execution, a string ("exit" or "signal"), and the actual exit status or signal number
+	--> eg: true, exit, code
+
+	Openresty 1.11.2 had -DLUAJIT_ENABLE_LUA52COMPAT, https://openresty.org/en/changelog-1011002.html
+--``
+	var ok, _, code = os.execute(cmd)
+	-- success is always 0, see man page for command
+	if ok
+		return ok
+	return false, "exec " .. cmd .. " failed, exit code: " .. tostring(code)
+
+K.exec = exec
+
+
+
+
+-- use io.popen
+-- return value have line break at the end
+var run = \cmd ->
+	var t, err = io.popen(cmd)
+	if t
+		var data
+		data, err = t.read(@, '*all')
+		io.close(t)
+		if data
+			return data
+		return nil, "get output of " .. cmd .. " failed, error: " .. err
+	return nil, "exec " .. cmd .. " failed, error: " .. err
+
+K.run = run
+K.run_stderr = \cmd ->
+	return run(cmd .. " 2>&1")
+
+
+K.mkdir = \path ->
+	var lp = file.localize(path)
+	if os.Win
+		return exec("md " .. lp)
+	return exec("mkdir -p " .. lp)
+
+
+-- pushd and popd exists on linux, unix and DOS
+K.exist_dir = \path ->
+	-- remove trailing slash
+	var p = string.gsub(file.localize(path), file.Slash .. "*$", "")
+	-- if Path Not Found, dont show on stderr
+	var ok, err = exec("pushd " .. p .. " 2> nul")
+	if ok
+		exec("popd")
+	return ok, err
+
+
+--var f = list_files("\\path")
+--for line in f.lines(@)
+--   print(line)
+K.list_files = \path ->
+	var lp = file.localize(path)
+	if os.Win
+		return run('dir /b/a:-D "' .. lp .. '"')
+	return run('ls -p "' .. lp .. '" | grep -v /')
+
+
+-- On windows console, enable ansi color by editing registry
+-- https://superuser.com/questions/413073/windows-console-with-ansi-colors-handling/1300251#1300251
+
+var colors = {
+	reset = 0
+	, clear = 0
+	, bright = 1
+	, dim = 2
+	, underscore = 4
+	, blink = 5
+	, reverse = 7
+	, hidden = 8
+
+	-- foreground
+	, black = 30
+	, red = 31
+	, green = 32
+	, yellow = 33
+	, blue = 34
+	, magenta = 35
+	, cyan = 36
+	, white = 37
+
+	-- background
+	, onblack = 40
+	, onred = 41
+	, ongreen = 42
+	, onyellow = 43
+	, onblue = 44
+	, onmagenta = 45
+	, oncyan = 46
+	, onwhite = 47
+}
+
+for c, v in pairs(colors)
+	K[c] = "\27[" .. tostring(v) .. "m"
+
+
+return K
