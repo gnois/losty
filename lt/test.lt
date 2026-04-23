@@ -41,20 +41,20 @@ var setup = \db ->
 
 
 -- db can be nil if not using sql
-return \db, func ->
+return \db, func, continue_on_err ->  -- by default, stops testing on error or chk() failed
 
 	var q = setup(db)
 
 	-- shorthand to print value
 	var prn = \... -> print(s(...))
 
-	var tests = 0
+	var checks = 0
 	var fails = 0
 	var errors = 0
 	-- works like assert, but not terminating
 	-- fits nicely with functions returning nil, err
 	var chk = \ok, ... ->
-		tests = tests + 1
+		checks = checks + 1
 		if ok
 			print(c.bright .. c.green .. "ok" .. c.reset)
 		else
@@ -63,9 +63,14 @@ return \db, func ->
 
 	var groups = 0
 	var passes = 0
+	var params = {}  -- as scratch table for passing data among tests
+
 	var test = \desc, fn, rollback ->  -- rollback on error
+		if not continue_on_err and (errors > 0 or fails > 0)
+			return
+
 		groups = groups + 1
-		tests = 0
+		checks = 0
 		fails = 0
 		errors = 0
 
@@ -75,7 +80,9 @@ return \db, func ->
 		print("                                         " .. title .. c.reset)
 		if q and rollback
 			q.begin()
-		var _, err = xpcall(fn, \err -> return debug.traceback(err, 2))
+		var _, err = xpcall(fn, \err ->
+			return debug.traceback(err, 2)
+		, params)
 		if err
 			if q and rollback
 				q.rollback()
@@ -87,8 +94,8 @@ return \db, func ->
 
 		if fails == 0 and errors == 0
 			passes = passes + 1
-					
-		var msg = tests .. " checks: " .. tests - fails .. " passed"
+
+		var msg = checks .. " checks: " .. checks - fails .. " passed"
 		if fails > 0
 			msg = msg .. ", " .. fails .. " failed"
 		if errors > 0

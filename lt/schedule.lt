@@ -3,7 +3,7 @@ var SecPerDay = 24 * 60 * 60
 
 -- get epoch of ndays later, at specific point of time
 var day_at = \ndays, hh, mm, ss ->
-	var later = os.time() + ndays * SecPerDay -- in epoch
+	var later = ngx.time() + ndays * SecPerDay -- in epoch
 
 	var t = os.date('*t', later)
 	t.hour = hh

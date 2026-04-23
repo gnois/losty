@@ -5,9 +5,9 @@ var dump = \value ->
 		if not depth
 			depth = 0
 		if val == nil
-			return "nil\n"
+			return "nil"
 		if val == ngx.null
-			return "<ngx.null>\n"
+			return "<ngx.null>"
 
 		var t = type(val)
 		if t == "table"

@@ -9,10 +9,10 @@ local dump = function(value)
             depth = 0
         end
         if val == nil then
-            return "nil\n"
+            return "nil"
         end
         if val == ngx.null then
-            return "<ngx.null>\n"
+            return "<ngx.null>"
         end
         local t = type(val)
         if t == "table" then

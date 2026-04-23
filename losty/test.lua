@@ -35,16 +35,16 @@ local setup = function(db)
         return q
     end
 end
-return function(db, func)
+return function(db, func, continue_on_err)
     local q = setup(db)
     local prn = function(...)
         print(s(...))
     end
-    local tests = 0
+    local checks = 0
     local fails = 0
     local errors = 0
     local chk = function(ok, ...)
-        tests = tests + 1
+        checks = checks + 1
         if ok then
             print(c.bright .. c.green .. "ok" .. c.reset)
         else
@@ -54,9 +54,13 @@ return function(db, func)
     end
     local groups = 0
     local passes = 0
+    local params = {}
     local test = function(desc, fn, rollback)
+        if not continue_on_err and (errors > 0 or fails > 0) then
+            return 
+        end
         groups = groups + 1
-        tests = 0
+        checks = 0
         fails = 0
         errors = 0
         local title = c.bright .. c.cyan .. groups .. ". " .. c.yellow .. "[[ " .. (desc or "?? no name ??") .. " ]]"
@@ -69,7 +73,7 @@ return function(db, func)
         end
         local _, err = xpcall(fn, function(err)
             return debug.traceback(err, 2)
-        end)
+        end, params)
         if err then
             if q and rollback then
                 q.rollback()
@@ -84,7 +88,7 @@ return function(db, func)
         if fails == 0 and errors == 0 then
             passes = passes + 1
         end
-        local msg = tests .. " checks: " .. tests - fails .. " passed"
+        local msg = checks .. " checks: " .. checks - fails .. " passed"
         if fails > 0 then
             msg = msg .. ", " .. fails .. " failed"
         end

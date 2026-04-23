@@ -3,7 +3,7 @@
 --
 local SecPerDay = 24 * 60 * 60
 local day_at = function(ndays, hh, mm, ss)
-    local later = os.time() + ndays * SecPerDay
+    local later = ngx.time() + ndays * SecPerDay
     local t = os.date("*t", later)
     t.hour = hh
     t.min = mm or 0
