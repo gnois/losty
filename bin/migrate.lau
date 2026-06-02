@@ -23,15 +23,15 @@ psql -U fren -d fren -P pager
 ``
 
 
-package.path = package.path .. ";../?.lua"
-var to = require('losty.to')
-var str = require('losty.str')
-var tbl = require('losty.tbl')
-var c = require('losty.exec')
-var parse = require('cmdargs')
+package.path = package.path .. ";../../losty/?.lua"
+let to = require('losty.to')
+let str = require('losty.str')
+let tbl = require('losty.tbl')
+let c = require('losty.exec')
+let parse = require('bin.cmdargs')
 
 
-var migrate = \db, migrations ->
+let migrate = \db, migrations ->
 	assert('table' == type(migrations), "migration schemas must be an array of {sql, ...} where sql are strings")
 
 	var ok = true
@@ -55,7 +55,7 @@ var migrate = \db, migrations ->
 
 
 
-var usage = ->
+let usage = ->
 	io.stderr.write(@, ```
 Usage:
 	.../resty/bin/resty -I ../ migrate.lua [-e] m1 [m2.sql] [m3.lua]
@@ -139,7 +139,7 @@ return \db ->
 
 
 
-	
+
 --```
 var migrate = \db, migrations ->
 	assert('table' == type(migrations), "migration schemas must be a table of { [index] = [[sql]] } where index is sortable")
