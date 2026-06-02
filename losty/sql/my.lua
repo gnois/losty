@@ -1,5 +1,5 @@
 --
--- Generated from my.lt
+-- Generated from my.lau
 --
 local mysql = require("resty.mysql")
 local sql = require("losty.sql.base")

@@ -1,5 +1,5 @@
 --
--- Generated from status.lt
+-- Generated from status.lau
 --
 local status = {
     [100] = "Continue"

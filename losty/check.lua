@@ -1,5 +1,5 @@
 --
--- Generated from check.lt
+-- Generated from check.lau
 --
 local K = {}
 K.check = function(...)

@@ -1,13 +1,13 @@
 --
--- Generated from migrate.lt
+-- Generated from migrate.lau
 --
-package.path = package.path .. ";../?.lua"
+package.path = package.path .. ";../../losty/?.lua"
 local to = require("losty.to")
 local str = require("losty.str")
 local tbl = require("losty.tbl")
 local c = require("losty.exec")
-local parse = require("cmdargs")
-local migrate = function(db, migrations)
+local parse = require("bin.cmdargs")
+local migrate; migrate = function(db, migrations)
     assert("table" == type(migrations), "migration schemas must be an array of {sql, ...} where sql are strings")
     local ok = true
     local err
@@ -30,7 +30,7 @@ local migrate = function(db, migrations)
     end
     return true
 end
-local usage = function()
+local usage; usage = function()
     io.stderr:write([==[
 Usage:
 	.../resty/bin/resty -I ../ migrate.lua [-e] m1 [m2.sql] [m3.lua]

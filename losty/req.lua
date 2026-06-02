@@ -1,5 +1,5 @@
 --
--- Generated from req.lt
+-- Generated from req.lau
 --
 local ngx_var = ngx.var
 local bit = require("bit")

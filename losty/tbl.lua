@@ -1,5 +1,5 @@
 --
--- Generated from tbl.lt
+-- Generated from tbl.lau
 --
 local dump = function(value)
     local seen = {}

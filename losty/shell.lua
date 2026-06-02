@@ -1,5 +1,5 @@
 --
--- Generated from shell.lt
+-- Generated from shell.lau
 --
 local file = require("losty.file")
 local K = {}

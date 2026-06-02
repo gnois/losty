@@ -1,5 +1,5 @@
 --
--- Generated from protected.lt
+-- Generated from protected.lau
 --
 return function(data)
     local title = data.title or "@@APP_NAME@@ — Account"

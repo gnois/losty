@@ -1,5 +1,5 @@
 --
--- Generated from schedule.lt
+-- Generated from schedule.lau
 --
 local SecPerDay = 24 * 60 * 60
 local day_at = function(ndays, hh, mm, ss)

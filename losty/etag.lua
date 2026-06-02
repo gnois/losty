@@ -1,5 +1,5 @@
 --
--- Generated from etag.lt
+-- Generated from etag.lau
 --
 local sha1 = require("resty.sha1")
 local str = require("resty.string")

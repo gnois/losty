@@ -1,5 +1,5 @@
 --
--- Generated from view.lt
+-- Generated from view.lau
 --
 local tbl = require("losty.tbl")
 local set = require("losty.set")

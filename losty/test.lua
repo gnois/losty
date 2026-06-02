@@ -1,5 +1,5 @@
 --
--- Generated from test.lt
+-- Generated from test.lau
 --
 setmetatable(_G, {__newindex = function(t, n, v)
     rawset(t, n, v)

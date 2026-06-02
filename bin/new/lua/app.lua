@@ -1,5 +1,5 @@
 --
--- Generated from app.lt
+-- Generated from app.lau
 --
 local web = require("losty.web")
 local content = require("losty.content")

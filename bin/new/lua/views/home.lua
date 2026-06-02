@@ -1,5 +1,5 @@
 --
--- Generated from home.lt
+-- Generated from home.lau
 --
 return function(data)
     local title = data.title or "@@APP_NAME@@"

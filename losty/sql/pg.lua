@@ -1,5 +1,5 @@
 --
--- Generated from pg.lt
+-- Generated from pg.lau
 --
 local pgmoon = require("pgmoon")
 local parrays = require("pgmoon.arrays")

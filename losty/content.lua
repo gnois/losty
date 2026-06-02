@@ -1,5 +1,5 @@
 --
--- Generated from content.lt
+-- Generated from content.lau
 --
 local cjson = require("cjson")
 local etag = require("losty.etag")

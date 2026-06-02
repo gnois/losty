@@ -1,5 +1,5 @@
 --
--- Generated from proxy.lt
+-- Generated from proxy.lau
 --
 local bit = require("bit")
 local to = require("losty.to")

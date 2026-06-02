@@ -1,5 +1,5 @@
 --
--- Generated from str.lt
+-- Generated from str.lau
 --
 local bit = require("bit")
 local split = function(str, pattern, plain)

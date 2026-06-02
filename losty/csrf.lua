@@ -1,5 +1,5 @@
 --
--- Generated from csrf.lt
+-- Generated from csrf.lau
 --
 local rnd = require("resty.random")
 local wrap = require("losty.wrap")

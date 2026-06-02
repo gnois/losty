@@ -1,5 +1,5 @@
 --
--- Generated from slug.lt
+-- Generated from slug.lau
 --
 local set = require("losty.set")
 local to = require("losty.to")

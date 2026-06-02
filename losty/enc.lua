@@ -1,5 +1,5 @@
 --
--- Generated from enc.lt
+-- Generated from enc.lau
 --
 local json = require("cjson.safe")
 local enc_url_chars = {["+"] = "-", ["/"] = "_", ["="] = "~"}

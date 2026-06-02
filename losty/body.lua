@@ -1,5 +1,5 @@
 --
--- Generated from body.lt
+-- Generated from body.lau
 --
 local upload = require("resty.upload")
 local cjson = require("cjson.safe")

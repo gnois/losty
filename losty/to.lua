@@ -1,5 +1,5 @@
 --
--- Generated from to.lt
+-- Generated from to.lau
 --
 local K = {try = function(...)
     local funs = {...}

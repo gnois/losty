@@ -1,5 +1,5 @@
 --
--- Generated from web.lt
+-- Generated from web.lau
 --
 local router = require("losty.router")
 local dispatch = require("losty.dispatch")

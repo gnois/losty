@@ -1,5 +1,5 @@
 --
--- Generated from is.lt
+-- Generated from is.lau
 --
 local K = {}
 K.null = function(t)

@@ -1,5 +1,5 @@
 --
--- Generated from surl.lt
+-- Generated from surl.lau
 --
 local sigurl = require("losty.sigurl")
 return function(secret, length)

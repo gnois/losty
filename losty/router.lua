@@ -1,5 +1,5 @@
 --
--- Generated from router.lt
+-- Generated from router.lau
 --
 local str_sub = string.sub
 local str_find = string.find

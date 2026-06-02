@@ -1,5 +1,5 @@
 --
--- Generated from lock.lt
+-- Generated from lock.lau
 --
 return function(lock_name)
     local lock = ngx.shared[lock_name]

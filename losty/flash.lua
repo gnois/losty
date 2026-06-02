@@ -1,5 +1,5 @@
 --
--- Generated from flash.lt
+-- Generated from flash.lau
 --
 local json = require("cjson.safe")
 local tbl = require("losty.tbl")

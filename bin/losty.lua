@@ -1,5 +1,5 @@
 --
--- Generated from losty.lt
+-- Generated from losty.lau
 --
 local script_dir = function()
     local src = debug.getinfo(1, "S").source

@@ -1,5 +1,5 @@
 --
--- Generated from backoff.lt
+-- Generated from backoff.lau
 --
 local _M = {_VERSION = "0.01"}
 local mt = {__index = _M}

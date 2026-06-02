@@ -1,5 +1,5 @@
 --
--- Generated from replay.lt
+-- Generated from replay.lau
 --
 return function(dict_name, default_ttl)
     local dict = ngx.shared[dict_name]

@@ -1,5 +1,5 @@
 --
--- Generated from cors.lt
+-- Generated from cors.lau
 --
 local insert = table.insert
 local concat = table.concat

@@ -1,5 +1,5 @@
 --
--- Generated from sse.lt
+-- Generated from sse.lau
 --
 local semaphore = require("ngx.semaphore")
 local accept = require("losty.accept")

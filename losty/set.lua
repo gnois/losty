@@ -1,8 +1,7 @@
 --
 -- Generated from set.lt
 --
-local set
-set = function(items)
+local set; set = function(items)
     if items and "table" ~= type(items) then
         error("Argument to set() must be nil, an empty table or a table of {key1 = true, key2 = true, ...}")
     else

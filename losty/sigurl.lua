@@ -1,5 +1,5 @@
 --
--- Generated from sigurl.lt
+-- Generated from sigurl.lau
 --
 local enc = require("losty.enc")
 local str = require("losty.str")

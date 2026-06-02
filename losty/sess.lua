@@ -1,5 +1,5 @@
 --
--- Generated from sess.lt
+-- Generated from sess.lau
 --
 local json = require("cjson.safe")
 local aes = require("resty.aes")

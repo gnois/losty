@@ -1,5 +1,5 @@
 --
--- Generated from wrap.lt
+-- Generated from wrap.lau
 --
 local enc = require("losty.enc")
 local sigurl = require("losty.sigurl")

@@ -1,5 +1,5 @@
 --
--- Generated from auth.lt
+-- Generated from auth.lau
 --
 local signup_tmpl = [=[<!DOCTYPE html>
 <html lang="en">

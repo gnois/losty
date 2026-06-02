@@ -1,5 +1,5 @@
 --
--- Generated from res.lt
+-- Generated from res.lau
 --
 local cjson = require("cjson")
 local ngx_header = ngx.header

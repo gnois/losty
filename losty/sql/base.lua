@@ -1,5 +1,5 @@
 --
--- Generated from base.lt
+-- Generated from base.lau
 --
 local json = require("cjson")
 local map = {insert = "INSERT INTO ", update = "UPDATE ", delete = "DELETE FROM "}

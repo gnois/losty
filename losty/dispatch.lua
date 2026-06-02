@@ -1,5 +1,5 @@
 --
--- Generated from dispatch.lt
+-- Generated from dispatch.lau
 --
 local dispatch = function(hn, req, res, ...)
     local i, n = 0, #hn

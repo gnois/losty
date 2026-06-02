@@ -1,5 +1,5 @@
 --
--- Generated from cmdargs.lt
+-- Generated from cmdargs.lau
 --
 local insert = function(tbl, key, val)
     if tbl[key] then
@@ -62,5 +62,4 @@ local test = function()
     as(o["-long"] == "switch")
     as(o["-java=style"] == true)
 end
-test()
 return parse

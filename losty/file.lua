@@ -1,5 +1,5 @@
 --
--- Generated from file.lt
+-- Generated from file.lau
 --
 local Slash = package.config:sub(1, 1)
 os.Win = Slash == "\\"

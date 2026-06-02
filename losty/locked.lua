@@ -1,5 +1,5 @@
 --
--- Generated from locked.lt
+-- Generated from locked.lau
 --
 local locker = require("resty.lock")
 local f = function(lock_name, key, expiry, read, write, ...)

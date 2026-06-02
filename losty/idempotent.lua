@@ -1,5 +1,5 @@
 --
--- Generated from idempotent.lt
+-- Generated from idempotent.lau
 --
 local locker = require("losty.lock")
 local json = require("cjson.safe")

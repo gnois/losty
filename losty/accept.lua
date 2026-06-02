@@ -1,5 +1,5 @@
 --
--- Generated from accept.lt
+-- Generated from accept.lau
 --
 local bit = require("bit")
 local to = require("losty.to")

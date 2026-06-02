@@ -1,5 +1,5 @@
 --
--- Generated from security.lt
+-- Generated from security.lau
 --
 local default = {
     x_content_type_options = "nosniff"

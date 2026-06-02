@@ -1,5 +1,5 @@
 --
--- Generated from crypt.lt
+-- Generated from crypt.lau
 --
 local aes = require("resty.aes")
 local rnd = require("resty.random")
