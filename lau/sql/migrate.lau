@@ -22,13 +22,11 @@ psql -U fren -d fren -P pager
 
 ``
 
-
-package.path = package.path .. ";../../losty/?.lua"
 let to = require('losty.to')
 let str = require('losty.str')
 let tbl = require('losty.tbl')
-let c = require('losty.exec')
-let parse = require('bin.cmdargs')
+let c = require('losty.shell')
+let parse = require('losty.cmdargs')
 
 
 let migrate = \db, migrations ->
@@ -74,13 +72,12 @@ Usage:
 
 return \db ->
 	var opts = parse(arg)
-	tbl.show(opts)
 	if #opts > 0
 		for f = 1, #opts
 			var scripts  -- array of sql scripts
 			var n = 1
 			var fname = opts[f]
-
+			print('\n', fname)
 			if str.ends(fname, '.sql')
 				var file, err = io.open(fname, "r")
 				if not file

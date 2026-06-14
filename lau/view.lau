@@ -236,7 +236,7 @@ var view = \func, args ->
 
 
 
----```
+--```
 var test = ->
 	var v = \fn, a -> return view(fn, a, true)
 	var as = assert

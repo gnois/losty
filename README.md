@@ -1,6 +1,6 @@
 ![](./assets/logo.png)
 
-## Losty = [Luaty](https://github.com/gnois/luaty) + [OpenResty](http://openresty.org)
+## Losty = [Lauzy](https://github.com/gnois/lauzy) + [OpenResty](http://openresty.org)
 
 Losty is a functional style web framework for OpenResty with minimal dependencies.
 
@@ -25,7 +25,7 @@ It has
 - simple scheduled job
 
 
-Losty is written in [Luaty](https://github.com/gnois/luaty) and compiled to Lua.
+Losty is written in [Lauzy](https://github.com/gnois/lauzy) and compiled to Lua.
 
 Bug reports and contributions are very much welcomed and appreciated.
 

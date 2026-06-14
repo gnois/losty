@@ -1,12 +1,11 @@
 --
 -- Generated from migrate.lau
 --
-package.path = package.path .. ";../../losty/?.lua"
 local to = require("losty.to")
 local str = require("losty.str")
 local tbl = require("losty.tbl")
-local c = require("losty.exec")
-local parse = require("bin.cmdargs")
+local c = require("losty.shell")
+local parse = require("losty.cmdargs")
 local migrate; migrate = function(db, migrations)
     assert("table" == type(migrations), "migration schemas must be an array of {sql, ...} where sql are strings")
     local ok = true
@@ -48,12 +47,12 @@ Usage:
 end
 return function(db)
     local opts = parse(arg)
-    tbl.show(opts)
     if #opts > 0 then
         for f = 1, #opts do
             local scripts
             local n = 1
             local fname = opts[f]
+            print("\n", fname)
             if str.ends(fname, ".sql") then
                 local file, err = io.open(fname, "r")
                 if not file then

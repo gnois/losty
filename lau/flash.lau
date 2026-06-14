@@ -1,4 +1,4 @@
--- flash is readable by js, so cannot use enc.lt
+-- flash is readable by js, so cannot use enc.lua
 -- vs session which is encrypted and only readable by server
 var json = require('cjson.safe')
 var tbl = require('losty.tbl')
@@ -49,7 +49,7 @@ var transfer = \req, res, old, new ->
 
 ------
 -- Each route should call this ONLY ONCE among all handlers, and pass it to following handlers if needed
---   
+--
 return \req, res ->
 
 	var old = req.cookies[Flash]
@@ -70,13 +70,13 @@ return \req, res ->
 				return new[key]
 
 		, delete = \key ->
-			if key 
+			if key
 				old, new = transfer(req, res, old, new)
 				new[key] = nil
 			else
 				make(res)(-100)
 	}
-	
+
 	--`` this is messy. remove
 	for _, meth in ipairs({'pass', 'fail', 'warn', 'info'})
 		K[meth] = \str ->
@@ -85,6 +85,6 @@ return \req, res ->
 				new[Msg] = {}
 			push(new[Msg], meth, str)
 	--``
-	
+
 	return K
 

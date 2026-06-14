@@ -4,7 +4,7 @@
 setmetatable(_G, {__newindex = function(t, n, v)
     rawset(t, n, v)
 end})
-local c = require("losty.exec")
+local c = require("losty.shell")
 local tbl = require("losty.tbl")
 local s = function(...)
     local args = {...}

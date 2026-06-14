@@ -2,7 +2,7 @@
 -- _G write guard:12: writing a global lua variable ('lpeg') which may lead to race conditions between concurrent requests, so prefer the use of 'local' variables
 setmetatable(_G, {__newindex = \t, n, v -> rawset(t, n, v)})
 
-var c = require('losty.exec')
+var c = require('losty.shell')
 var tbl = require('losty.tbl')
 
 -- dump value into string, used by chk()

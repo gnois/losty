@@ -32,7 +32,7 @@ var escape = {
 		s = str_gsub(s, "%-%-", "- -")
 		s = str_gsub(s, ";", "")
 		return str_gsub(s, mode, "")
-		
+
 }
 
 
@@ -103,7 +103,7 @@ return \database, user, password, host, port, pool, dbg ->
 	-- \do ?
 	-- \do ??
 	-- \do ???
-	-- why not named parameter :var: inside query ? coz Luaty can no longer check use of undeclared variable
+	-- why not named parameter :var: inside query ? coz lauzy can no longer check use of undeclared variable
 	-- Only nil, boolean, number, string and table acceptable as arguments for placeholder
 	var interpolate = \query, ... ->
 		var args = {...}

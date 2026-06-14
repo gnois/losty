@@ -1,5 +1,5 @@
 --
--- Generated from set.lt
+-- Generated from set.lau
 --
 local set; set = function(items)
     if items and "table" ~= type(items) then
