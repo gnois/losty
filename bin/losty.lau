@@ -2,10 +2,10 @@
 losty CLI - scaffold a new Losty web app.
 
 Usage:
-  luajit bin/losty.lt <path> [-lua] [-domain example.com]
+  luajit bin/losty.lua <path> [-lua] [-domain example.com]
 
 Options:
-  -lua              Scaffold in plain Lua  (default: Luaty .lt)
+  -lua              Scaffold in plain Lua  (default: lauzy .lau)
   -domain <tld>     Domain for nginx server_name (prompted if omitted)
 
 Once scaffolded, use the generated run.sh / run.bat inside the app directory
@@ -29,9 +29,9 @@ var script_dir = ->
 	return src.match(@, '(.*)/[^/]+$') or '/'
 
 var _bin = script_dir()
-package.path = _bin .. '/?.lua;' .. package.path
+package.path = _bin .. '/../?.lua;' .. package.path
 
-var parse = require('cmdargs')
+var parse = require('losty.cmdargs')
 
 var IS_WIN = package.config.sub(@, 1, 1) == '\\'
 var SEP    = IS_WIN and '\\' or '/'
@@ -127,16 +127,16 @@ var HELP = ```
 losty - Losty web framework CLI
 
 Usage:
-  luajit bin/losty.lt <path> [-lua] [-domain example.com]
+  luajit bin/losty.lua <path> [-lua] [-domain example.com]
 
 Options:
-  -lua              Scaffold in plain Lua (default: Luaty .lt files)
+  -lua              Scaffold in plain Lua (default: lauzy .lau files)
   -domain <tld>     Domain for nginx server_name (e.g. example.com);
                     prompted interactively if omitted
 
 Examples:
-  luajit bin/losty.lt apps/myapp -domain example.com
-  luajit bin/losty.lt /srv/www/myapp -lua
+  luajit bin/losty.lua apps/myapp -domain example.com
+  luajit bin/losty.lua /srv/www/myapp -lua
 
 Once scaffolded, cd into the app directory and use the generated scripts:
   ./run.sh dev      # *nix: generate conf + start nginx in dev mode
@@ -159,7 +159,7 @@ var cmd_new = \opts ->
 		os.exit(1)
 
 	var use_lua = opts.lua == true
-	var flavor  = use_lua and 'lua' or 'lt'
+	var flavor  = use_lua and 'lua' or 'lau'
 	var is_abs  = path.match(@, '^[/\\]') or path.match(@, '^%a:[/\\]')
 	var dest    = is_abs and path or join('.', path)
 
@@ -177,7 +177,7 @@ var cmd_new = \opts ->
 		, FLAVOR     = flavor
 	}
 
-	print('Scaffolding "' .. name .. '" (' .. (use_lua and 'Lua' or 'Luaty') .. ') ...')
+	print('Scaffolding "' .. name .. '" (' .. (use_lua and 'Lua' or 'lauzy') .. ') ...')
 
 	var manifest = load_manifest()
 	copy_tmpl_files(manifest.common, join(TMPL_ROOT, 'server'), dest, vars)
@@ -188,12 +188,12 @@ var cmd_new = \opts ->
 		os.execute('chmod +x "' .. join(dest, 'run.sh') .. '" 2>/dev/null')
 
 	var compile_note = use_lua and '' or ``
-  Luaty workflow:
-	 - After editing .lt files, compile before restart:
-		luajit /path/to/luaty/lt.lua -f app.lt app.lua
-		luajit /path/to/luaty/lt.lua -f views/home.lt views/home.lua
-		luajit /path/to/luaty/lt.lua -f views/auth.lt views/auth.lua
-		luajit /path/to/luaty/lt.lua -f views/protected.lt views/protected.lua
+  lauzy workflow:
+	 - After editing .lau files, compile before restart:
+		luajit /path/to/lauzy/lau.lua -f app.lau app.lua
+		luajit /path/to/lauzy/lau.lua -f views/home.lau views/home.lua
+		luajit /path/to/lauzy/lau.lua -f views/auth.lau views/auth.lua
+		luajit /path/to/lauzy/lau.lua -f views/protected.lau views/protected.lua
 ``
 
 	print(string.format(``

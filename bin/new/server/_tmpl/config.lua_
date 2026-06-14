@@ -2,13 +2,13 @@
 
 local specs = {
     dev = {
-        ENV    = 'dev'
-        , SECRET = '@@APP_NAME@@-dev-secret-change-me'
+        env    = 'dev'
+        , secret = '@@APP_NAME@@-dev-secret-change-me'
     }
     , prod = {
-        ENV    = 'prod'
+        env    = 'prod'
         -- Change before deploying. Do NOT commit real secrets.
-        , SECRET = '@@APP_NAME@@-prod-secret-change-me!'
+        , secret = '@@APP_NAME@@-prod-secret-change-me!'
     }
 }
 

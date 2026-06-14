@@ -17,8 +17,8 @@ local script_dir = function()
     return src:match("(.*)/[^/]+$") or "/"
 end
 local _bin = script_dir()
-package.path = _bin .. "/?.lua;" .. package.path
-local parse = require("cmdargs")
+package.path = _bin .. "/../?.lua;" .. package.path
+local parse = require("losty.cmdargs")
 local IS_WIN = package.config:sub(1, 1) == "\\"
 local SEP = IS_WIN and "\\" or "/"
 local join = function(...)
@@ -104,16 +104,16 @@ local HELP = [==[
 losty - Losty web framework CLI
 
 Usage:
-  luajit bin/losty.lt <path> [-lua] [-domain example.com]
+  luajit bin/losty.lua <path> [-lua] [-domain example.com]
 
 Options:
-  -lua              Scaffold in plain Lua (default: Luaty .lt files)
+  -lua              Scaffold in plain Lua (default: lauzy .lau files)
   -domain <tld>     Domain for nginx server_name (e.g. example.com);
                     prompted interactively if omitted
 
 Examples:
-  luajit bin/losty.lt apps/myapp -domain example.com
-  luajit bin/losty.lt /srv/www/myapp -lua
+  luajit bin/losty.lua apps/myapp -domain example.com
+  luajit bin/losty.lua /srv/www/myapp -lua
 
 Once scaffolded, cd into the app directory and use the generated scripts:
   ./run.sh dev      # *nix: generate conf + start nginx in dev mode
@@ -137,7 +137,7 @@ local cmd_new = function(opts)
         os.exit(1)
     end
     local use_lua = opts.lua == true
-    local flavor = use_lua and "lua" or "lt"
+    local flavor = use_lua and "lua" or "lau"
     local is_abs = path:match("^[/\\]") or path:match("^%a:[/\\]")
     local dest = is_abs and path or join(".", path)
     local domain = opts.domain
@@ -147,7 +147,7 @@ local cmd_new = function(opts)
         domain = io.read("*l") or "example.com"
     end
     local vars = {APP_NAME = name, DOMAIN = domain, LOSTY_PATH = LOSTY_ROOT:gsub("\\", "/"), YEAR = tostring(os.date("%Y")), FLAVOR = flavor}
-    print("Scaffolding \"" .. name .. "\" (" .. (use_lua and "Lua" or "Luaty") .. ") ...")
+    print("Scaffolding \"" .. name .. "\" (" .. (use_lua and "Lua" or "lauzy") .. ") ...")
     local manifest = load_manifest()
     copy_tmpl_files(manifest.common, join(TMPL_ROOT, "server"), dest, vars)
     copy_tmpl_files(manifest[flavor], join(TMPL_ROOT, flavor), dest, vars)
@@ -155,12 +155,12 @@ local cmd_new = function(opts)
         os.execute("chmod +x \"" .. join(dest, "run.sh") .. "\" 2>/dev/null")
     end
     local compile_note = use_lua and "" or [=[
-  Luaty workflow:
-	 - After editing .lt files, compile before restart:
-		luajit /path/to/luaty/lt.lua -f app.lt app.lua
-		luajit /path/to/luaty/lt.lua -f views/home.lt views/home.lua
-		luajit /path/to/luaty/lt.lua -f views/auth.lt views/auth.lua
-		luajit /path/to/luaty/lt.lua -f views/protected.lt views/protected.lua
+  lauzy workflow:
+	 - After editing .lau files, compile before restart:
+		luajit /path/to/lauzy/lau.lua -f app.lau app.lua
+		luajit /path/to/lauzy/lau.lua -f views/home.lau views/home.lua
+		luajit /path/to/lauzy/lau.lua -f views/auth.lau views/auth.lua
+		luajit /path/to/lauzy/lau.lua -f views/protected.lau views/protected.lua
 ]=]
     print(string.format([=[
 Done!

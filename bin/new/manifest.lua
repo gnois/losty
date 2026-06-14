@@ -2,7 +2,7 @@
 -- Each entry is a path relative to its flavour directory.
 -- Add or remove files here; the CLI copies them verbatim (with @@VAR@@ substitution).
 return {
-    -- Files shared by both Lua and Luaty scaffolds.
+    -- Files shared by both Lua and lauzy scaffolds.
     common = {
         'gen.lua'               -- generate _tmpl/* files (dev|prod)
         , '_tmpl/nginx.conf_'   -- nginx.conf template; edit this, re-run gen.lua to apply
@@ -17,12 +17,12 @@ return {
         , 'static/style.css'    -- shared stylesheet, served under /public/<digits>/style.css
     }
 
-    -- Luaty (.lt) flavour  →  default
-    , lt = {
-        'app.lt'
-        , 'views/home.lt'
-		  , 'views/auth.lt'
-		  , 'views/protected.lt'
+    -- lauzy flavour is default
+    , lau = {
+        'app.lau'
+        , 'views/home.lau'
+		  , 'views/auth.lau'
+		  , 'views/protected.lau'
     }
 
     -- Plain Lua flavour  (-lua switch)

@@ -13,7 +13,7 @@ var flash   = require('losty.flash')
 var to      = require('losty.to')
 var cfg     = require('config')
 
--- config.lt returns the dev or prod spec table directly,
+-- config.lua returns the dev or prod spec table directly,
 -- chosen by gen.lua when run.sh dev|prod was last called.
 var is_dev = cfg.ENV == 'dev'
 
