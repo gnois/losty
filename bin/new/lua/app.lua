@@ -8,9 +8,9 @@ local sess = require("losty.sess")
 local flash = require("losty.flash")
 local to = require("losty.to")
 local cfg = require("config")
-local is_dev = cfg.ENV == "dev"
-local session = sess("@@APP_NAME@@_sid", cfg.SECRET, nil, "lax", not is_dev)
-local guard = csrf(cfg.SECRET, false, true, not is_dev)
+local is_dev = cfg.env == "dev"
+local session = sess("@@APP_NAME@@_sid", cfg.secret, nil, "lax", not is_dev)
+local guard = csrf(cfg.secret, false, true, not is_dev)
 local home = require("views.home")
 local auth = require("views.auth")
 local protected = require("views.protected")
@@ -41,7 +41,7 @@ local user_key = function(username)
 end
 local hash_bin = ngx.sha1_bin
 local hash_password = function(username, password)
-    local raw = cfg.SECRET .. "|" .. username .. "|" .. password
+    local raw = cfg.secret .. "|" .. username .. "|" .. password
     return ngx.encode_base64(hash_bin(raw))
 end
 local user_exists = function(username)

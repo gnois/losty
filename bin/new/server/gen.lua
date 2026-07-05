@@ -11,8 +11,7 @@ assert(env == 'dev' or env == 'prod', 'Usage: luajit gen.lua dev|prod')
 
 local settings = {
    dev = {
-		env = 'dev'
-      , daemon     = 'off'
+      daemon     = 'off'
       , errorlevel = 'debug'
       , code_cache = 'off'
       , listen     = '8080'
@@ -20,8 +19,7 @@ local settings = {
 		, includes = ''
    }
    , prod = {
-		env = 'prod'
-      , daemon     = 'on'
+      daemon     = 'on'
       , errorlevel = 'warn'
       , code_cache = 'on'
       , listen = '443 ssl default_server reuseport' -- same ip:port cannot serve http1.1/http2 simultaneously

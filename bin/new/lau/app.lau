@@ -15,20 +15,20 @@ var cfg     = require('config')
 
 -- config.lua returns the dev or prod spec table directly,
 -- chosen by gen.lua when run.sh dev|prod was last called.
-var is_dev = cfg.ENV == 'dev'
+var is_dev = cfg.env == 'dev'
 
 -- Session cookie: (name, secret, binding_key, samesite, force_secure)
 -- force_secure=false in dev so plain HTTP works; set true in prod (HTTPS only).
 var session = sess(
 	'@@APP_NAME@@_sid'
-	, cfg.SECRET
+	, cfg.secret
 	, nil
 	, 'lax'
 	, not is_dev
 )
 
 -- CSRF: (secret, strict_origin_check, samesite, force_secure)
-var guard = csrf(cfg.SECRET, false, true, not is_dev)
+var guard = csrf(cfg.secret, false, true, not is_dev)
 
 var home = require('views.home')           -- public page
 var auth = require('views.auth')           -- sign in/up pages
@@ -65,7 +65,7 @@ var user_key = \username ->
 var hash_bin = ngx.sha1_bin
 
 var hash_password = \username, password ->
-	var raw = cfg.SECRET .. '|' .. username .. '|' .. password
+	var raw = cfg.secret .. '|' .. username .. '|' .. password
 	return ngx.encode_base64(hash_bin(raw))
 
 

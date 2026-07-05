@@ -16,8 +16,7 @@ CP := copy
 
 # Change path as needed
 LUAJIT := $/bin$/resty$/luajit.exe
-LAUFLAGS := $/git$/lauzy$/lau.lua -f -t -d ngx
-PACKAGE := "package.path=package.path .. '/git/lauzy/?.lua'"
+LAUFLAGS := $/git$/lauzy$/bin$/lau.zy -f -t -d ngx
 
 
 # https://unix.stackexchange.com/questions/140912/no-target-error-using-make
@@ -43,16 +42,16 @@ all: $(LUA) $(TXT) $(LUA_NEW)
 
 # Cannot use $< in recipe bcoz windows require backslash
 $(DST)/%.lua: $(SRC)/%.lau
-	$(LUAJIT) -e $(PACKAGE) $(LAUFLAGS) $(SRC)$/$*.lau $(DST)$/$*.lua
+	$(LUAJIT) $(LAUFLAGS) $(SRC)$/$*.lau $(DST)$/$*.lua
 
 $(DST)/stops_en.txt: $(SRC)/stops_en.txt
 	$(CP) $(SRC)$/stops_en.txt $(DST)$/
 
 $(BIN)/%.lua: $(BIN)/%.lau
-	$(LUAJIT) -e $(PACKAGE) $(LAUFLAGS) $(BIN)$/$*.lau $(BIN)$/$*.lua
+	$(LUAJIT) $(LAUFLAGS) $(BIN)$/$*.lau $(BIN)$/$*.lua
 
 $(BIN_CLI_LUA)/%.lua: $(BIN_CLI_LAU)/%.lau
-	$(LUAJIT) -e $(PACKAGE) $(LAUFLAGS) $(BIN_CLI_LAU)$/$*.lau $(BIN_CLI_LUA)$/$*.lua
+	$(LUAJIT) $(LAUFLAGS) $(BIN_CLI_LAU)$/$*.lau $(BIN_CLI_LUA)$/$*.lua
 
 
 clean:

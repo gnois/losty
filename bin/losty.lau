@@ -190,10 +190,10 @@ var cmd_new = \opts ->
 	var compile_note = use_lua and '' or ``
   lauzy workflow:
 	 - After editing .lau files, compile before restart:
-		luajit /path/to/lauzy/lau.lua -f app.lau app.lua
-		luajit /path/to/lauzy/lau.lua -f views/home.lau views/home.lua
-		luajit /path/to/lauzy/lau.lua -f views/auth.lau views/auth.lua
-		luajit /path/to/lauzy/lau.lua -f views/protected.lau views/protected.lua
+		luajit /path/to/lau.zy -f -d ngx app.lau app.lua
+		luajit /path/to/lau.zy -f -d ngx views/home.lau views/home.lua
+		luajit /path/to/lau.zy -f -d ngx views/auth.lau views/auth.lua
+		luajit /path/to/lau.zy -f -d ngx views/protected.lau views/protected.lua
 ``
 
 	print(string.format(``

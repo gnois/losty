@@ -7,7 +7,7 @@ return {
         'gen.lua'               -- generate _tmpl/* files (dev|prod)
         , '_tmpl/nginx.conf_'   -- nginx.conf template; edit this, re-run gen.lua to apply
 		  , '_tmpl/www.conf_'     -- nginx server block template; edit this, re-run gen.lua to apply
-		  , '_tmpl/config.lua_'   -- user comfig template; edit this, re-run gen.lua to apply
+		  , '_tmpl/config.lua_'   -- user config template; edit this, re-run gen.lua to apply
         , 'run.sh'              -- *nix: generate + start/stop/reload nginx
         , 'run.bat'             -- Windows equivalent
 		  , 'conf/mime.conf'
