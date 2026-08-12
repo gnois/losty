@@ -48,6 +48,9 @@ _M.uncommit = function(self, key)
             count = count - 1
         end
         local ttl = dict:ttl(key)
+        if not ttl or ttl <= 0 then
+            return nil, "expired"
+        end
         dict:set(key, last, ttl, count)
         return true
     end

@@ -72,8 +72,10 @@ _M.uncommit = \@, key ->
 	if last and count
 		if count > 1
 			count = count - 1
-		-- retain ttl
+		-- key may have expired between get() and ttl()
 		var ttl = dict.ttl(@, key)
+		if not ttl or ttl <= 0
+			return nil, "expired"
 		dict.set(@, key, last, ttl, count)
 		return true
 	return nil, "not found"
