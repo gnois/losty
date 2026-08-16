@@ -1,15 +1,17 @@
--- env is edited by gen.lua (called from run.sh/run.bat dev|prod)
+-- {env} is replaced by gen.lua (called from run.sh/run.bat dev|prod)
 
+assert('dev' == '{env}' or 'prod' == '{env}', "env must be 'dev' or 'prod'")
 local specs = {
     dev = {
-        env    = 'dev'
-        , secret = '@@APP_NAME@@-dev-secret-change-me'
+        secret = '@@APP_NAME@@-dev-secret-change-me'
     }
     , prod = {
-        env    = 'prod'
         -- Change before deploying. Do NOT commit real secrets.
-        , secret = '@@APP_NAME@@-prod-secret-change-me!'
+        secret = '@@APP_NAME@@-prod-secret-change-me!'
     }
 }
 
-return specs['{env}'] or specs.dev
+local spec = specs['{env}'] or specs.dev
+spec.env = '{env}'
+
+return spec

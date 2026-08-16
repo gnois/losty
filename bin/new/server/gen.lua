@@ -34,6 +34,7 @@ local settings = {
 }
 
 local cfg = settings[env]
+cfg.env = env
 cfg.domain = '@@DOMAIN@@'  -- baked in by `losty`
 
 
