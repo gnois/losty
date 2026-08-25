@@ -13,8 +13,10 @@ return {
 		  , 'conf/mime.conf'
 		  , 'conf/ssl.conf'
 		  , 'conf/certs/.gitkeep' -- nginx certs placeholder; add your .cer/.key files here
-        , 'logs/.gitkeep'       -- nginx log and pid files go here
         , 'static/style.css'    -- shared stylesheet, served under /public/<digits>/style.css
+        , 'logs/.gitkeep'       -- nginx log and pid files go here
+        , 'lualib/resty/.gitkeep'  -- resty libraries go here
+        , 'lualib/losty/.gitkeep'  -- losty go here
     }
 
     -- lauzy flavour is default

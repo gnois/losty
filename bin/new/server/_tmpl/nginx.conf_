@@ -8,7 +8,7 @@ worker_processes auto;
 worker_rlimit_nofile 13635;  # worker_processes * worker_connections,  default to max in freebsd (13635)
 
 pid logs/nginx.pid;
-error_log logs/error.log {errorlevel}; #stderr notice;
+error_log {error_log};
 
 events {
    worker_connections 4096;  # cannot exceed open file resource limit: 13635, and needed for ngx.timer
@@ -74,6 +74,11 @@ http {
 
    # Register routes once per worker (not once per request).
    init_by_lua_block {
+      -- Allow require('a.b') to find a.b.lua then a/b.lua
+      table.insert(package.loaders, 2, function(name)
+         local f = loadfile(name .. '.lua')
+         if f then return f end
+      end)
       require('app')
    }
 
