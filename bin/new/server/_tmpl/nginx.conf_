@@ -18,7 +18,7 @@ events {
 
 
 http {
-   lua_package_path '@@LOSTY_PATH@@/?.lua;./?.lua;;';
+   lua_package_path './?.lua;;';
 
    include mime.conf;
    default_type text/plain;

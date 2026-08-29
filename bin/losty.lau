@@ -113,6 +113,53 @@ var copy_tmpl_files = \file_list, src_dir, dest_dir, vars ->
 			else
 				io.stderr.write(@, '  ERROR writing ' .. dest .. ': ' .. tostring(werr) .. '\n')
 
+-- Recursively list every file under dir as absolute paths (via the shell).
+var list_tree = \dir ->
+	var cmd
+	if IS_WIN
+		cmd = 'dir /s /b /a:-d "' .. dir.gsub(@, '/', '\\') .. '"'
+	else
+		cmd = 'find "' .. dir .. '" -type f'
+	var ph = assert(io.popen(cmd), 'failed to list files under ' .. dir)
+	var files = {}
+	for file in ph.lines(@)
+		table.insert(files, file)
+	ph.close(@)
+	return files
+
+-- Normalise a path for reliable prefix matching (drive-less, /-separated).
+var norm_path = \p ->
+	p = p.gsub(@, '\\', '/')
+	if IS_WIN
+		p = p.gsub(@, '^%a:', '')
+		p = p.lower(@)
+	return p
+
+
+var copy_dir = \src_dir, dest_dir ->
+	print('  copy    losty/** -> lualib/losty/')
+	var base = norm_path(src_dir) .. '/'
+	for _, abs in ipairs(list_tree(src_dir))
+		var n = norm_path(abs)
+		if n.sub(@, 1, #base) == base
+			var rel = abs.sub(@, -(#n - #base))
+			var f, err = io.open(abs, 'rb')
+			if not f
+				io.stderr.write(@, '  WARN: cannot read ' .. abs .. ': ' .. tostring(err) .. '\n')
+			else
+				var data = f.read(@, '*a')
+				f.close(@)
+				var dest = join(dest_dir, rel)
+				var dir = dirname(dest)
+				if dir ~= ''
+					mkdir_p(dir)
+				var g, werr = io.open(dest, 'wb')
+				if not g
+					io.stderr.write(@, '  ERROR writing ' .. dest .. ': ' .. tostring(werr) .. '\n')
+				else
+					g.write(@, data)
+					g.close(@)
+
 var load_manifest = ->
 	var path = join(TMPL_ROOT, 'manifest.lua')
 	var chunk, err = loadfile(path)
@@ -172,7 +219,6 @@ var cmd_new = \opts ->
 	var vars = {
 		APP_NAME   = name
 		, DOMAIN     = domain
-		, LOSTY_PATH = LOSTY_ROOT.gsub(@, '\\', '/')
 		, YEAR       = tostring(os.date('%Y'))
 		, FLAVOR     = flavor
 	}
@@ -182,6 +228,9 @@ var cmd_new = \opts ->
 	var manifest = load_manifest()
 	copy_tmpl_files(manifest.common, join(TMPL_ROOT, 'server'), dest, vars)
 	copy_tmpl_files(manifest[flavor], join(TMPL_ROOT, flavor), dest, vars)
+
+	-- bundle the framework library so the app has no dependency on this repo
+	copy_dir(join(LOSTY_ROOT, 'losty'), join(dest, 'lualib', 'losty'))
 
 	-- make run.sh executable on *nix
 	if not IS_WIN

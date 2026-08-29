@@ -92,6 +92,58 @@ local copy_tmpl_files = function(file_list, src_dir, dest_dir, vars)
         end
     end
 end
+local list_tree = function(dir)
+    local cmd
+    if IS_WIN then
+        cmd = "dir /s /b /a:-d \"" .. dir:gsub("/", "\\") .. "\""
+    else
+        cmd = "find \"" .. dir .. "\" -type f"
+    end
+    local ph = assert(io.popen(cmd), "failed to list files under " .. dir)
+    local files = {}
+    for file in ph:lines() do
+        table.insert(files, file)
+    end
+    ph:close()
+    return files
+end
+local norm_path = function(p)
+    p = p:gsub("\\", "/")
+    if IS_WIN then
+        p = p:gsub("^%a:", "")
+        p = p:lower()
+    end
+    return p
+end
+local copy_lib = function(src_dir, dest_dir)
+    print("  copy    losty/** -> lualib/losty/")
+    local base = norm_path(src_dir) .. "/"
+    for _, abs in ipairs(list_tree(src_dir)) do
+        local n = norm_path(abs)
+        if n:sub(1, #base) == base then
+            local rel = abs:sub(-(#n - #base))
+            local f, err = io.open(abs, "rb")
+            if not f then
+                io.stderr:write("  WARN: cannot read " .. abs .. ": " .. tostring(err) .. "\n")
+            else
+                local data = f:read("*a")
+                f:close()
+                local dest = join(dest_dir, rel)
+                local dir = dirname(dest)
+                if dir ~= "" then
+                    mkdir_p(dir)
+                end
+                local g, werr = io.open(dest, "wb")
+                if not g then
+                    io.stderr:write("  ERROR writing " .. dest .. ": " .. tostring(werr) .. "\n")
+                else
+                    g:write(data)
+                    g:close()
+                end
+            end
+        end
+    end
+end
 local load_manifest = function()
     local path = join(TMPL_ROOT, "manifest.lua")
     local chunk, err = loadfile(path)
@@ -146,11 +198,12 @@ local cmd_new = function(opts)
         io.flush()
         domain = io.read("*l") or "example.com"
     end
-    local vars = {APP_NAME = name, DOMAIN = domain, LOSTY_PATH = LOSTY_ROOT:gsub("\\", "/"), YEAR = tostring(os.date("%Y")), FLAVOR = flavor}
+    local vars = {APP_NAME = name, DOMAIN = domain, YEAR = tostring(os.date("%Y")), FLAVOR = flavor}
     print("Scaffolding \"" .. name .. "\" (" .. (use_lua and "Lua" or "lauzy") .. ") ...")
     local manifest = load_manifest()
     copy_tmpl_files(manifest.common, join(TMPL_ROOT, "server"), dest, vars)
     copy_tmpl_files(manifest[flavor], join(TMPL_ROOT, flavor), dest, vars)
+    copy_lib(join(LOSTY_ROOT, "losty"), join(dest, "lualib", "losty"))
     if not IS_WIN then
         os.execute("chmod +x \"" .. join(dest, "run.sh") .. "\" 2>/dev/null")
     end
