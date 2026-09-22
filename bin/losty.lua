@@ -115,7 +115,7 @@ local norm_path = function(p)
     end
     return p
 end
-local copy_lib = function(src_dir, dest_dir)
+local copy_dir = function(src_dir, dest_dir)
     print("  copy    losty/** -> lualib/losty/")
     local base = norm_path(src_dir) .. "/"
     for _, abs in ipairs(list_tree(src_dir)) do
@@ -203,7 +203,7 @@ local cmd_new = function(opts)
     local manifest = load_manifest()
     copy_tmpl_files(manifest.common, join(TMPL_ROOT, "server"), dest, vars)
     copy_tmpl_files(manifest[flavor], join(TMPL_ROOT, flavor), dest, vars)
-    copy_lib(join(LOSTY_ROOT, "losty"), join(dest, "lualib", "losty"))
+    copy_dir(join(LOSTY_ROOT, "losty"), join(dest, "lualib", "losty"))
     if not IS_WIN then
         os.execute("chmod +x \"" .. join(dest, "run.sh") .. "\" 2>/dev/null")
     end

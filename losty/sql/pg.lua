@@ -107,21 +107,31 @@ return function(database, user, password, host, port, pool, dbg)
             ngx.log(ngx.ERR, err .. " at position ", i)
         end), i
     end
+    local is_error = function(err)
+        return err ~= nil and not tonumber(err)
+    end
+    local log_error = function(q, err)
+        ngx.log(ngx.ERR, q)
+        ngx.log(ngx.ERR, err)
+        ngx.log(ngx.ERR, debug.traceback("", 3))
+    end
+    local exec = function(q)
+        if dbg then
+            print(q)
+        end
+        local result, err, partial, count = db:query(q)
+        if is_error(err) then
+            log_error(q, err)
+        end
+        return result, err, partial, count
+    end
     local run = function(str, ...)
         local n = select("#", ...)
         local q, i = interpolate(str, ...)
         if n ~= i then
             ngx.log(ngx.ERR, "trying to match ", i, " placeholders to ", n, " arguments for query `", str, "`")
         end
-        if dbg then
-            print(q)
-        end
-        local result, err, partial, count = db:query(q)
-        if nil == result and not tonumber(err) then
-            ngx.log(ngx.ERR, q)
-            ngx.log(ngx.ERR, err)
-        end
-        return result, err, partial, count
+        return exec(q)
     end
     local keepalive = function(timeout)
         db:keepalive(timeout)
@@ -139,7 +149,12 @@ return function(database, user, password, host, port, pool, dbg)
         end
     end
     K.connect = function()
-        assert(db:connect())
+        local ok, err = db:connect()
+        if not ok then
+            log_error("CONNECT", err)
+            error(tostring(err), 2)
+        end
+        return ok
     end
     K.close = function()
         db:disconnect()
@@ -148,10 +163,10 @@ return function(database, user, password, host, port, pool, dbg)
         return db:wait_for_notification()
     end
     K.subscribe = function(channel)
-        return db:query("LISTEN " .. channel)
+        return exec("LISTEN " .. channel)
     end
     K.unsubscribe = function(channel)
-        return db:query("UNLISTEN " .. channel)
+        return exec("UNLISTEN " .. channel)
     end
     local tx = 0
     local sp_name = function()
@@ -160,7 +175,7 @@ return function(database, user, password, host, port, pool, dbg)
     end
     K.disconnect = function(timeout)
         if tx > 0 then
-            db:query("ROLLBACK")
+            exec("ROLLBACK")
             tx = 0
         end
         keepalive(timeout)
@@ -179,28 +194,19 @@ return function(database, user, password, host, port, pool, dbg)
             cmd = "SAVEPOINT " .. sp_name()
         end
         tx = tx + 1
-        if dbg then
-            print(cmd)
-        end
-        return db:query(cmd)
+        return exec(cmd)
     end
     K.commit = function()
         assert(tx > 0, "no transaction or savepoint to commit")
         tx = tx - 1
         local cmd = tx < 1 and "COMMIT" or "RELEASE SAVEPOINT " .. sp_name()
-        if dbg then
-            print(cmd)
-        end
-        return db:query(cmd)
+        return exec(cmd)
     end
     K.rollback = function()
         assert(tx > 0, "no transaction or savepoint to rollback")
         tx = tx - 1
         local cmd = tx < 1 and "ROLLBACK" or "ROLLBACK TO SAVEPOINT " .. sp_name()
-        if dbg then
-            print(cmd)
-        end
-        return db:query(cmd)
+        return exec(cmd)
     end
     return K
 end
