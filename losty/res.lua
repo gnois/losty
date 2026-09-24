@@ -2,57 +2,7 @@
 -- Generated from res.lau
 --
 local cjson = require("cjson")
-local ngx_header = ngx.header
-local insert
-insert = function(tb, v)
-    if "table" == type(v) then
-        for _, x in ipairs(v) do
-            insert(tb, x)
-        end
-    else
-        table.insert(tb, v)
-    end
-end
-local push = function(tb, k, v)
-    local old = tb[k]
-    if nil == old then
-        tb[k] = v
-    elseif "table" == type(old) then
-        insert(old, v)
-    else
-        local oldt = {old}
-        insert(oldt, v)
-        tb[k] = oldt
-    end
-end
-local headers = setmetatable({}, {__metatable = false, __index = function(_, k)
-    return ngx_header[k]
-end, __newindex = function(_, k, v)
-    if nil == v or type(v) == "table" and next(v) == nil then
-        ngx_header[k] = nil
-    else
-        push(ngx_header, k, v)
-    end
-end})
-local nocache = function()
-    headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    headers["Pragma"] = "no-cache"
-    headers["Expires"] = "0"
-end
-local cache = function(status, sec)
-    ngx.status = status
-    if status < 400 then
-        headers["Cache-Control"] = "max-age=" .. sec
-    end
-end
-local redirect = function(url, same_method)
-    if same_method then
-        ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
-    else
-        ngx.status = ngx.HTTP_SEE_OTHER
-    end
-    headers["Location"] = url
-end
+local hdr = require("losty.header")
 local exec = function(uri, args)
     if not uri then
         error("uri required", 2)
@@ -62,9 +12,18 @@ end
 return function()
     local jar = {}
     local order, o = {}, 0
+    local unsafe = function(txt)
+        if not txt then
+            return false
+        end
+        return string.match(txt, "[%c;]") ~= nil
+    end
     local cookie = function(name, httponly, domain, path)
-        if not name then
-            error("cookie must have a name", 2)
+        if not name or string.match(name, "[%c;=,%s\"]") then
+            error("cookie name must be a http token (RFC 6265)", 2)
+        end
+        if unsafe(domain) or unsafe(path) then
+            error("cookie domain/path must not contain ';' or control characters", 2)
         end
         local c = {_name = name, _httponly = httponly, _domain = domain, _path = path}
         local data = setmetatable({}, {__metatable = false, __index = c, __call = function(t, age, samesite, secure, value)
@@ -92,7 +51,7 @@ return function()
         elseif next(c) ~= nil then
             val = cjson.encode(c)
         end
-        val = val and ngx.escape_uri(val) or ""
+        val = val and ngx.escape_uri(tostring(val)) or ""
         local z = {c._name .. "=" .. val}
         local y = 2
         if c._domain then
@@ -122,6 +81,9 @@ return function()
             else
                 ss = string.lower(ss)
             end
+            if unsafe(ss) then
+                error("cookie samesite must not contain ';' or control characters", 2)
+            end
             z[y] = "SameSite=" .. ss
             y = y + 1
             if ss == "none" then
@@ -143,7 +105,7 @@ return function()
             for n, k in ipairs(order) do
                 arr[n] = bake(jar[k])
             end
-            headers["Set-Cookie"] = arr
+            hdr.headers["Set-Cookie"] = arr
         end
         return ngx.send_headers()
     end
@@ -151,21 +113,24 @@ return function()
         error("use response.cookie() to update response cookies", 2)
     end})
     return setmetatable({
-        headers = headers
-        , nocache = nocache
-        , cache = cache
+        headers = hdr.headers
+        , nocache = hdr.nocache
+        , cache = hdr.cache
+        , vary = hdr.vary
         , cookie = cookie
         , cookies = cookies
-        , redirect = redirect
+        , redirect = hdr.redirect
         , exec = exec
         , send = send
     }, {__metatable = false, __index = function(_, k)
         if "status" == k then
             return ngx.status
         end
-    end, __newindex = function(_, k, v)
+    end, __newindex = function(t, k, v)
         if "status" == k then
             ngx.status = v
+        else
+            rawset(t, k, v)
         end
     end})
 end

@@ -2,8 +2,6 @@
 -- Generated from content.lau
 --
 local cjson = require("cjson")
-local etag = require("losty.etag")
-local strz = require("losty.str")
 local body = require("losty.body")
 local accept = require("losty.accept")
 local dispatch = require("losty.dispatch")
@@ -28,41 +26,39 @@ local mime = function(kind)
     end
 end
 local reject = function(_, res)
+    res.vary("Accept")
     res.status = ngx.HTTP_NOT_ACCEPTABLE
 end
 local html = function(req, res)
     local out = req.next()
     res.headers["Content-Type"] = HTML
-    res.nocache()
+    if res.headers["Cache-Control"] == nil then
+        res.nocache()
+    end
     return out
 end
 local json = function(req, res)
     local out = req.next()
     res.headers["Content-Type"] = JSON
-    out = cjson.encode(out)
-    local cachectrl = res.headers["Cache-Control"]
-    if cachectrl and (strz.contains(cachectrl, "no-cache") or strz.contains(cachectrl, "no-store")) then
-        return out
-    end
-    local tag = etag(out, true)
-    if tag then
-        if tag == req.headers["If-None-Match"] then
-            res.status = ngx.HTTP_NOT_MODIFIED
-            return 
-        end
-        res.headers["ETag"] = tag
-    end
-    return out
+    return cjson.encode(out)
 end
 local dual = function(...)
     local handlers = {...}
     return function(req, res)
-        res.headers["Vary"] = "Accept"
+        res.vary("Accept")
         local pref = accept(req.headers["Accept"], {HTML, JSON})
+        if not pref[1] then
+            res.status = ngx.HTTP_NOT_ACCEPTABLE
+            return 
+        end
         if tostring(pref[1]) == HTML then
             return dispatch(handlers, req, res)
         end
-        return json(req, res)
+        local chain = {json}
+        for i = 2, #handlers do
+            chain[i] = handlers[i]
+        end
+        return dispatch(chain, req, res)
     end
 end
 local problem = function(req, res)

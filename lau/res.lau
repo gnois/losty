@@ -1,28 +1,7 @@
 -- a res() is merely status and header
+
 var cjson = require('cjson')
-var ngx_header = ngx.header
-
-var insert
-insert = \tb, v ->
-	if 'table' == type(v)
-		for _, x in ipairs(v)
-			insert(tb, x)
-	else
-		table.insert(tb, v)
-
-
--- append v to ngx.header[k]
--- why append? "for single valued header, only the last array item is sent"
-var push = \tb, k, v ->
-	var old = tb[k]
-	if nil == old
-		tb[k] = v
-	else if 'table' == type(old)
-		insert(old, v)
-	else
-		var oldt = {old}
-		insert(oldt, v)
-		tb[k] = oldt
+var hdr = require('losty.header')
 
 
 --`` unused, ngx lua will do this
@@ -31,60 +10,6 @@ var capitalize = \txt ->
 	if txt
 		return string.lower(txt).gsub(@, "^%l", string.upper).gsub(@, "-%l", string.upper)
 ``
-
--- ngx.header wrapper, store nothing
--- headers[key] = x
--- if x is nil/{}, clears headers[key]
--- else will append to existing header[key]
--- ngx.header doc: for single valued header, only the last array item is sent
-var headers = setmetatable({}, {
-	__metatable = false
-
-	, __index = \_, k ->
-		-- not calling ngx.resp.get_headers()
-		-- https://github.com/openresty/lua-nginx-module/issues/1595
-		return ngx_header[k]
-
-	, __newindex = \_, k, v ->
-		if nil == v or (type(v) == 'table' and next(v) == nil)
-			-- ngx.header doc: set to nil or {} clears the header k
-			ngx_header[k] = nil
-		else
-			push(ngx_header, k, v)
-})
-
-
--- shortcut header functions
-
--- no caching
-var nocache = ->
-	headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-	headers["Pragma"] = "no-cache"
-	headers["Expires"] = "0"
-
--- set status and caching (in seconds)
-var cache = \status, sec ->
-	ngx.status = status
-	-- should check if status equals 200, 201, 204, 206, 301, 302, 303, 304, or 307
-	if status < 400
-		-- http://nginx.org/en/docs/http/ngx_http_headers_module.html#expires
-		headers["Cache-Control"] = "max-age=" .. sec     -- 'public' by default
-		-- http://www.freshblurbs.com/blog/2015/12/12/http-cache-restful-apis.html
-		-- headers["Expires"] = ngx.http_time(ngx.time() + sec)
-
---``
-See
-https://en.wikipedia.org/wiki/HTTP_302, first paragraph
-https://en.wikipedia.org/wiki/HTTP_303
-http://stackoverflow.com/questions/5129076/after-a-post-should-i-do-a-302-or-a-303-redirect
-``
-var redirect = \url, same_method ->
-	if same_method   -- if request method is POST, use POST again to get the new resource
-		ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
-	else -- always use GET to get the new resource
-		ngx.status = ngx.HTTP_SEE_OTHER
-	headers['Location'] = url
-
 
 -- setting headers before ngx.exec() has no effect on subrequest
 var exec = \uri, args ->
@@ -108,9 +33,19 @@ return ->
 	var jar = {}
 	var order, o = {}, 0
 
+	-- reject ; and control characters: these go verbatim into Set-Cookie, so
+	-- they could inject attributes or extra headers. the cookie *value* needs
+	-- no check, bake() uri-escapes it
+	var unsafe = \txt ->
+		if not txt
+			return false
+		return string.match(txt, "[%c;]") ~= nil
+
 	var cookie = \name, httponly, domain, path ->
-		if not name
-			error("cookie must have a name", 2)
+		if not name or string.match(name, "[%c;=,%s\"]")
+			error("cookie name must be a http token (RFC 6265)", 2)
+		if unsafe(domain) or unsafe(path)
+			error("cookie domain/path must not contain ';' or control characters", 2)
 
 		var c = {
 			_name = name
@@ -157,7 +92,7 @@ return ->
 				val = val(c)
 		else if next(c) ~= nil  -- raw keys on data table -> auto JSON
 			val = cjson.encode(c)
-		val = val and ngx.escape_uri(val) or ""
+		val = val and ngx.escape_uri(tostring(val)) or ""
 
 		var z = { c._name .. "=" .. val }
 		var y = 2
@@ -184,6 +119,8 @@ return ->
 				ss = ss and "strict" or "none"
 			else
 				ss = string.lower(ss)
+			if unsafe(ss)
+				error("cookie samesite must not contain ';' or control characters", 2)
 			z[y] = "SameSite=" .. ss
 			y = y + 1
 			if ss == "none"
@@ -201,7 +138,7 @@ return ->
 		if o > 0
 			for n, k in ipairs(order)
 				arr[n] = bake(jar[k])
-			headers['Set-Cookie'] = arr
+			hdr.headers['Set-Cookie'] = arr
 		return ngx.send_headers()
 
 	var cookies = setmetatable({}, {
@@ -211,12 +148,13 @@ return ->
 	})
 
 	return setmetatable({
-		headers = headers
-		, nocache = nocache
-		, cache = cache
+		headers = hdr.headers
+		, nocache = hdr.nocache
+		, cache = hdr.cache
+		, vary = hdr.vary
 		, cookie = cookie
 		, cookies = cookies
-		, redirect = redirect
+		, redirect = hdr.redirect
 		, exec = exec
 		, send = send
 
@@ -227,7 +165,11 @@ return ->
 			if 'status' == k
 				return ngx.status
 
-		, __newindex = \_, k, v ->
+		, __newindex = \t, k, v ->
 			if 'status' == k
 				ngx.status = v
+			else
+				-- keep per-request fields (eg res.user) instead of dropping them
+				-- silently, as req() already allows
+				rawset(t, k, v)
 	})

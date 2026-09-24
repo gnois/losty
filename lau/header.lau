@@ -1,0 +1,130 @@
+-- internal use: stateless helpers for the response headers, status and caching
+
+var strz = require('losty.str')
+var to = require('losty.to')
+
+var ngx_header = ngx.header
+
+
+var insert
+insert = \tb, v ->
+	if 'table' == type(v)
+		for _, x in ipairs(v)
+			insert(tb, x)
+	else
+		table.insert(tb, v)
+
+
+-- append v to tb[k], where tb is usually ngx.header
+-- why append? "for single valued header, only the last array item is sent"
+var push = \tb, k, v ->
+	var old = tb[k]
+	if nil == old
+		tb[k] = v
+	else if 'table' == type(old)
+		insert(old, v)
+		-- reading ngx.header[k] returns a copy, so need to assign back after mutating `old`
+		tb[k] = old
+	else
+		var oldt = {old}
+		insert(oldt, v)
+		tb[k] = oldt
+
+
+-- ngx.header wrapper, store nothing
+-- headers[key] = x
+-- if x is nil/{}, clears headers[key]
+-- else will append to existing header[key]
+-- ngx.header doc: for single valued header, only the last array item is sent
+-- use ngx.header[key] = val directly to replace instead of append
+var headers = setmetatable({}, {
+	__metatable = false
+
+	, __index = \_, k ->
+		-- not calling ngx.resp.get_headers()
+		-- https://github.com/openresty/lua-nginx-module/issues/1595
+		return ngx_header[k]
+
+	, __newindex = \_, k, v ->
+		var t = type(v)
+		if nil == v or (t == 'table' and next(v) == nil)
+			-- ngx.header doc: set to nil or {} clears the header k
+			ngx_header[k] = nil
+		else if t == 'string' or t == 'number' or t == 'table'
+			push(ngx_header, k, v)
+		else
+			-- else ngx.header throws an obscure C level error
+			error("header value must be a string, number or array of them, got " .. t, 2)
+})
+
+
+-- add name to the Vary header, keeping the values already there (eg the Origin added by cors.lau)
+var vary = \name ->
+	var cur = ngx_header["Vary"]
+	var txt = cur
+	if 'table' == type(cur)
+		txt = table.concat(cur, ', ')
+	if txt
+		var low = string.lower(name)
+		for _, one in ipairs(strz.split(txt, ','))
+			var seen = to.trim(one)
+			-- compare whole values: "Accept" is a substring of "Accept-Encoding"
+			if string.lower(seen) == low
+				return
+		ngx_header["Vary"] = txt .. ', ' .. name
+	else
+		ngx_header["Vary"] = name
+
+
+
+-- no caching
+var nocache = ->
+	-- assign through ngx.header (replace), not headers[] which appends: else a
+	-- max-age set by an earlier cache() is kept
+	ngx_header["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+	ngx_header["Pragma"] = "no-cache"
+	-- Expires must be a HTTP-date
+	-- "0" is not one, and some caches treat it as
+	-- "no expiry" instead of "already expired"
+	ngx_header["Expires"] = ngx.http_time(ngx.time() - 86400)
+
+-- set status and caching (in seconds)
+var cache = \status, sec ->
+	ngx.status = status
+	-- should check if status equals 200, 201, 204, 206, 301, 302, 303, 304, or 307
+	if status < 400
+		-- http://nginx.org/en/docs/http/ngx_http_headers_module.html#expires
+		-- assign, don't append: else a no-store left by an earlier nocache() is
+		-- kept next to max-age and the response carries contradictory directives
+		ngx_header["Cache-Control"] = "max-age=" .. sec     -- 'public' by default
+		-- HTTP/1.0 fallback. see
+		-- http://www.freshblurbs.com/blog/2015/12/12/http-cache-restful-apis.html
+		var n = tonumber(sec)
+		if n
+			ngx_header["Expires"] = ngx.http_time(ngx.time() + n)
+		ngx_header["Pragma"] = nil  -- drop a Pragma left by nocache()
+
+
+--``
+See
+https://en.wikipedia.org/wiki/HTTP_302, first paragraph
+https://en.wikipedia.org/wiki/HTTP_303
+http://stackoverflow.com/questions/5129076/after-a-post-should-i-do-a-302-or-a-303-redirect
+``
+var redirect = \url, same_method ->
+	if same_method   -- if request method is POST, use POST again to get the new resource
+		ngx.status = ngx.HTTP_TEMPORARY_REDIRECT
+	else -- always use GET to get the new resource
+		ngx.status = ngx.HTTP_SEE_OTHER
+	headers['Location'] = url
+
+
+return {
+	insert = insert
+	, push = push
+	, vary = vary
+	, headers = headers
+	, nocache = nocache
+	, cache = cache
+	, redirect = redirect
+}

@@ -6,6 +6,7 @@ local dispatch = require("losty.dispatch")
 local statuses = require("losty.status")
 local req = require("losty.req")
 local res = require("losty.res")
+local etag = require("losty.etag")
 local cjson = require("cjson.safe")
 local METHODS = {
     "GET"
@@ -128,6 +129,7 @@ local run = function(error_page, check)
         return ngx.exec(body.uri)
     end
     body = prepare_body(r, body)
+    body = etag.check(q, r, body)
     local code = r.status
     if error_page == true and code >= 400 and not has_body(body) then
         return ngx.exit(code)

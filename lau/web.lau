@@ -3,6 +3,7 @@ var dispatch = require('losty.dispatch')
 var statuses = require('losty.status')
 var req = require('losty.req')
 var res = require('losty.res')
+var etag = require('losty.etag')
 var cjson = require('cjson.safe')
 
 var METHODS = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'} -- 'TRACE', 'CONNECT'
@@ -119,6 +120,9 @@ var run = \error_page, check ->
 		return ngx.exec(body.uri)
 
 	body = prepare_body(r, body)
+
+	-- may set a 304 status and drop the body when the client copy is current
+	body = etag.check(q, r, body)
 
 	var code = r.status
 	if error_page == true and code >= 400 and not has_body(body)

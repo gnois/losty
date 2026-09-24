@@ -1,6 +1,4 @@
 var cjson = require('cjson')
-var etag = require('losty.etag')
-var strz = require('losty.str')
 var body = require('losty.body')
 var accept = require('losty.accept')
 var dispatch = require('losty.dispatch')
@@ -28,6 +26,7 @@ var mime = \kind ->
 		return req.next()
 
 var reject = \_, res ->
+	res.vary("Accept")
 	res.status = ngx.HTTP_NOT_ACCEPTABLE
 	-- web.run() already provides desc for status >= 400
 
@@ -42,7 +41,9 @@ var html = \req, res ->
 	-- see nginx_gzip.conf, gzip_vary on;
 	-- res.headers["Vary"] = "Accept-Encoding"
 	-- browser must not cache html. Else Login then Back button loses the credential
-	res.nocache()
+	-- but an explicit Cache-Control from the handler (eg a public page) is kept
+	if res.headers["Cache-Control"] == nil
+		res.nocache()
 	return out
 
 
@@ -50,21 +51,10 @@ var json = \req, res ->
 	var out = req.next()
 	res.headers["Content-Type"] = JSON
 	-- just throw if error
-	out = cjson.encode(out)
-
-	-- no etag if caching is disabled
-	var cachectrl = res.headers["Cache-Control"]
-	if cachectrl and (strz.contains(cachectrl, "no-cache") or strz.contains(cachectrl, "no-store"))
-		return out
-
-	var tag = etag(out, true)  -- weak
-	if tag
-		if tag == req.headers["If-None-Match"]
-			res.status = ngx.HTTP_NOT_MODIFIED
-			return -- no body
-
-		res.headers["ETag"] = tag
-	return out
+	-- ETag/If-None-Match is not handled here: the tag must identify the final
+	-- serialized body, so etag.check() does it once in web.run(), which also
+	-- covers html, view() and other responders
+	return cjson.encode(out)
 
 
 -- Once a route respond differently based on HTTP Accept header, shd set Vary: Accept for all responses
@@ -82,12 +72,24 @@ var dual = \... ->
 		-- https://bugs.chromium.org/p/chromium/issues/detail?id=94369
 
 		-- See http://stackoverflow.com/questions/1975416/what-is-the-function-of-the-vary-accept-http-header
-		res.headers["Vary"] = "Accept"
+		-- merge rather than overwrite: cors.lau may have added Origin already
+		res.vary("Accept")
 
 		var pref = accept(req.headers["Accept"], {HTML, JSON})
+		if not pref[1]
+			-- nothing in Accept is acceptable, eg `Accept: image/png`
+			res.status = ngx.HTTP_NOT_ACCEPTABLE
+			return
 		if tostring(pref[1]) == HTML
 			return dispatch(handlers, req, res)
-		return json(req, res) -- even if pref has no application/json
+		-- dispatch {json, ...} instead of calling json(req, res): the latter
+		-- leaves req.next() pointing at the outer chain, whose next handler is
+		-- the reject returned by content.dual(), so every json response ended up
+		-- as a 406 with a "null" body
+		var chain = {json}
+		for i = 2, #handlers
+			chain[i] = handlers[i]
+		return dispatch(chain, req, res)
 
 
 -- RFC 7807 application/problem+json responder (opt-in)
@@ -129,7 +131,8 @@ return {
 	, json = json
 	, problem = problem
 	-- url generates text/html and application/json response depending on Accept headers
-	-- Note that reject will only be called if dual() is the last handler, meaning no more json handler
+	-- reject is still returned for chains that expect it, but dual() now answers
+	-- 406 itself: it must not let json() fall through to the outer chain
 	, dual = \... ->
 		return dual(html, ...), reject
 }

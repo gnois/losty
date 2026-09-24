@@ -1,5 +1,6 @@
 var sha1 = require('resty.sha1')
 var str = require('resty.string')
+var strz = require('losty.str')
 
 -- https://groups.google.com/forum/#!topic/openresty-en/W16iCSRMMZk
 -- http://forum.nginx.org/read.php?2,240120,240120
@@ -15,4 +16,77 @@ var etag = \payload, weak ->
 		return '"' .. tag .. '"'
 
 
-return etag
+-- strip the optional W/ prefix and the quotes, so that a weak and a strong tag
+-- with the same opaque value compare equal (RFC 9110 s8.8.3.2 weak comparison)
+var opaque = \tag ->
+	return string.match(tag, '^%s*[Ww]?/"(.-)"%s*$')
+
+
+-- If-None-Match is either "*" or a comma separated list of entity tags, and
+-- nginx joins several header lines into one comma separated value
+var matches = \header, tag ->
+	if not header
+		return false
+	if '*' == header
+		return true
+	var mine = opaque(tag)
+	if not mine
+		return false
+	for _, one in ipairs(strz.split(header, ','))
+		if mine == opaque(one)
+			return true
+	return false
+
+
+-- Turn the response into a 304 when the client copy is still current.
+-- Returns the body to send, or nil when a 304 was generated.
+-- out must be the final serialized body (a string), since the tag identifies
+-- the bytes on the wire, not the handler return value
+var check = \req, res, out ->
+	if 'string' ~= type(out) or '' == out
+		return out
+
+	-- only a successful representation of a safe method can be revalidated
+	var code = res.status
+	if not (0 == code or ngx.HTTP_OK == code)  -- ngx.status is 0 when unset
+		return out
+	var method = req.vars.request_method
+	if 'GET' ~= method and 'HEAD' ~= method
+		return out
+
+	-- the handler may know a cheaper validator (row version, asset revision)
+	var tag = res.headers["ETag"]
+	if tag
+		if 'string' ~= type(tag)
+			return out
+	else
+		-- no validator for no-store: the client is not allowed to keep the
+		-- response. no-cache still benefits from a 304, so it is not excluded
+		var cachectrl = res.headers["Cache-Control"]
+		if 'table' == type(cachectrl)
+			cachectrl = table.concat(cachectrl, ', ')
+		if cachectrl and strz.contains(string.lower(cachectrl), 'no-store')
+			return out
+		tag = etag(out, true)  -- weak: nginx may gzip the same bytes
+		if not tag
+			return out
+		res.headers["ETag"] = tag
+
+	if matches(req.headers["If-None-Match"], tag)
+		res.status = ngx.HTTP_NOT_MODIFIED
+		-- no body. Cache-Control/Expires/Vary are kept, see RFC 9110 s15.4.5
+		return
+
+	return out
+
+
+-- keep the module callable as before: etag(payload, weak)
+return setmetatable({
+	etag = etag
+	, matches = matches
+	, check = check
+}, {
+	__metatable = false
+	, __call = \_, payload, weak ->
+		return etag(payload, weak)
+})
