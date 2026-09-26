@@ -21,9 +21,9 @@ var with_text_charset = \mime ->
 -- for text/* media types, appends ; charset=utf-8 unless already present
 var mime = \kind ->
 	var ctype = with_text_charset(kind)
-	return \req, res ->
+	return \req, res, nxt ->
 		res.headers["Content-Type"] = ctype
-		return req.next()
+		return nxt()
 
 var reject = \_, res ->
 	res.vary("Accept")
@@ -35,8 +35,8 @@ var reject = \_, res ->
 --   https://www.mnot.net/cache_docs/
 --   https://devcenter.heroku.com/articles/jax-rs-http-caching
 --   https://devcenter.heroku.com/articles/increasing-application-performance-with-http-cache-headers
-var html = \req, res ->
-	var out = req.next()
+var html = \req, res, nxt ->
+	var out = nxt()
 	res.headers["Content-Type"] = HTML
 	-- see nginx_gzip.conf, gzip_vary on;
 	-- res.headers["Vary"] = "Accept-Encoding"
@@ -47,8 +47,8 @@ var html = \req, res ->
 	return out
 
 
-var json = \req, res ->
-	var out = req.next()
+var json = \req, res, nxt ->
+	var out = nxt()
 	res.headers["Content-Type"] = JSON
 	-- just throw if error
 	-- ETag/If-None-Match is not handled here: the tag must identify the final
@@ -61,8 +61,8 @@ var json = \req, res ->
 -- See https://www.fastly.com/blog/best-practices-for-using-the-vary-header
 -- This actually causes the browser to not cache the content of all responses
 var dual = \... ->
-	var handlers = {...}
-	return \req, res ->
+	var inner = {...}
+	return \req, res, nxt, ... ->
 		-- If we `back` from browser, the json is displayed instead of html page!  We need to have api.domain.com or different url instead of just using content-type
 		-- if use vary:Accept header, caching is basically disabled by proxies and browsers
 		-- http://www.sitepoint.com/solve-caching-conundrums/
@@ -80,21 +80,18 @@ var dual = \... ->
 			-- nothing in Accept is acceptable, eg `Accept: image/png`
 			res.status = ngx.HTTP_NOT_ACCEPTABLE
 			return
+
 		if tostring(pref[1]) == HTML
-			return dispatch(handlers, req, res)
-		-- dispatch {json, ...} instead of calling json(req, res): the latter
-		-- leaves req.next() pointing at the outer chain, whose next handler is
-		-- the reject returned by content.dual(), so every json response ended up
-		-- as a 406 with a "null" body
-		var chain = {json}
-		for i = 2, #handlers
-			chain[i] = handlers[i]
-		return dispatch(chain, req, res)
+			return dispatch(inner, req, res, ...)
+		var outer = {json}
+		for i = 2, #inner
+			outer[i] = inner[i]
+		return dispatch(outer, req, res, ...)
 
 
 -- RFC 7807 application/problem+json responder (opt-in)
-var problem = \req, res ->
-	var out = req.next()
+var problem = \req, res, nxt ->
+	var out = nxt()
 	res.headers["Content-Type"] = PROBLEM
 	if type(out) == 'table'
 		if out.type == nil
@@ -110,15 +107,18 @@ var problem = \req, res ->
 
 
 
-var form = \req, res ->
+var form = \req, res, nxt ->
 	-- val is an iterator function for multipart/form-data
-	var val, err = body.prepare(req)
+	var val, reason, ctype = body.prepare(req)
 	if val or 'DELETE' == req.vars.request_method
-		return req.next(val)
+		return nxt(val)
 	-- http://stackoverflow.com/questions/7323958/are-put-and-post-requests-required-expected-to-have-a-request-body
 	-- js client should not PUT or POST without a body
+	if reason == "unsupported"
+		res.status = ngx.HTTP_UNSUPPORTED_MEDIA_TYPE
+		return {fail = "unsupported content-type " .. (ctype or "")}
 	res.status = ngx.HTTP_BAD_REQUEST
-	return {fail = err or "no request body"}
+	return {fail = reason or "no request body"}
 
 
 return {
@@ -131,8 +131,7 @@ return {
 	, json = json
 	, problem = problem
 	-- url generates text/html and application/json response depending on Accept headers
-	-- reject is still returned for chains that expect it, but dual() now answers
-	-- 406 itself: it must not let json() fall through to the outer chain
+	-- reject is still returned for chains that expect it, but dual() now answers 406 itself
 	, dual = \... ->
 		return dual(html, ...), reject
 }

@@ -38,7 +38,7 @@ return function(opts)
     for k, v in pairs(default) do
         cfg[k] = opts[k] ~= nil and opts[k] or v
     end
-    return function(q, r)
+    return function(q, r, nxt)
         set_if_empty(r.headers, "X-Content-Type-Options", cfg.x_content_type_options)
         set_if_empty(r.headers, "Referrer-Policy", cfg.referrer_policy)
         set_if_empty(r.headers, "X-Frame-Options", cfg.x_frame_options)
@@ -48,6 +48,6 @@ return function(opts)
         set_if_empty(r.headers, "Cross-Origin-Embedder-Policy", cfg.cross_origin_embedder_policy)
         set_if_empty(r.headers, "Content-Security-Policy", cfg.content_security_policy)
         set_if_empty(r.headers, "Strict-Transport-Security", hsts(cfg, q.secure()))
-        return q.next()
+        return nxt()
     end
 end

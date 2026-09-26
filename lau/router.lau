@@ -56,6 +56,8 @@ var next_segment = \path ->
 
 var COLON = ":"
 var LEAF = "#"
+-- canonical order for the Allow header (HEAD follows GET; not a registerable verb)
+var ALLOW_ORDER = {'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'}
 
 var router = ->
 	var tree = {}
@@ -188,6 +190,29 @@ var router = ->
 			if not arr
 				return nil, "unmatched path: " .. (path or "")
 			return arr, matches
+
+		, allowed = \method, path ->
+			-- `match` already returned nothing for this method. return the methods
+			-- the path *is* registered under (HEAD implied by GET), in canonical
+			-- order, or nil when the path matches no method at all (a true 404).
+			path = path or ""
+			var q = str_find(path, "?", 1, true)
+			if q
+				path = str_sub(path, 1, q - 1)
+			var primary = tree[method]
+			var set = {}
+			for meth, nodes in pairs(tree)
+				if nodes ~= primary and resolve(path, nodes, {}, 1)
+					set[meth] = true
+					if meth == 'GET'
+						set["HEAD"] = true
+			if next(set) == nil
+				return nil
+			var arr = {}
+			for _, m in ipairs(ALLOW_ORDER)
+				if set[m]
+					table.insert(arr, m)
+			return arr
 
 		, set = \method, path, ... ->
 			var err = invalid(path)

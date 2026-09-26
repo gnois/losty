@@ -109,6 +109,36 @@ return function()
         end
         return ngx.send_headers()
     end
+    local hooks = {}
+    local defer = function(fn, ...)
+        if "function" ~= type(fn) then
+            error("r.defer requires function", 2)
+        end
+        local np = select("#", ...)
+        if np == 0 then
+            table.insert(hooks, fn)
+        else
+            local args = {...}
+            table.insert(hooks, function()
+                return fn(unpack(args, 1, np))
+            end)
+        end
+    end
+    local run_defers = function()
+        if #hooks == 0 then
+            return 
+        end
+        local running = hooks
+        hooks = {}
+        for i = #running, 1, -1 do
+            local ok, err = xpcall(running[i], function(trace)
+                return debug.traceback(trace, 2)
+            end)
+            if not ok then
+                ngx.log(ngx.ERR, err)
+            end
+        end
+    end
     local cookies = setmetatable({}, {__index = jar, __newindex = function()
         error("use response.cookie() to update response cookies", 2)
     end})
@@ -121,6 +151,8 @@ return function()
         , cookies = cookies
         , redirect = hdr.redirect
         , exec = exec
+        , defer = defer
+        , run_defers = run_defers
         , send = send
     }, {__metatable = false, __index = function(_, k)
         if "status" == k then

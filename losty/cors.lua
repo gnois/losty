@@ -31,10 +31,10 @@ return function()
     K.credentials = function(cred)
         credentials = cred
     end
-    K.run = function(req, res)
+    K.run = function(req, res, nxt)
         local origin = req.headers["Origin"]
         if not origin then
-            return req.next()
+            return nxt()
         end
         res.vary("Origin")
         local allowed = false
@@ -45,7 +45,7 @@ return function()
             end
         end
         if not allowed then
-            return req.next()
+            return nxt()
         end
         ngx_header["Access-Control-Allow-Origin"] = origin
         ngx_header["Access-Control-Expose-Headers"] = concat(expose_headers, ",")
@@ -57,7 +57,7 @@ return function()
             ngx_header["Access-Control-Allow-Headers"] = concat(headers, ",")
             ngx_header["Access-Control-Allow-Methods"] = concat(methods, ",")
         end
-        return req.next()
+        return nxt()
     end
     return K
 end

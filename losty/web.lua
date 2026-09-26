@@ -58,19 +58,6 @@ local has_body = function(body)
     end
     return true
 end
-local run_defers = function(q)
-    local hooks = q._defer_hooks
-    if hooks then
-        for i = #hooks, 1, -1 do
-            local ok, err = xpcall(hooks[i], function(trace)
-                return debug.traceback(trace, 2)
-            end)
-            if not ok then
-                ngx.log(ngx.ERR, err)
-            end
-        end
-    end
-end
 local route = function(prefix)
     local phase = ngx.get_phase()
     if phase ~= "init" then
@@ -91,21 +78,7 @@ local run = function(error_page, check)
     local handlers, body, ok, trace
     local q = req()
     local r = res()
-    q._defer_hooks = {}
-    q.defer = function(fn, ...)
-        if "function" ~= type(fn) then
-            error("defer requires function", 2)
-        end
-        local np = select("#", ...)
-        if np == 0 then
-            table.insert(q._defer_hooks, fn)
-        else
-            local args = {...}
-            table.insert(q._defer_hooks, function()
-                return fn(unpack(args, 1, np))
-            end)
-        end
-    end
+    q.state = {}
     local method = q.vars.request_method
     handlers, q.match = rt.match(method == "HEAD" and "GET" or method, q.vars.uri)
     if handlers then
@@ -119,9 +92,15 @@ local run = function(error_page, check)
             ngx.log(ngx.ERR, trace)
         end
     else
-        r.status = 404
+        local allow = rt.allowed(method, q.vars.uri)
+        if allow then
+            r.status = 405
+            r.headers["Allow"] = table.concat(allow, ", ")
+        else
+            r.status = 404
+        end
     end
-    run_defers(q)
+    r.run_defers()
     if is_exec_intent(body) then
         if body.args ~= nil then
             return ngx.exec(body.uri, body.args)

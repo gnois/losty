@@ -88,28 +88,32 @@ end, prepare = function(req)
         req.read_body()
         local ctype = req.headers["Content-Type"]
         if ctype then
-            if string.match(ctype, "urlencoded") then
-                return req.get_post_args()
-            end
-            if string.match(ctype, "octet-stream") then
-                return raw(req)
-            end
-            if string.match(ctype, "json") then
-                return json(req)
-            end
-            if string.match(ctype, "multipart") then
-                return function()
-                    local parse = coroutine.create(parser)
+            local base = string.match(ctype, "^%s*([^;]+)")
+            if base then
+                base = string.lower(string.match(base, "^%s*(.-)%s*$"))
+                if base == "application/x-www-form-urlencoded" then
+                    return req.get_post_args()
+                end
+                if base == "application/octet-stream" then
+                    return raw(req)
+                end
+                if base == "application/json" or string.match(base, "%+json$") then
+                    return json(req)
+                end
+                if string.match(base, "^multipart/") then
                     return function()
-                        local code, key, val = coroutine.resume(parse)
-                        if not code then
-                            return nil, key
+                        local parse = coroutine.create(parser)
+                        return function()
+                            local code, key, val = coroutine.resume(parse)
+                            if not code then
+                                return nil, key
+                            end
+                            return key, val
                         end
-                        return key, val
                     end
                 end
             end
-            return nil, "unfamiliar content-type " .. ctype
+            return nil, "unsupported", ctype
         end
         return nil, "missing content-type"
     end

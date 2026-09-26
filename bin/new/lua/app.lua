@@ -78,11 +78,11 @@ end
 local set_flash = function(q, r, key, val)
     flash(q, r).set(key, val)
 end
-local require_user = function(q, r)
+local require_user = function(q, r, nxt)
     local u = current_user(q)
     if u then
-        q.user = u
-        return q.next()
+        q.state.user = u
+        return nxt()
     end
     session.delete(r)
     return r.redirect("/signin")
@@ -148,7 +148,7 @@ route.post("/signin", content.html, content.form, function(q, r, body)
     r.redirect("/app")
 end)
 route.get("/app", content.html, require_user, function(q, r)
-    return protected({title = "@@APP_NAME@@ — Account", user = q.user, csrf_token = guard.create(q, r)})
+    return protected({title = "@@APP_NAME@@ — Account", user = q.state.user, csrf_token = guard.create(q, r)})
 end)
 route.post("/signout", content.html, content.form, require_user, function(q, r, body)
     if guard.check(q, r, body and body.token) then

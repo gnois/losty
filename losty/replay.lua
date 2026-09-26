@@ -22,7 +22,7 @@ return function(dict_name, default_ttl)
         return false, err
     end
     return {seen = seen, handler = function(noncefn, ttl)
-        return function(q, r)
+        return function(q, r, nxt)
             local nonce
             if noncefn then
                 nonce = noncefn(q)
@@ -31,7 +31,7 @@ return function(dict_name, default_ttl)
             end
             local ok, err = seen(nonce, ttl)
             if ok then
-                return q.next()
+                return nxt()
             end
             r.status = ngx.HTTP_CONFLICT
             return {fail = err}

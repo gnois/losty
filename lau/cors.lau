@@ -3,6 +3,39 @@ var ngx_header = ngx.header
 var hdr = require('losty.header')
 var insert = hdr.insert
 
+--``
+Cross-Origin Resource Sharing (CORS) middleware.
+
+Build one instance per route group, configure it, then use .run as a handler
+in the chain. It sets the CORS headers and always continues with nxt(), so it
+can also be the last handler.
+
+  local cors = require('losty.cors')
+  local C = cors()                 -- new instance, own settings
+  C.host("example%.com")           -- "%.", not ".": this is a PCRE pattern
+  C.host("https://app%.example%.com")
+  C.method("GET")
+  C.method("POST")
+  C.header("Content-Type")         -- allowed request headers (preflight)
+  C.expose_header("X-Total")       -- response headers js may read
+  C.max_age(3600)                  -- preflight cache seconds, default 3600
+  C.credentials(true)              -- default true
+
+  w.get('/api/items', C.run, handler)
+  w.options('/api/items', C.run)   -- preflight needs an OPTIONS route
+
+Notes
+- host patterns are anchored as "^" .. pattern .. "$", so escape dots and
+  other regex metacharacters.
+- no Origin, or an Origin matching no host: nothing is set, the chain just
+  continues (a normal, non-CORS response).
+- the allowed Origin is echoed back, so Vary: Origin is always set.
+- only OPTIONS requests get Allow-Methods / Allow-Headers / Max-Age.
+- settings live in the instance closure: make a separate instance with its
+  own hosts for each route group.
+``
+
+
 return ->
 	var hosts = {}
 	var headers = {}
@@ -31,11 +64,11 @@ return ->
 		credentials = cred
 
 	-- middleware: set the CORS headers, then continue the chain. works as the
-	-- last handler too (req.next() returns nothing when there is no next)
-	K.run = \req, res ->
+	-- last handler too (nxt() returns nothing when there is no next)
+	K.run = \req, res, nxt ->
 		var origin = req.headers["Origin"]
 		if not origin
-			return req.next()
+			return nxt()
 
 		-- the response differs by Origin even when the origin is rejected, so
 		-- caches must key on it
@@ -50,7 +83,7 @@ return ->
 				break
 
 		if not allowed
-			return req.next()
+			return nxt()
 
 		ngx_header["Access-Control-Allow-Origin"] = origin
 		ngx_header["Access-Control-Expose-Headers"] = concat(expose_headers, ",")
@@ -63,7 +96,7 @@ return ->
 			ngx_header["Access-Control-Allow-Headers"] = concat(headers, ",")
 			ngx_header["Access-Control-Allow-Methods"] = concat(methods, ",")
 
-		return req.next()
+		return nxt()
 
 	return K
 

@@ -100,21 +100,26 @@ return {
 			req.read_body()
 			var ctype = req.headers["Content-Type"]
 			if ctype
-				if string.match(ctype, "urlencoded")
-					return req.get_post_args()
-				if string.match(ctype, "octet-stream")
-					return raw(req)
-				if string.match(ctype, "json")
-					return json(req)
-				if string.match(ctype, "multipart")
-					return ->
-						var parse = coroutine.create(parser)
+				-- normalize the media type: strip parameters, trim, lowercase
+				var base = string.match(ctype, "^%s*([^;]+)")
+				if base
+					base = string.lower(string.match(base, "^%s*(.-)%s*$"))
+					if base == "application/x-www-form-urlencoded"
+						return req.get_post_args()
+					if base == "application/octet-stream"
+						return raw(req)
+					if base == "application/json" or string.match(base, "%+json$")
+						return json(req)
+					if string.match(base, "^multipart/")
 						return ->
-							var code, key, val = coroutine.resume(parse)
-							if not code
-								return nil, key
-							return key, val
-				return nil, "unfamiliar content-type " .. ctype
+							var parse = coroutine.create(parser)
+							return ->
+								var code, key, val = coroutine.resume(parse)
+								if not code
+									return nil, key
+								return key, val
+				-- unsupported media type (distinct from missing/empty body)
+				return nil, "unsupported", ctype
 			return nil, "missing content-type"
 		return false, "possibly empty request body"
 
