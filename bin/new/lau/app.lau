@@ -107,11 +107,11 @@ var set_flash = \q, r, key, val ->
 	flash(q, r).set(key, val)
 
 
-var require_user = \q, r ->
+var require_user = \q, r, nxt ->
 	var u = current_user(q)
 	if u
-		q.user = u
-		return q.next()
+		q.state.user = u
+		return nxt()
 	session.delete(r)
 	return r.redirect('/signin')
 
@@ -212,7 +212,7 @@ route.get('/app',
 	, \q, r ->
 		return protected({
 			title = '@@APP_NAME@@ — Account'
-			, user = q.user
+			, user = q.state.user
 			, csrf_token = guard.create(q, r)
 		})
 )

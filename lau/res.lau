@@ -1,4 +1,4 @@
--- a res() is merely status and header
+-- a response helper: status, headers, cookies, and request-scoped cleanup
 
 var cjson = require('cjson')
 var hdr = require('losty.header')
@@ -141,6 +141,36 @@ return ->
 			hdr.headers['Set-Cookie'] = arr
 		return ngx.send_headers()
 
+	-- registered by handlers, run once, LIFO, before the response is sent.
+	var hooks = {}
+	var defer = \fn, ... ->
+		if 'function' ~= type(fn)
+			error("r.defer requires function", 2)
+		var np = select('#', ...)
+		if np == 0
+			table.insert(hooks, fn)
+		else
+			var args = {...}
+			table.insert(hooks, ->
+				return fn(unpack(args, 1, np))
+			)
+
+	-- called by web.run() after the chain returns,
+	-- including on the 500 path.
+	var run_defers = ->
+		if #hooks == 0
+			return
+		-- swap the list out first so a second call is a no-op: a hook can never
+		-- run twice, even if run() is re-entered by an internal redirect
+		var running = hooks
+		hooks = {}
+		for i = #running, 1, -1
+			var ok, err = xpcall(running[i], \trace ->
+				return debug.traceback(trace, 2)
+			)
+			if not ok
+				ngx.log(ngx.ERR, err)
+
 	var cookies = setmetatable({}, {
 		__index = jar
 		, __newindex = ->
@@ -156,6 +186,8 @@ return ->
 		, cookies = cookies
 		, redirect = hdr.redirect
 		, exec = exec
+		, defer = defer
+		, run_defers = run_defers
 		, send = send
 
 	}, {

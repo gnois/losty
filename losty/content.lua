@@ -20,31 +20,31 @@ local with_text_charset = function(mime)
 end
 local mime = function(kind)
     local ctype = with_text_charset(kind)
-    return function(req, res)
+    return function(req, res, nxt)
         res.headers["Content-Type"] = ctype
-        return req.next()
+        return nxt()
     end
 end
 local reject = function(_, res)
     res.vary("Accept")
     res.status = ngx.HTTP_NOT_ACCEPTABLE
 end
-local html = function(req, res)
-    local out = req.next()
+local html = function(req, res, nxt)
+    local out = nxt()
     res.headers["Content-Type"] = HTML
     if res.headers["Cache-Control"] == nil then
         res.nocache()
     end
     return out
 end
-local json = function(req, res)
-    local out = req.next()
+local json = function(req, res, nxt)
+    local out = nxt()
     res.headers["Content-Type"] = JSON
     return cjson.encode(out)
 end
 local dual = function(...)
-    local handlers = {...}
-    return function(req, res)
+    local inner = {...}
+    return function(req, res, nxt, ...)
         res.vary("Accept")
         local pref = accept(req.headers["Accept"], {HTML, JSON})
         if not pref[1] then
@@ -52,17 +52,17 @@ local dual = function(...)
             return 
         end
         if tostring(pref[1]) == HTML then
-            return dispatch(handlers, req, res)
+            return dispatch(inner, req, res, ...)
         end
-        local chain = {json}
-        for i = 2, #handlers do
-            chain[i] = handlers[i]
+        local outer = {json}
+        for i = 2, #inner do
+            outer[i] = inner[i]
         end
-        return dispatch(chain, req, res)
+        return dispatch(outer, req, res, ...)
     end
 end
-local problem = function(req, res)
-    local out = req.next()
+local problem = function(req, res, nxt)
+    local out = nxt()
     res.headers["Content-Type"] = PROBLEM
     if type(out) == "table" then
         if out.type == nil then
@@ -81,13 +81,17 @@ local problem = function(req, res)
     end
     return out
 end
-local form = function(req, res)
-    local val, err = body.prepare(req)
+local form = function(req, res, nxt)
+    local val, reason, ctype = body.prepare(req)
     if val or "DELETE" == req.vars.request_method then
-        return req.next(val)
+        return nxt(val)
+    end
+    if reason == "unsupported" then
+        res.status = ngx.HTTP_UNSUPPORTED_MEDIA_TYPE
+        return {fail = "unsupported content-type " .. (ctype or "")}
     end
     res.status = ngx.HTTP_BAD_REQUEST
-    return {fail = err or "no request body"}
+    return {fail = reason or "no request body"}
 end
 return {
     form = form

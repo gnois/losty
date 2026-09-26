@@ -27,6 +27,15 @@ local next_segment = function(path)
 end
 local COLON = ":"
 local LEAF = "#"
+local ALLOW_ORDER = {
+    "GET"
+    , "HEAD"
+    , "POST"
+    , "PUT"
+    , "DELETE"
+    , "PATCH"
+    , "OPTIONS"
+}
 local router = function()
     local tree = {}
     local bind = function(matches, m, token, toklen, s, e, ...)
@@ -166,6 +175,32 @@ local router = function()
             return nil, "unmatched path: " .. (path or "")
         end
         return arr, matches
+    end, allowed = function(method, path)
+        path = path or ""
+        local q = str_find(path, "?", 1, true)
+        if q then
+            path = str_sub(path, 1, q - 1)
+        end
+        local primary = tree[method]
+        local set = {}
+        for meth, nodes in pairs(tree) do
+            if nodes ~= primary and resolve(path, nodes, {}, 1) then
+                set[meth] = true
+                if meth == "GET" then
+                    set["HEAD"] = true
+                end
+            end
+        end
+        if next(set) == nil then
+            return nil
+        end
+        local arr = {}
+        for _, m in ipairs(ALLOW_ORDER) do
+            if set[m] then
+                table.insert(arr, m)
+            end
+        end
+        return arr
     end, set = function(method, path, ...)
         local err = invalid(path)
         if err then

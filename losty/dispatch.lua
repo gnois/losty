@@ -1,10 +1,11 @@
 --
 -- Generated from dispatch.lau
 --
-local dispatch = function(hn, req, res, ...)
+local dispatch = function(hn, q, r, ...)
     local i, n = 0, #hn
     local nargs, aargs = 0
-    local invoke = function(...)
+    local nxt
+    nxt = function(...)
         i = i + 1
         if i <= n then
             local np = select("#", ...)
@@ -16,12 +17,11 @@ local dispatch = function(hn, req, res, ...)
                 nargs = nargs + np
             end
             if aargs then
-                return hn[i](req, res, unpack(aargs, 1, nargs))
+                return hn[i](q, r, nxt, unpack(aargs, 1, nargs))
             end
-            return hn[i](req, res)
+            return hn[i](q, r, nxt)
         end
     end
-    req.next = invoke
-    return invoke(...)
+    return nxt(...)
 end
 return dispatch

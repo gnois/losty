@@ -52,17 +52,6 @@ var has_body = \body ->
 	return true
 
 
-var run_defers = \q ->
-	var hooks = q._defer_hooks
-	if hooks
-		for i = #hooks, 1, -1
-			var ok, err = xpcall(hooks[i], \trace ->
-				return debug.traceback(trace, 2)
-			)
-			if not ok
-				ngx.log(ngx.ERR, err)
-
-
 var route = \prefix ->
 	var phase = ngx.get_phase()
 	if phase ~= 'init'
@@ -85,18 +74,8 @@ var run = \error_page, check ->
 	var q = req()
 	var r = res()
 
-	q._defer_hooks = {}
-	q.defer = \fn, ... ->
-		if 'function' ~= type(fn)
-			error("defer requires function", 2)
-		var np = select('#', ...)
-		if np == 0
-			table.insert(q._defer_hooks, fn)
-		else
-			var args = {...}
-			table.insert(q._defer_hooks, ->
-				return fn(unpack(args, 1, np))
-			)
+	-- allow user-owned per-request data
+	q.state = {}
 
 	var method = q.vars.request_method
 	handlers, q.match = rt.match(method == 'HEAD' and 'GET' or method, q.vars.uri)
@@ -110,9 +89,15 @@ var run = \error_page, check ->
 			r.status = 500
 			ngx.log(ngx.ERR, trace)
 	else
-		r.status = 404
+		-- path registered under another method -> 405 with Allow, else 404
+		var allow = rt.allowed(method, q.vars.uri)
+		if allow
+			r.status = 405
+			r.headers['Allow'] = table.concat(allow, ', ')
+		else
+			r.status = 404
 
-	run_defers(q)
+	r.run_defers()
 
 	if is_exec_intent(body)
 		if body.args ~= nil

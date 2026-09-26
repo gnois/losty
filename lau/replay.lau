@@ -25,7 +25,7 @@ return \dict_name, default_ttl ->
 		-- middleware helper
 		-- noncefn: function(q) -> string nonce, defaults to Idempotency-Key or X-Request-Id
 		, handler = \noncefn, ttl ->
-			return \q, r ->
+			return \q, r, nxt ->
 				var nonce
 				if noncefn
 					nonce = noncefn(q)
@@ -33,7 +33,7 @@ return \dict_name, default_ttl ->
 					nonce = q.headers["Idempotency-Key"] or q.headers["X-Request-Id"]
 				var ok, err = seen(nonce, ttl)
 				if ok
-					return q.next()
+					return nxt()
 				r.status = ngx.HTTP_CONFLICT
 				return {fail = err}
 	}
