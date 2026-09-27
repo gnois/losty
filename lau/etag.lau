@@ -16,10 +16,12 @@ var etag = \payload, weak ->
 		return '"' .. tag .. '"'
 
 
--- strip the optional W/ prefix and the quotes, so that a weak and a strong tag
--- with the same opaque value compare equal (RFC 9110 s8.8.3.2 weak comparison)
+-- strip an optional W/ prefix and the quotes, so that a weak and a strong tag
+-- with the same opaque value compare equal (RFC 9110 s8.8.3.2 weak comparison).
+-- the slash must be optional: a handler-set strong tag (`"abc"`) has no W/ and
+-- would otherwise never match
 var opaque = \tag ->
-	return string.match(tag, '^%s*[Ww]?/"(.-)"%s*$')
+	return string.match(tag, '^%s*[Ww]?/?"(.-)"%s*$')
 
 
 -- If-None-Match is either "*" or a comma separated list of entity tags, and
@@ -36,6 +38,40 @@ var matches = \header, tag ->
 		if mine == opaque(one)
 			return true
 	return false
+
+
+-- strong comparison for If-Match (RFC 9110 s8.8.3.1): the opaque values must be
+-- equal and neither side may be weak, so a weak tag never satisfies If-Match.
+-- a nil tag means there is no current representation, so nothing matches
+var strong_matches = \header, tag ->
+	if not tag or string.match(tag, '^%s*[Ww]/')
+		return false
+	var mine = opaque(tag)
+	if not mine
+		return false
+	for _, one in ipairs(strz.split(header, ','))
+		if not string.match(one, '^%s*[Ww]/') and mine == opaque(one)
+			return true
+	return false
+
+
+-- true when the client's If-Modified-Since is at or after the response's
+-- Last-Modified, ie its copy is still current. only a handler that set
+-- Last-Modified can be revalidated this way: the framework cannot know a
+-- resource's mtime. a missing or unparsable date on either side is ignored
+-- rather than an error (RFC 9110 s13.1.3)
+var modified_since = \req, res ->
+	var last = res.headers["Last-Modified"]
+	if 'string' ~= type(last)
+		return false
+	var since = req.headers["If-Modified-Since"]
+	if 'string' ~= type(since)
+		return false
+	var a = ngx.parse_http_time(last)
+	var b = ngx.parse_http_time(since)
+	if not a or not b
+		return false
+	return a <= b
 
 
 -- Turn the response into a 304 when the client copy is still current.
@@ -72,12 +108,70 @@ var check = \req, res, out ->
 			return out
 		res.headers["ETag"] = tag
 
-	if matches(req.headers["If-None-Match"], tag)
+	-- a 304 carries no body and keeps Cache-Control/Expires/Vary (RFC 9110
+	-- s15.4.5). answered here, not left to nginx's not-modified filter, which runs
+	-- inside send_headers() -- by then run() has already decided whether to send a
+	-- body, so the two would disagree
+	-- If-None-Match wins: RFC 9110 s13.1.3 says to ignore If-Modified-Since when
+	-- the request carries one, even if that tag fails and the date alone matches
+	var inm = req.headers["If-None-Match"]
+	if inm
+		if matches(inm, tag)
+			res.status = ngx.HTTP_NOT_MODIFIED
+			return
+	else if modified_since(req, res)
 		res.status = ngx.HTTP_NOT_MODIFIED
-		-- no body. Cache-Control/Expires/Vary are kept, see RFC 9110 s15.4.5
 		return
 
 	return out
+
+
+-- Evaluate the request's preconditions against the current representation's tag
+-- (nil = no current representation). Sets 412 and returns false when they fail.
+-- If-Match is evaluated first and short-circuits, per RFC 9110 s13.2.2
+var pass = \req, res, tag ->
+	var im = req.headers["If-Match"]
+	if im
+		if '*' == im
+			if not tag
+				res.status = ngx.HTTP_PRECONDITION_FAILED
+				return false
+		else if not strong_matches(im, tag)
+			res.status = ngx.HTTP_PRECONDITION_FAILED
+			return false
+	var inm = req.headers["If-None-Match"]
+	if inm
+		if '*' == inm
+			if tag
+				res.status = ngx.HTTP_PRECONDITION_FAILED
+				return false
+		else if tag and matches(inm, tag)
+			res.status = ngx.HTTP_PRECONDITION_FAILED
+			return false
+	return true
+
+
+-- Opt-in middleware for a mutating route. It must be placed BEFORE the handler
+-- that writes, so that a failed precondition never reaches the write:
+--
+--   w.put('/item/:id', etag.precondition(\q -> row_version(q)), update_item)
+--
+-- get_tag(q) returns the current representation's entity tag, or nil when there
+-- is none. A safe method is passed straight through: its conditional handling
+-- (a 304) belongs to check(). On failure the chain stops with a bare 412.
+var precondition = \get_tag ->
+	if 'function' ~= type(get_tag)
+		error("etag.precondition requires a tag getter function", 2)
+	return \req, res, nxt ->
+		var method = req.vars.request_method
+		if 'GET' == method or 'HEAD' == method
+			return nxt()
+		var tag = get_tag(req)
+		if tag ~= nil and 'string' ~= type(tag)
+			error("etag.precondition: get_tag must return a string or nil, got " .. type(tag), 2)
+		if not pass(req, res, tag)
+			return
+		return nxt()
 
 
 -- keep the module callable as before: etag(payload, weak)
@@ -85,6 +179,7 @@ return setmetatable({
 	etag = etag
 	, matches = matches
 	, check = check
+	, precondition = precondition
 }, {
 	__metatable = false
 	, __call = \_, payload, weak ->
