@@ -26,19 +26,17 @@ var send_body = \body ->
 
 
 -- auto-detect response type from body
---   string/number/array  -> send as-is (caller sets Content-Type if desired)
---   function       -> streaming iterator (handled in send_body)
---   table (dict)   -> JSON-encode + Content-Type: application/json
+--   string/number -> sent as-is (caller sets Content-Type if desired)
+--   function      -> streaming iterator (handled in send_body)
+--   table         -> JSON-encoded (empty tables and arrays included)
 var prepare_body = \r, body ->
-	if type(body) == 'table' and type(next(body)) == 'string'
-		-- dict-like table -> JSON
+	if type(body) == 'table'
 		var encoded, err = cjson.encode(body)
-		if encoded
-			if r.headers['Content-Type'] == nil -- may have application/ld+json, application/vnd.api+json
-				r.headers['Content-Type'] = 'application/json'
-			return encoded
-		ngx.log(ngx.ERR, 'prepare_body: failed to encode response as JSON: ', err)
-		return nil
+		if not encoded
+			error("response body is not JSON-encodable: " .. tostring(err), 2)
+		if r.headers['Content-Type'] == nil -- may have application/ld+json, application/vnd.api+json
+			r.headers['Content-Type'] = 'application/json'
+		return encoded
 	return body
 
 

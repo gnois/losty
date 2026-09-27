@@ -36,16 +36,15 @@ local send_body = function(body)
     return ngx.print(body)
 end
 local prepare_body = function(r, body)
-    if type(body) == "table" and type(next(body)) == "string" then
+    if type(body) == "table" then
         local encoded, err = cjson.encode(body)
-        if encoded then
-            if r.headers["Content-Type"] == nil then
-                r.headers["Content-Type"] = "application/json"
-            end
-            return encoded
+        if not encoded then
+            error("response body is not JSON-encodable: " .. tostring(err), 2)
         end
-        ngx.log(ngx.ERR, "prepare_body: failed to encode response as JSON: ", err)
-        return nil
+        if r.headers["Content-Type"] == nil then
+            r.headers["Content-Type"] = "application/json"
+        end
+        return encoded
     end
     return body
 end
