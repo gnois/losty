@@ -4,8 +4,7 @@
 local strz = require("losty.str")
 local to = require("losty.to")
 local ngx_header = ngx.header
-local insert
-insert = function(tb, v)
+local insert; insert = function(tb, v)
     if "table" == type(v) then
         for _, x in ipairs(v) do
             insert(tb, x)
@@ -27,19 +26,45 @@ local push = function(tb, k, v)
         tb[k] = oldt
     end
 end
+local TOKEN = "^[%w!#$%%&'*+.^_`|~-]+$"
+local bad; bad = function(v)
+    if "table" == type(v) then
+        for _, x in ipairs(v) do
+            local b = bad(x)
+            if b then
+                return b
+            end
+        end
+        return nil
+    end
+    local c = string.match(tostring(v), "[%z\1-\8\10-\31\127]")
+    if c then
+        return string.byte(c)
+    end
+end
 local headers = setmetatable({}, {__metatable = false, __index = function(_, k)
     return ngx_header[k]
 end, __newindex = function(_, k, v)
+    if "string" ~= type(k) or not string.match(k, TOKEN) then
+        error("header name must be a http token (RFC 9110)", 2)
+    end
     local t = type(v)
     if nil == v or t == "table" and next(v) == nil then
         ngx_header[k] = nil
     elseif t == "string" or t == "number" or t == "table" then
+        local b = bad(v)
+        if b then
+            error(string.format("header '%s' value contains illegal byte 0x%02X", k, b), 2)
+        end
         push(ngx_header, k, v)
     else
         error("header value must be a string, number or array of them, got " .. t, 2)
     end
 end})
 local vary = function(name)
+    if "string" ~= type(name) or not string.match(name, TOKEN) then
+        error("vary name must be a http token (RFC 9110)", 2)
+    end
     local cur = ngx_header["Vary"]
     local txt = cur
     if "table" == type(cur) then
