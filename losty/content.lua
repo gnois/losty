@@ -81,20 +81,32 @@ local problem = function(req, res, nxt)
     end
     return out
 end
-local form = function(req, res, nxt)
-    local val, reason, ctype = body.prepare(req)
+local form_with_limit = function(req, res, nxt, max)
+    local val, reason, detail = body.prepare(req, max)
     if val or "DELETE" == req.vars.request_method then
         return nxt(val)
     end
+    if reason == "too_large" then
+        res.status = ngx.HTTP_REQUEST_ENTITY_TOO_LARGE
+        return {fail = "request body too large"}
+    end
     if reason == "unsupported" then
         res.status = ngx.HTTP_UNSUPPORTED_MEDIA_TYPE
-        return {fail = "unsupported content-type " .. (ctype or "")}
+        return {fail = "unsupported content-type " .. (detail or "")}
     end
     res.status = ngx.HTTP_BAD_REQUEST
     return {fail = reason or "no request body"}
 end
+local form = function(req, res, nxt)
+    return form_with_limit(req, res, nxt, nil)
+end
 return {
     form = form
+    , form_limit = function(max)
+        return function(req, res, nxt)
+            return form_with_limit(req, res, nxt, max)
+        end
+    end
     , reject = reject
     , mime = mime
     , text = function(kind)

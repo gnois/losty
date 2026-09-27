@@ -5,9 +5,25 @@ local upload = require("resty.upload")
 local cjson = require("cjson.safe")
 local str = require("losty.str")
 local MaxBody = 10 * 1024 * 1024
+local body_size = function(req)
+    local data = req.get_body_data()
+    if data ~= nil then
+        return #data
+    end
+    local file = req.get_body_file()
+    if file then
+        local fp = io.open(file, "r")
+        if fp then
+            local sz = fp:seek("end")
+            fp:close()
+            return sz
+        end
+    end
+    return nil
+end
 local raw = function(req)
     local data = req.get_body_data()
-    if not data then
+    if data ~= nil then
         local file = req.get_body_file()
         if file then
             local fp, err = io.open(file, "r")
@@ -42,12 +58,16 @@ local content_disposition = function(value)
         return out
     end
 end
-local parser = function()
+local cap = function(mmt)
+    return mmt and mmt > 0 and mmt or MaxBody
+end
+local parser = function(max)
     local input, err = upload:new(4096)
     if input then
         input:set_timeout(8000)
         local t, data
         local used = 0
+        local limit = cap(max)
         repeat
             t, data, err = input:read()
             if t then
@@ -65,7 +85,7 @@ local parser = function()
                     end
                 elseif "body" == t then
                     used = used + #data
-                    if used > MaxBody then
+                    if used > limit then
                         err = "request body too large"
                         break
                     end
@@ -83,9 +103,18 @@ end
 return {raw = function(req)
     req.read_body()
     return raw(req)
-end, prepare = function(req)
+end, prepare = function(req, max)
+    local limit = cap(max)
+    local len = tonumber(req.headers["Content-Length"])
+    if len and len > limit then
+        return nil, "too_large", len
+    end
     if req.headers["Transfer-Encoding"] or req.headers["Content-Length"] then
         req.read_body()
+        local size = body_size(req)
+        if size and size > limit then
+            return nil, "too_large", size
+        end
         local ctype = req.headers["Content-Type"]
         if ctype then
             local base = string.match(ctype, "^%s*([^;]+)")
@@ -102,7 +131,7 @@ end, prepare = function(req)
                 end
                 if string.match(base, "^multipart/") then
                     return function()
-                        local parse = coroutine.create(parser)
+                        local parse = coroutine.create(parser, max)
                         return function()
                             local code, key, val = coroutine.resume(parse)
                             if not code then
