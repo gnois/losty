@@ -3,11 +3,11 @@ local dispatch = require("losty.dispatch")
 local function mk_case(name, depth, next_call, init_call, expected)
     local handlers = {}
     for i = 1, depth - 1 do
-        handlers[i] = function(q, r, ...)
-            return next_call(q, r, ...)
+        handlers[i] = function(q, r, nxt, ...)
+            return next_call(nxt, ...)
         end
     end
-    handlers[depth] = function(q, r, ...)
+    handlers[depth] = function(q, r, nxt, ...)
         return expected
     end
 
@@ -28,8 +28,8 @@ local cases = {
     mk_case(
         "depth4_noargs",
         4,
-        function(q)
-            return q.next()
+        function(nxt)
+            return nxt()
         end,
         function(handlers, req, res)
             return dispatch(handlers, req, res)
@@ -39,8 +39,8 @@ local cases = {
     mk_case(
         "depth8_twoargs_with_nil",
         8,
-        function(q)
-            return q.next(11, nil)
+        function(nxt)
+            return nxt(11, nil)
         end,
         function(handlers, req, res)
             return dispatch(handlers, req, res)
@@ -50,8 +50,8 @@ local cases = {
     mk_case(
         "depth12_fourargs_mixed_nil",
         12,
-        function(q)
-            return q.next(nil, 7, nil, 9)
+        function(nxt)
+            return nxt(nil, 7, nil, 9)
         end,
         function(handlers, req, res)
             return dispatch(handlers, req, res, 5, nil)
@@ -61,8 +61,8 @@ local cases = {
     mk_case(
         "depth16_onearg",
         16,
-        function(q)
-            return q.next(42)
+        function(nxt)
+            return nxt(42)
         end,
         function(handlers, req, res)
             return dispatch(handlers, req, res)
