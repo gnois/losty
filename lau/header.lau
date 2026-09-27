@@ -6,8 +6,7 @@ var to = require('losty.to')
 var ngx_header = ngx.header
 
 
-var insert
-insert = \tb, v ->
+let insert = \tb, v ->
 	if 'table' == type(v)
 		for _, x in ipairs(v)
 			insert(tb, x)
@@ -31,6 +30,27 @@ var push = \tb, k, v ->
 		tb[k] = oldt
 
 
+-- a header name must be an RFC 9110 token (tchar+)
+var TOKEN = "^[%w!#$%%&'*+.^_`|~-]+$"
+
+-- a header value may not contain a control character other than HTAB, nor DEL.
+-- OpenResty would percent-escape these (ngx_http_lua_escape_uri's header_value
+-- table) so it silently rewrittes header value; reject it loudly instead.
+-- (%z is NUL, \10 is LF, \127 is DEL; \9 HTAB is legal in a field value)
+-- returns the first offending byte, or nil when the value (or every leaf of a
+-- nested array) is clean: 0 is truthy in Lua, so NUL is reported correctly
+let bad = \v ->
+	if 'table' == type(v)
+		for _, x in ipairs(v)
+			var b = bad(x)
+			if b
+				return b
+		return nil
+	var c = string.match(tostring(v), "[%z\1-\8\10-\31\127]")
+	if c
+		return string.byte(c)
+
+
 -- ngx.header wrapper, store nothing
 -- headers[key] = x
 -- if x is nil/{}, clears headers[key]
@@ -46,11 +66,16 @@ var headers = setmetatable({}, {
 		return ngx_header[k]
 
 	, __newindex = \_, k, v ->
+		if 'string' ~= type(k) or not string.match(k, TOKEN)
+			error("header name must be a http token (RFC 9110)", 2)
 		var t = type(v)
 		if nil == v or (t == 'table' and next(v) == nil)
 			-- ngx.header doc: set to nil or {} clears the header k
 			ngx_header[k] = nil
 		else if t == 'string' or t == 'number' or t == 'table'
+			var b = bad(v)
+			if b
+				error(string.format("header '%s' value contains illegal byte 0x%02X", k, b), 2)
 			push(ngx_header, k, v)
 		else
 			-- else ngx.header throws an obscure C level error
@@ -60,6 +85,8 @@ var headers = setmetatable({}, {
 
 -- add name to the Vary header, keeping the values already there (eg the Origin added by cors.lau)
 var vary = \name ->
+	if 'string' ~= type(name) or not string.match(name, TOKEN)
+		error("vary name must be a http token (RFC 9110)", 2)
 	var cur = ngx_header["Vary"]
 	var txt = cur
 	if 'table' == type(cur)
