@@ -4,10 +4,24 @@ var str = require('losty.str')
 
 var MaxBody = 10 * 1024 * 1024  -- 10MB soft cap
 
+-- byte size of an already-read (possibly file-backed) request body
+var body_size = \req ->
+	var data = req.get_body_data()
+	if data ~= nil
+		return #data
+	var file = req.get_body_file()
+	if file
+		var fp = io.open(file, 'r')
+		if fp
+			var sz = fp.seek(@, "end")
+			fp.close(@)
+			return sz
+	return nil
+
 
 var raw = \req ->
 	var data = req.get_body_data()
-	if not data
+	if data ~= nil
 		var file = req.get_body_file()
 		if file
 			var fp, err = io.open(file, 'r')
@@ -49,12 +63,16 @@ var content_disposition = \value ->
 		return out
 
 
-var parser = ->
+-- stream limit; nil/absent means the MaxBody soft cap
+var cap = \mmt -> return mmt and mmt > 0 and mmt or MaxBody
+
+var parser = \max ->
 	var input, err = upload.new(@, 4096)
 	if input
 		input.set_timeout(@, 8000) -- 8 sec
 		var t, data
 		var used = 0
+		var limit = cap(max)
 		do
 			t, data, err = input.read(@)
 			if t
@@ -69,7 +87,7 @@ var parser = ->
 						yield(string.lower(name), value)
 				else if 'body' == t
 					used = used + #data
-					if used > MaxBody
+					if used > limit
 						err = "request body too large"
 						break
 					yield(true, data)
@@ -95,9 +113,20 @@ return {
 	-- http://stackoverflow.com/questions/18877778/how-to-inspect-post-body-in-nginx-httpluamodule/19060711#19060711
 	-- buffered way
 	-- only for HTTP 1.x
-	, prepare = \req ->
+	-- The limit defaults to MaxBody and applies to every body parser, not just
+	-- multipart. A declared Content-Length that already exceeds the limit is
+	-- refused before the body is read (fast path). For chunked transfer there
+	-- is no Content-Length, so the size is checked after buffering.
+	, prepare = \req, max ->
+		var limit = cap(max)
+		var len = tonumber(req.headers["Content-Length"])
+		if len and len > limit
+			return nil, "too_large", len
 		if req.headers["Transfer-Encoding"] or req.headers["Content-Length"]
 			req.read_body()
+			var size = body_size(req)
+			if size and size > limit
+				return nil, "too_large", size
 			var ctype = req.headers["Content-Type"]
 			if ctype
 				-- normalize the media type: strip parameters, trim, lowercase
@@ -112,7 +141,7 @@ return {
 						return json(req)
 					if string.match(base, "^multipart/")
 						return ->
-							var parse = coroutine.create(parser)
+							var parse = coroutine.create(parser, max)
 							return ->
 								var code, key, val = coroutine.resume(parse)
 								if not code

@@ -107,22 +107,32 @@ var problem = \req, res, nxt ->
 
 
 
-var form = \req, res, nxt ->
+var form_with_limit = \req, res, nxt, max ->
 	-- val is an iterator function for multipart/form-data
-	var val, reason, ctype = body.prepare(req)
+	var val, reason, detail = body.prepare(req, max)
 	if val or 'DELETE' == req.vars.request_method
 		return nxt(val)
 	-- http://stackoverflow.com/questions/7323958/are-put-and-post-requests-required-expected-to-have-a-request-body
 	-- js client should not PUT or POST without a body
+	if reason == "too_large"
+		res.status = ngx.HTTP_REQUEST_ENTITY_TOO_LARGE
+		return {fail = "request body too large"}
 	if reason == "unsupported"
 		res.status = ngx.HTTP_UNSUPPORTED_MEDIA_TYPE
-		return {fail = "unsupported content-type " .. (ctype or "")}
+		return {fail = "unsupported content-type " .. (detail or "")}
 	res.status = ngx.HTTP_BAD_REQUEST
 	return {fail = reason or "no request body"}
 
 
+var form = \req, res, nxt ->
+	return form_with_limit(req, res, nxt, nil)
+
+
 return {
 	form = form
+	, form_limit = \max ->
+		return \req, res, nxt ->
+			return form_with_limit(req, res, nxt, max)
 	, reject = reject
 	, mime = mime
 	, text = \kind ->
