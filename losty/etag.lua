@@ -16,7 +16,7 @@ local etag = function(payload, weak)
     end
 end
 local opaque = function(tag)
-    return string.match(tag, "^%s*[Ww]?/\"(.-)\"%s*$")
+    return string.match(tag, "^%s*[Ww]?/?\"(.-)\"%s*$")
 end
 local matches = function(header, tag)
     if not header then
@@ -35,6 +35,37 @@ local matches = function(header, tag)
         end
     end
     return false
+end
+local strong_matches = function(header, tag)
+    if not tag or string.match(tag, "^%s*[Ww]/") then
+        return false
+    end
+    local mine = opaque(tag)
+    if not mine then
+        return false
+    end
+    for _, one in ipairs(strz.split(header, ",")) do
+        if not string.match(one, "^%s*[Ww]/") and mine == opaque(one) then
+            return true
+        end
+    end
+    return false
+end
+local modified_since = function(req, res)
+    local last = res.headers["Last-Modified"]
+    if "string" ~= type(last) then
+        return false
+    end
+    local since = req.headers["If-Modified-Since"]
+    if "string" ~= type(since) then
+        return false
+    end
+    local a = ngx.parse_http_time(last)
+    local b = ngx.parse_http_time(since)
+    if not a or not b then
+        return false
+    end
+    return a <= b
 end
 local check = function(req, res, out)
     if "string" ~= type(out) or "" == out then
@@ -67,12 +98,64 @@ local check = function(req, res, out)
         end
         res.headers["ETag"] = tag
     end
-    if matches(req.headers["If-None-Match"], tag) then
+    local inm = req.headers["If-None-Match"]
+    if inm then
+        if matches(inm, tag) then
+            res.status = ngx.HTTP_NOT_MODIFIED
+            return 
+        end
+    elseif modified_since(req, res) then
         res.status = ngx.HTTP_NOT_MODIFIED
         return 
     end
     return out
 end
-return setmetatable({etag = etag, matches = matches, check = check}, {__metatable = false, __call = function(_, payload, weak)
+local pass = function(req, res, tag)
+    local im = req.headers["If-Match"]
+    if im then
+        if "*" == im then
+            if not tag then
+                res.status = ngx.HTTP_PRECONDITION_FAILED
+                return false
+            end
+        elseif not strong_matches(im, tag) then
+            res.status = ngx.HTTP_PRECONDITION_FAILED
+            return false
+        end
+    end
+    local inm = req.headers["If-None-Match"]
+    if inm then
+        if "*" == inm then
+            if tag then
+                res.status = ngx.HTTP_PRECONDITION_FAILED
+                return false
+            end
+        elseif tag and matches(inm, tag) then
+            res.status = ngx.HTTP_PRECONDITION_FAILED
+            return false
+        end
+    end
+    return true
+end
+local precondition = function(get_tag)
+    if "function" ~= type(get_tag) then
+        error("etag.precondition requires a tag getter function", 2)
+    end
+    return function(req, res, nxt)
+        local method = req.vars.request_method
+        if "GET" == method or "HEAD" == method then
+            return nxt()
+        end
+        local tag = get_tag(req)
+        if tag ~= nil and "string" ~= type(tag) then
+            error("etag.precondition: get_tag must return a string or nil, got " .. type(tag), 2)
+        end
+        if not pass(req, res, tag) then
+            return 
+        end
+        return nxt()
+    end
+end
+return setmetatable({etag = etag, matches = matches, check = check, precondition = precondition}, {__metatable = false, __call = function(_, payload, weak)
     return etag(payload, weak)
 end})
