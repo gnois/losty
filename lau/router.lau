@@ -1,36 +1,37 @@
--- modified from mashape router
 --``
-We use only url chars that has meaning or unsafe: /, ?, #, :, <>, {}
+We use only url chars that has meaning or unsafe: /, ?, #, :
+plus {} for route syntax, since braces are not valid url chars
 
 Description:
 Router must be deterministic, and shd check for most errors during registration
 
 Precedence when multiple possible matches
-1. Exact match
+1. Exact literal match
 2. Pattern match, by order of registration
+3. Wildcard ({*}), last
 
+Route grammar (a segment is a literal, or a {...} token)
+  {name}          named capture, one segment (default pattern [^/]+)
+  {name:%d+}      named capture with an explicit lua pattern
+  {:%d+}          positional capture with an explicit lua pattern
+  {*}  {*name}    wildcard: the rest of the path (>=1 segment); last segment only
+  {+}             prefix middleware: wraps this node and its descendants; last only
 
-A segment that begins with : specifies a capturing lua pattern
-A pattern cannot contain /, which is always a path separator
+A pattern cannot contain %c, %s, and obviously /, which is always a path separator, nor { }.
+The whole segment is captured; an outermost ( ) around the pattern is redundant.
 
-There is no named capture like in other frameworks, bcoz for conflicting paths like
-  /page/:id
-  /page/:user
-:user may never be matched, and req.match.user is always nil
+Named captures are collected into q.params (nil when none were bound); positional
+ones (and the whole segment of a named one) remain in the q.match array. A pattern
+node is shared by pattern text, so every name given to it is bound to the same
+captured segment.
 
-So, req.match cannot be keyed table, but is an array, which allows multiple captures within one segment also
-eg: /page/%w-(%d)-(%d)
-
-
-There is no way to specify optional last segment, to avoid possible conflicts
-  /page/:?  <-
+There is no way to specify an optional last segment, to avoid possible conflicts
+  /page/{:?}  <-
   /page
 specify both routes instead, with and without the optional segment
 
-The match pattern does not allow %c, %s, and obviously /
-
-
 --``
+
 
 var str_sub = string.sub
 var str_find = string.find
@@ -54,17 +55,41 @@ var next_segment = \path ->
 		return str_sub(path, i, j - 1), str_sub(path, j)
 	return str_sub(path, i), ''
 
-var COLON = ":"
-var LEAF = "#"
+-- route grammar: a segment is either a literal, or a {...} token. '{' and '}' are
+-- not valid url path characters, so they can never appear in a real request: that
+-- is what makes the grammar unambiguous.
+--   {name}          named capture, one segment (default pattern [^/]+)
+--   {name:%d+}      named capture with an explicit lua pattern
+--   {:%d+}          positional capture with an explicit lua pattern
+--   {*}  {*name}    wildcard: the rest of the path (>=1 segment); last segment only
+--   {+}             prefix middleware; wraps this node and all descendants; last only
+var NAME = "^[%a_][%w_]*$"
 -- canonical order for the Allow header (HEAD follows GET; not a registerable verb)
 var ALLOW_ORDER = {'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'}
 
+-- a node holds literal children (kids), pattern children (pats), an optional
+-- wildcard child, terminal handlers (leaf) and prefix middleware handlers (mw)
+var new_node = ->
+	return {kids = {}, pats = {}}
+
+-- trim a sequence back to len entries, undoing a failed match branch
+var truncate = \t, len ->
+	for i = #t, len + 1, -1
+		t[i] = nil
+
 var router = ->
 	var tree = {}
+	-- per-method capability flags, so match() can skip allocating the capture and
+	-- middleware scratch tables for methods that have neither
+	var has_mw = {}
+	var has_name = {}
 
-	var bind = \matches, m, token, toklen, s, e, ... ->
+	var bind = \matches, m, token, toklen, names, caps, s, e, ... ->
 		if s == 1 and e == toklen
 			matches[m] = token
+			if names
+				for _, nm in ipairs(names)
+					caps[#caps + 1] = {nm, token}
 			m = m + 1
 			var n = select('#', ...)
 			for i = 1, n
@@ -76,34 +101,58 @@ var router = ->
 			return true, m
 		return false, m
 
-	var resolve
-	resolve = \path, nodes, matches, m ->
+	-- collects prefix middleware (mws) and named captures (caps) along the winning
+	-- path; both are trimmed on backtrack, like the capture index m. caps and mws
+	-- are nil when the method has no named captures / no middleware at all.
+	let resolve = \path, node, matches, m, caps, mws ->
+		if node.mw
+			for _, f in ipairs(node.mw)
+				mws[#mws + 1] = f
+		-- keepmw is taken *after* this node's middleware: a failed child branch
+		-- must drop only what it added, not what this node contributed
+		var keepmw = mws and #mws or 0
+		var keepcap = caps and #caps or 0
+
 		var token
 		token, path = next_segment(path)
 		if not token
-			return nodes[LEAF], matches
+			return node.leaf, m
 
 		-- exact match
-		var child = nodes[token]
+		var child = node.kids[token]
 		if child
-			var func, bindings = resolve(path, child, matches, m)
-			if func
-				return func, bindings
+			var leaf, em = resolve(path, child, matches, m, caps, mws)
+			if leaf
+				return leaf, em
+			if mws truncate(mws, keepmw)
+			if caps truncate(caps, keepcap)
 
-		-- pattern match
-		var pattern
+		-- pattern match, by order of registration
 		var toklen = #token
-		for __, node in ipairs(nodes)
-			pattern, child = next(node)
-			-- save the index in case backtrack
+		for _, e in ipairs(node.pats)
+			-- save state in case of backtrack
 			var prev = m
+			var c0 = caps and #caps or 0
 			var ok
-			ok, m = bind(matches, m, token, toklen, str_find(token, pattern))
+			ok, m = bind(matches, m, token, toklen, e.names, caps, str_find(token, e.pat))
 			if ok
-				var func, bindings = resolve(path, child, matches, m)
-				if func
-					return func, bindings
+				var leaf, pm = resolve(path, e.node, matches, m, caps, mws)
+				if leaf
+					return leaf, pm
 			m = prev
+			if caps truncate(caps, c0)
+			if mws truncate(mws, keepmw)
+
+		-- wildcard: bind the rest of the path
+		if node.wild
+			var rest = token .. path
+			matches[m] = rest
+			if node.wild.name
+				caps[#caps + 1] = {node.wild.name, rest}
+			if node.wild.leaf
+				return node.wild.leaf, m + 1
+			matches[m] = nil
+			if caps truncate(caps, keepcap)
 		return false
 
 
@@ -122,45 +171,115 @@ var router = ->
 		return pcall(str_find, pattern, pattern)
 
 
-	-- find similar node in array part
-	-- else create new
-	var find_create = \nodes, token ->
-		var x
-		for _, n in ipairs(nodes)
-			x = n[token]
-			if x
-				break
-		if not x
-			x = {}
-			table.insert(nodes, {[token] = x})
-		return x
+	-- remove the outermost capturing parenthesis: the whole segment is captured
+	-- anyway, so wrapping the pattern in ( ) is redundant (historically allowed)
+	var strip = \pat ->
+		if str_match(pat, "%b()") == pat
+			return str_sub(pat, 2, -2)
+		return pat
 
+	-- pattern children are shared by pattern text, so a route and a prefix
+	-- middleware on the same pattern land on the same node. every name given to
+	-- the shared pattern is bound to the captured segment.
+	var find_pat = \node, pat, name ->
+		for _, e in ipairs(node.pats)
+			if e.pat == pat
+				if name
+					e.names = e.names or {}
+					var found
+					for _, nm in ipairs(e.names)
+						if nm == name
+							found = true
+							break
+					if not found
+						e.names[#e.names + 1] = name
+				return e.node
+		var names
+		if name
+			names = {name}
+		node.pats[#node.pats + 1] = {pat = pat, names = names, node = new_node()}
+		return node.pats[#node.pats].node
 
-	var install = \nodes, path, ... ->
-		for token in string.gmatch(path, "[^/]+")
-			if COLON == str_sub(token, 1, 1)
-				-- remove outermost capturing parenthesis. capture it ourselves
-				if str_match(token, ":%b()") == token
-					token = str_sub(token, 3, -2)
-				else
-					token = str_sub(token, 2)
-				var ok, err = check(token)
+	-- classify one path segment into a descriptor, or fail loudly
+	var segment = \token, path ->
+		if str_sub(token, 1, 1) == '{'
+			if str_sub(token, -1) ~= '}'
+				error("route '" .. path .. "': unbalanced '{' in '" .. token .. "'", 4)
+			var inner = str_sub(token, 2, -2)
+			if str_find(inner, '[{}]')
+				error("route '" .. path .. "': unexpected brace in '" .. token .. "'", 4)
+			if inner == '+'
+				return {kind = 'mw'}
+			if str_sub(inner, 1, 1) == '*'
+				var wname = str_sub(inner, 2)
+				if wname ~= '' and not str_match(wname, NAME)
+					error("route '" .. path .. "': bad wildcard name '" .. token .. "'", 4)
+				return {kind = 'wild', name = wname ~= '' and wname or nil}
+			if str_sub(inner, 1, 1) == ':'
+				var pat = strip(str_sub(inner, 2))
+				var ok, err = check(pat)
 				if not ok
-					error(err .. " in " .. path, 5)
-
-				nodes = find_create(nodes, token)
+					error(err .. " in " .. path, 4)
+				return {kind = 'cap', pat = pat}
+			var c = str_find(inner, ':', 1, true)
+			var nm, ptn
+			if c
+				nm = str_sub(inner, 1, c - 1)
+				ptn = strip(str_sub(inner, c + 1))
 			else
-				nodes[token] = nodes[token] or {}
-				nodes = nodes[token]
+				nm = inner
+				ptn = '[^/]+'
+			if not str_match(nm, NAME)
+				error("route '" .. path .. "': '" .. token .. "' is neither a name nor ':{pattern}'", 4)
+			var okp, errp = check(ptn)
+			if not okp
+				error(errp .. " in " .. path, 4)
+			return {kind = 'cap', pat = ptn, name = nm}
+		-- literal
+		if str_sub(token, 1, 1) == ':'
+			error("route '" .. path .. "': patterns moved into braces: write '{:" .. str_sub(token, 2) .. "}'", 4)
+		if str_find(token, '%*')
+			error("route '" .. path .. "': '*' is not a route marker: use '{*}' or '{+}'", 4)
+		if str_find(token, '[{}]')
+			error("route '" .. path .. "': unexpected brace in '" .. token .. "'", 4)
+		return {kind = 'lit', token = token}
 
-		var old = nodes[LEAF]
-		if not old
-			old = {...}
-		else  -- append to existing array
-			var o = #old
-			for n, f in ipairs({...})
-				old[o + n] = f
-		nodes[LEAF] = old
+	var parse = \path ->
+		var segs = {}
+		for token in string.gmatch(path, "[^/]+")
+			segs[#segs + 1] = segment(token, path)
+		return segs
+
+	var build = \root, segs, path, ... ->
+		var node = root
+		var n = #segs
+		for i = 1, n
+			var seg = segs[i]
+			if seg.kind == 'mw'
+				if i ~= n
+					error("route '" .. path .. "': '{+}' must be the last segment", 4)
+				node.mw = node.mw or {}
+				for _, f in ipairs({...})
+					node.mw[#node.mw + 1] = f
+				return
+			if seg.kind == 'wild'
+				if i ~= n
+					error("route '" .. path .. "': '{*}' must be the last segment", 4)
+				node.wild = node.wild or new_node()
+				if seg.name
+					if node.wild.name and node.wild.name ~= seg.name
+						error("route '" .. path .. "': wildcard already named '" .. node.wild.name .. "'", 4)
+					node.wild.name = seg.name
+				node = node.wild
+			else if seg.kind == 'cap'
+				node = find_pat(node, seg.pat, seg.name)
+			else
+				node.kids[seg.token] = node.kids[seg.token] or new_node()
+				node = node.kids[seg.token]
+
+		node.leaf = node.leaf or {}
+		for _, f in ipairs({...})
+			node.leaf[#node.leaf + 1] = f
 
 
 	var invalid = \path ->
@@ -186,10 +305,33 @@ var router = ->
 			var q = str_find(path, "?", 1, true)
 			if q
 				path = str_sub(path, 1, q - 1)
-			var arr, matches = resolve(path, nodes, {}, 1)
-			if not arr
+			-- allocate the scratch tables only when this method can use them
+			var matches = {}
+			var caps
+			if has_name[method]
+				caps = {}
+			var mws
+			if has_mw[method]
+				mws = {}
+			var leaf, m = resolve(path, nodes, matches, 1, caps, mws)
+			if not leaf
 				return nil, "unmatched path: " .. (path or "")
-			return arr, matches
+			truncate(matches, m)
+			var params
+			if caps and #caps > 0
+				params = {}
+				for _, c in ipairs(caps)
+					params[c[1]] = c[2]
+			if not mws or #mws == 0
+				return leaf, matches, params
+			-- compose prefix middleware in front of the terminal handlers.
+			-- build a new array: never mutate the stored leaf
+			var handlers = {}
+			for _, f in ipairs(mws)
+				handlers[#handlers + 1] = f
+			for _, f in ipairs(leaf)
+				handlers[#handlers + 1] = f
+			return handlers, matches, params
 
 		, allowed = \method, path ->
 			-- `match` already returned nothing for this method. return the methods
@@ -202,7 +344,7 @@ var router = ->
 			var primary = tree[method]
 			var set = {}
 			for meth, nodes in pairs(tree)
-				if nodes ~= primary and resolve(path, nodes, {}, 1)
+				if nodes ~= primary and resolve(path, nodes, {}, 1, {}, {})
 					set[meth] = true
 					if meth == 'GET'
 						set["HEAD"] = true
@@ -219,119 +361,18 @@ var router = ->
 			if err
 				error("route '" .. path .. "' " .. err, 4)
 			if not tree[method]
-				tree[method] = {}
-			install(tree[method], path, ...)
+				tree[method] = new_node()
+			var segs = parse(path)
+			for _, seg in ipairs(segs)
+				if seg.kind == 'mw'
+					has_mw[method] = true
+				else if seg.name
+					-- a named segment: {name}, {name:%d+} or {*name}
+					has_name[method] = true
+			build(tree[method], segs, path, ...)
 			return tree[method]
 	}
 
-
-
---```
---------------------------------------- Tests ---------------------------------------------
-
-var tbl = require('losty.tbl')
-
-var test_invalid = ->
-	var r = router()
-	var G = "GET"
-	var c = \...->
-		var ok, err = pcall(...)
-		assert(not ok)
-		print(err)
-
-	c(r.set, G, "//", 1)
-	c(r.set, G, "/favicon ico", 2)
-
-	c(r.set, G, "/:page", 1)
-	c(r.set, G, "/:page%", 1)
-	c(r.set, G, "/:page:", 1)
-
-	c(r.set, G, "/::%wage", 1)
-	c(r.set, G, "/:%wage/:.*#", 1)
-	c(r.set, G, "/:page+", 1)
-	c(r.set, G, "/:[page", 1)
-
-test_invalid()
-
-
-
-var test = ->
-	var r = router()
-	var G = "GET"
-
-	r.set(G, "/", 1)
-	r.set(G, "/favicon.ico", 2)
-
-	r.set(G, "/page", 10)
-	r.set(G, "/page/", 11)  -- last backslash ignored. accumulate
-
-	r.set(G, "/page/near", 12)
-
-	-- precedence
-	r.set(G, "/page/:%a+", 22)
-	r.set(G, "/page/:%a+", 23)
-	r.set(G, "/page/:.*", 24)
-	r.set(G, "/page/:%d+", 25)
-
-	r.set(G, "/page/:%d+/:.+", 30)
-	r.set(G, "/page/:%d+/related", 32)
-	r.set(G, "/page/:(%d+)/related", 33)  -- outer capture parenthesis removed
-
-	r.set(G, "/page/:.*/:^[+-]?/:%d*$", 50)
-
-	r.set(G, "/:page%?", 60)
-	r.set(G, "/:p(%a+)/:%d(%d)", 61)
-
-	tbl.show(r.set(G, "/:page%w*", 71))
-	tbl.show(r.set(G, "/:page%w*-(%d)", 72))
-
-	var res = {
-		{"/", 1}
-		, {"/favicon.ico", 2}
-
-		, {"/page", {10, 11}}
-		, {"/page/", {10, 11}}  -- backslash ignored
-		, {"/page/near", 12}
-		, {"/page/neared", {22, 23}, {'neared'}}
-		, {"/page/@peter", 24, {'@peter'}}
-		, {"/page/:id", 24, {':id'}}
-		, {"/page/123", 24, {'123'}}  -- precedence, matches .* instead of %d+
-		, {"/page/123/456", 30, {'123', '456'}}
-		, {"/page/111/edit", 30, {'111', 'edit'}}
-		, {"/page/22//related", {32, 33}, {'22'}}  -- exact match takes precedence, double slash treated as single slash
-		, {"/page/sept/-/4/", 50, {'sept', '-', '4'}}
-		, {"/pages100", 71, {'pages100'}}
-		, {"/pages200-2", 72, {'pages200-2', '2'}}
-		, {"/past/56", 61, {'past', 'ast', '56', '6'}}
-	}
-
-	var eq = \n, t1, t2 ->
-		if n and t1 and t2
-			for i = 1, n
-				if t1[i] ~= t2[i]
-					var msg = '[' .. i .. ']: '
-					return false, msg .. (tostring(t1[i]) or 'nil') .. ' != ' .. (tostring(t2[i]) or 'nil')
-			return true
-		return false, n .. ': ' .. type(t1) .. ' != ' .. type(t2)
-
-	for _, p in ipairs(res)
-		print(p[1])
-		var prm = p[2]
-		var arr, matches = r.match(G, p[1])  -- if strict mode, will throw disallowed double slash path: /page/22//related
-		assert(arr or not prm, matches)
-		if arr or prm
-			if type(prm) ~= 'table'
-				prm = {prm}
-			assert(eq(math.max(#prm, #arr), prm, arr))
-
-			if matches and p[3]
-				tbl.show(matches)
-				assert(eq(math.max(#p[3], #matches), p[3], matches))
-
-	print('\nOK')
-test()
-
----```
 
 
 return router

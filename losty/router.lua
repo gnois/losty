@@ -25,8 +25,7 @@ local next_segment = function(path)
     end
     return str_sub(path, i), ""
 end
-local COLON = ":"
-local LEAF = "#"
+local NAME = "^[%a_][%w_]*$"
 local ALLOW_ORDER = {
     "GET"
     , "HEAD"
@@ -36,11 +35,26 @@ local ALLOW_ORDER = {
     , "PATCH"
     , "OPTIONS"
 }
+local new_node = function()
+    return {kids = {}, pats = {}}
+end
+local truncate = function(t, len)
+    for i = #t, len + 1, -1 do
+        t[i] = nil
+    end
+end
 local router = function()
     local tree = {}
-    local bind = function(matches, m, token, toklen, s, e, ...)
+    local has_mw = {}
+    local has_name = {}
+    local bind = function(matches, m, token, toklen, names, caps, s, e, ...)
         if s == 1 and e == toklen then
             matches[m] = token
+            if names then
+                for _, nm in ipairs(names) do
+                    caps[#caps + 1] = {nm, token}
+                end
+            end
             m = m + 1
             local n = select("#", ...)
             for i = 1, n do
@@ -55,34 +69,65 @@ local router = function()
         end
         return false, m
     end
-    local resolve
-    resolve = function(path, nodes, matches, m)
+    local resolve; resolve = function(path, node, matches, m, caps, mws)
+        if node.mw then
+            for _, f in ipairs(node.mw) do
+                mws[#mws + 1] = f
+            end
+        end
+        local keepmw = mws and #mws or 0
+        local keepcap = caps and #caps or 0
         local token
         token, path = next_segment(path)
         if not token then
-            return nodes[LEAF], matches
+            return node.leaf, m
         end
-        local child = nodes[token]
+        local child = node.kids[token]
         if child then
-            local func, bindings = resolve(path, child, matches, m)
-            if func then
-                return func, bindings
+            local leaf, em = resolve(path, child, matches, m, caps, mws)
+            if leaf then
+                return leaf, em
+            end
+            if mws then
+                truncate(mws, keepmw)
+            end
+            if caps then
+                truncate(caps, keepcap)
             end
         end
-        local pattern
         local toklen = #token
-        for __, node in ipairs(nodes) do
-            pattern, child = next(node)
+        for _, e in ipairs(node.pats) do
             local prev = m
+            local c0 = caps and #caps or 0
             local ok
-            ok, m = bind(matches, m, token, toklen, str_find(token, pattern))
+            ok, m = bind(matches, m, token, toklen, e.names, caps, str_find(token, e.pat))
             if ok then
-                local func, bindings = resolve(path, child, matches, m)
-                if func then
-                    return func, bindings
+                local leaf, pm = resolve(path, e.node, matches, m, caps, mws)
+                if leaf then
+                    return leaf, pm
                 end
             end
             m = prev
+            if caps then
+                truncate(caps, c0)
+            end
+            if mws then
+                truncate(mws, keepmw)
+            end
+        end
+        if node.wild then
+            local rest = token .. path
+            matches[m] = rest
+            if node.wild.name then
+                caps[#caps + 1] = {node.wild.name, rest}
+            end
+            if node.wild.leaf then
+                return node.wild.leaf, m + 1
+            end
+            matches[m] = nil
+            if caps then
+                truncate(caps, keepcap)
+            end
         end
         return false
     end
@@ -100,48 +145,139 @@ local router = function()
         end
         return pcall(str_find, pattern, pattern)
     end
-    local find_create = function(nodes, token)
-        local x
-        for _, n in ipairs(nodes) do
-            x = n[token]
-            if x then
-                break
-            end
+    local strip = function(pat)
+        if str_match(pat, "%b()") == pat then
+            return str_sub(pat, 2, -2)
         end
-        if not x then
-            x = {}
-            table.insert(nodes, {[token] = x})
-        end
-        return x
+        return pat
     end
-    local install = function(nodes, path, ...)
-        for token in string.gmatch(path, "[^/]+") do
-            if COLON == str_sub(token, 1, 1) then
-                if str_match(token, ":%b()") == token then
-                    token = str_sub(token, 3, -2)
-                else
-                    token = str_sub(token, 2)
+    local find_pat = function(node, pat, name)
+        for _, e in ipairs(node.pats) do
+            if e.pat == pat then
+                if name then
+                    e.names = e.names or {}
+                    local found
+                    for _, nm in ipairs(e.names) do
+                        if nm == name then
+                            found = true
+                            break
+                        end
+                    end
+                    if not found then
+                        e.names[#e.names + 1] = name
+                    end
                 end
-                local ok, err = check(token)
+                return e.node
+            end
+        end
+        local names
+        if name then
+            names = {name}
+        end
+        node.pats[#node.pats + 1] = {pat = pat, names = names, node = new_node()}
+        return node.pats[#node.pats].node
+    end
+    local segment = function(token, path)
+        if str_sub(token, 1, 1) == "{" then
+            if str_sub(token, -1) ~= "}" then
+                error("route '" .. path .. "': unbalanced '{' in '" .. token .. "'", 4)
+            end
+            local inner = str_sub(token, 2, -2)
+            if str_find(inner, "[{}]") then
+                error("route '" .. path .. "': unexpected brace in '" .. token .. "'", 4)
+            end
+            if inner == "+" then
+                return {kind = "mw"}
+            end
+            if str_sub(inner, 1, 1) == "*" then
+                local wname = str_sub(inner, 2)
+                if wname ~= "" and not str_match(wname, NAME) then
+                    error("route '" .. path .. "': bad wildcard name '" .. token .. "'", 4)
+                end
+                return {kind = "wild", name = wname ~= "" and wname or nil}
+            end
+            if str_sub(inner, 1, 1) == ":" then
+                local pat = strip(str_sub(inner, 2))
+                local ok, err = check(pat)
                 if not ok then
-                    error(err .. " in " .. path, 5)
+                    error(err .. " in " .. path, 4)
                 end
-                nodes = find_create(nodes, token)
+                return {kind = "cap", pat = pat}
+            end
+            local c = str_find(inner, ":", 1, true)
+            local nm, ptn
+            if c then
+                nm = str_sub(inner, 1, c - 1)
+                ptn = strip(str_sub(inner, c + 1))
             else
-                nodes[token] = nodes[token] or {}
-                nodes = nodes[token]
+                nm = inner
+                ptn = "[^/]+"
+            end
+            if not str_match(nm, NAME) then
+                error("route '" .. path .. "': '" .. token .. "' is neither a name nor ':{pattern}'", 4)
+            end
+            local okp, errp = check(ptn)
+            if not okp then
+                error(errp .. " in " .. path, 4)
+            end
+            return {kind = "cap", pat = ptn, name = nm}
+        end
+        if str_sub(token, 1, 1) == ":" then
+            error("route '" .. path .. "': patterns moved into braces: write '{:" .. str_sub(token, 2) .. "}'", 4)
+        end
+        if str_find(token, "%*") then
+            error("route '" .. path .. "': '*' is not a route marker: use '{*}' or '{+}'", 4)
+        end
+        if str_find(token, "[{}]") then
+            error("route '" .. path .. "': unexpected brace in '" .. token .. "'", 4)
+        end
+        return {kind = "lit", token = token}
+    end
+    local parse = function(path)
+        local segs = {}
+        for token in string.gmatch(path, "[^/]+") do
+            segs[#segs + 1] = segment(token, path)
+        end
+        return segs
+    end
+    local build = function(root, segs, path, ...)
+        local node = root
+        local n = #segs
+        for i = 1, n do
+            local seg = segs[i]
+            if seg.kind == "mw" then
+                if i ~= n then
+                    error("route '" .. path .. "': '{+}' must be the last segment", 4)
+                end
+                node.mw = node.mw or {}
+                for _, f in ipairs({...}) do
+                    node.mw[#node.mw + 1] = f
+                end
+                return 
+            end
+            if seg.kind == "wild" then
+                if i ~= n then
+                    error("route '" .. path .. "': '{*}' must be the last segment", 4)
+                end
+                node.wild = node.wild or new_node()
+                if seg.name then
+                    if node.wild.name and node.wild.name ~= seg.name then
+                        error("route '" .. path .. "': wildcard already named '" .. node.wild.name .. "'", 4)
+                    end
+                    node.wild.name = seg.name
+                end
+                node = node.wild
+            elseif seg.kind == "cap" then
+                node = find_pat(node, seg.pat, seg.name)
+            else
+                node.kids[seg.token] = node.kids[seg.token] or new_node()
+                node = node.kids[seg.token]
             end
         end
-        local old = nodes[LEAF]
-        if not old then
-            old = {...}
-        else
-            local o = #old
-            for n, f in ipairs({...}) do
-                old[o + n] = f
-            end
+        node.leaf = node.leaf or {}
+        for _, f in ipairs({...}) do
+            node.leaf[#node.leaf + 1] = f
         end
-        nodes[LEAF] = old
     end
     local invalid = function(path)
         if not path or #path < 1 then
@@ -170,11 +306,38 @@ local router = function()
         if q then
             path = str_sub(path, 1, q - 1)
         end
-        local arr, matches = resolve(path, nodes, {}, 1)
-        if not arr then
+        local matches = {}
+        local caps
+        if has_name[method] then
+            caps = {}
+        end
+        local mws
+        if has_mw[method] then
+            mws = {}
+        end
+        local leaf, m = resolve(path, nodes, matches, 1, caps, mws)
+        if not leaf then
             return nil, "unmatched path: " .. (path or "")
         end
-        return arr, matches
+        truncate(matches, m)
+        local params
+        if caps and #caps > 0 then
+            params = {}
+            for _, c in ipairs(caps) do
+                params[c[1]] = c[2]
+            end
+        end
+        if not mws or #mws == 0 then
+            return leaf, matches, params
+        end
+        local handlers = {}
+        for _, f in ipairs(mws) do
+            handlers[#handlers + 1] = f
+        end
+        for _, f in ipairs(leaf) do
+            handlers[#handlers + 1] = f
+        end
+        return handlers, matches, params
     end, allowed = function(method, path)
         path = path or ""
         local q = str_find(path, "?", 1, true)
@@ -184,7 +347,7 @@ local router = function()
         local primary = tree[method]
         local set = {}
         for meth, nodes in pairs(tree) do
-            if nodes ~= primary and resolve(path, nodes, {}, 1) then
+            if nodes ~= primary and resolve(path, nodes, {}, 1, {}, {}) then
                 set[meth] = true
                 if meth == "GET" then
                     set["HEAD"] = true
@@ -207,9 +370,17 @@ local router = function()
             error("route '" .. path .. "' " .. err, 4)
         end
         if not tree[method] then
-            tree[method] = {}
+            tree[method] = new_node()
         end
-        install(tree[method], path, ...)
+        local segs = parse(path)
+        for _, seg in ipairs(segs) do
+            if seg.kind == "mw" then
+                has_mw[method] = true
+            elseif seg.name then
+                has_name[method] = true
+            end
+        end
+        build(tree[method], segs, path, ...)
         return tree[method]
     end}
 end

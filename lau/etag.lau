@@ -154,7 +154,7 @@ var pass = \req, res, tag ->
 -- Opt-in middleware for a mutating route. It must be placed BEFORE the handler
 -- that writes, so that a failed precondition never reaches the write:
 --
---   w.put('/item/:id', etag.precondition(\q -> row_version(q)), update_item)
+--   w.put('/item/{id}', etag.precondition(\q -> row_version(q)), update_item)
 --
 -- get_tag(q) returns the current representation's entity tag, or nil when there
 -- is none. A safe method is passed straight through: its conditional handling
