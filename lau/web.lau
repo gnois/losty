@@ -76,7 +76,9 @@ var run = \error_page, check ->
 	q.state = {}
 
 	var method = q.vars.request_method
-	handlers, q.match = rt.match(method == 'HEAD' and 'GET' or method, q.vars.uri)
+	var params
+	handlers, q.match, params = rt.match(method == 'HEAD' and 'GET' or method, q.vars.uri)
+	q.params = params or {}
 	if handlers
 		ok, trace = xpcall(->
 			body = dispatch(handlers, q, r)
