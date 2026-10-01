@@ -28,7 +28,7 @@ var mime = \kind ->
 var reject = \_, res ->
 	res.vary("Accept")
 	res.status = ngx.HTTP_NOT_ACCEPTABLE
-	-- web.run() already provides desc for status >= 400
+	-- run() already provides desc for status >= 400
 
 
 -- See
@@ -47,14 +47,9 @@ var html = \req, res, nxt ->
 	return out
 
 
-var json = \req, res, nxt ->
-	var out = nxt()
-	res.headers["Content-Type"] = JSON
-	-- just throw if error
-	-- ETag/If-None-Match is not handled here: the tag must identify the final
-	-- serialized body, so etag.check() does it once in web.run(), which also
-	-- covers html, view() and other responders
-	return cjson.encode(out)
+-- sets Content-Type: application/json and continues.
+-- The body is encoded by web.lau prepare_body()
+var json = mime(JSON)
 
 
 -- Once a route respond differently based on HTTP Accept header, shd set Vary: Accept for all responses
@@ -107,32 +102,30 @@ var problem = \req, res, nxt ->
 
 
 
-var form_with_limit = \req, res, nxt, max ->
-	-- val is an iterator function for multipart/form-data
-	var val, reason, detail = body.prepare(req, max)
-	if val or 'DELETE' == req.vars.request_method
-		return nxt(val)
-	-- http://stackoverflow.com/questions/7323958/are-put-and-post-requests-required-expected-to-have-a-request-body
-	-- js client should not PUT or POST without a body
-	if reason == "too_large"
-		res.status = ngx.HTTP_REQUEST_ENTITY_TOO_LARGE
-		return {fail = "request body too large"}
-	if reason == "unsupported"
-		res.status = ngx.HTTP_UNSUPPORTED_MEDIA_TYPE
-		return {fail = "unsupported content-type " .. (detail or "")}
-	res.status = ngx.HTTP_BAD_REQUEST
-	return {fail = reason or "no request body"}
-
-
-var form = \req, res, nxt ->
-	return form_with_limit(req, res, nxt, nil)
+-- form data middleware. max is an optional body limit; nil uses the default
+-- (body.MaxBody), a smaller value makes the route answer 413 sooner
+var form_limit = \max ->
+	return \req, res, nxt ->
+		-- val is an iterator function for multipart/form-data
+		var val, reason, detail = body.prepare(req, max)
+		if val or 'DELETE' == req.vars.request_method
+			return nxt(val)
+		-- http://stackoverflow.com/questions/7323958/are-put-and-post-requests-required-expected-to-have-a-request-body
+		-- js client should not PUT or POST without a body
+		if reason == "too_large"
+			res.status = ngx.HTTP_REQUEST_ENTITY_TOO_LARGE
+			return {fail = "request body too large"}
+		if reason == "unsupported"
+			res.status = ngx.HTTP_UNSUPPORTED_MEDIA_TYPE
+			return {fail = "unsupported content-type " .. (detail or "")}
+		res.status = ngx.HTTP_BAD_REQUEST
+		return {fail = reason or "no request body"}
 
 
 return {
-	form = form
-	, form_limit = \max ->
-		return \req, res, nxt ->
-			return form_with_limit(req, res, nxt, max)
+	-- form uses the default body limit; form_limit(max) sets a smaller one
+	form = form_limit(nil)
+	, form_limit = form_limit
 	, reject = reject
 	, mime = mime
 	, text = \kind ->
