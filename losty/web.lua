@@ -16,7 +16,6 @@ local METHODS = {
     , "PATCH"
     , "OPTIONS"
 }
-local rt = router()
 local send_body = function(body)
     if type(body) == "function" then
         while true do
@@ -57,23 +56,26 @@ local has_body = function(body)
     end
     return true
 end
-local route = function(prefix)
-    local phase = ngx.get_phase()
-    if phase ~= "init" then
-        error("route() must be called in init_by_lua_block instead of '" .. phase .. "' phase", 2)
+local prefixed = function(base, path)
+    if base and base ~= "/" then
+        return base .. path
     end
+    return path
+end
+local registrar = function(rt, base, name)
     local r = {}
     for _, meth in ipairs(METHODS) do
         r[string.lower(meth)] = function(path, f, ...)
-            if prefix and prefix ~= "/" then
-                path = prefix .. path
+            local phase = ngx.get_phase()
+            if phase ~= "init" then
+                error("route must be declared in init_by_lua_block, not '" .. phase .. "' phase (app '" .. (name or "unnamed") .. "')", 2)
             end
-            rt.set(meth, path, f, ...)
+            rt.set(meth, prefixed(base, path), f, ...)
         end
     end
     return r
 end
-local run = function(error_page, check)
+local run = function(rt, name, error_page, check)
     local handlers, body, ok, trace
     local q = req()
     local r = res()
@@ -90,7 +92,7 @@ local run = function(error_page, check)
         end)
         if not ok then
             r.status = 500
-            ngx.log(ngx.ERR, trace)
+            ngx.log(ngx.ERR, (name and "[" .. name .. "] " or "") .. trace)
         end
     else
         local allow = rt.allowed(method, q.vars.uri)
@@ -139,8 +141,20 @@ local run = function(error_page, check)
         end
     end
     if not ok then
-        ngx.log(ngx.ERR, err)
+        ngx.log(ngx.ERR, (name and "[" .. name .. "] " or "") .. tostring(err))
     end
     return code, err or trace
 end
-return {route = route, run = run}
+local new = function(name)
+    local rt = router()
+    local app = registrar(rt, nil, name)
+    app.name = name
+    app.route = function(prefix)
+        return registrar(rt, prefix, name)
+    end
+    app.run = function(error_page, check)
+        return run(rt, name, error_page, check)
+    end
+    return app
+end
+return {new = new}

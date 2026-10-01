@@ -72,7 +72,7 @@ http {
       require("losty.worker")
    }
 
-   # Register routes once per worker (not once per request).
+   # Register routes once per worker, instead of per request
    init_by_lua_block {
       -- Allow require('a.b') to find a.b.lua then a/b.lua
       table.insert(package.loaders, 2, function(name)

@@ -52,6 +52,18 @@ opm get gnois/losty
 
 Routes are registered once at init time, and requests are served per connection. nginx.conf therefore has two distinct blocks:
 
+app.lau
+```
+var web = require('losty.web')                  -- line 1
+var app = web.new('site')                       -- line 2
+var w = app.route('/t')                         -- line 3
+w.get('/hi', function(q, r)                     -- line 4
+   r.status = 200
+   r.headers["content-type"] = "text/plain"
+   return "Hi world"
+end)
+return app
+```
 nginx.conf
 ```
 events {
@@ -59,20 +71,14 @@ events {
 }
 http {
    init_by_lua_block {
-      local web = require('losty.web')            -- line 1
-      local w = web.route('/t')                   -- line 2
-      w.get('/hi', function(q, r)                 -- line 3
-         r.status = 200
-         r.headers["content-type"] = "text/plain"
-         return "Hi world"
-      end)
+      require('app')                             -- register routes once, at init
    }
    server {
       listen 80;
 
       location / {
          content_by_lua_block {
-            require('losty.web').run()
+            require('app').run()                 -- handle each request
          }
       }
    }
@@ -89,21 +95,22 @@ See [losty-starters](https://github.com/gnois/losty-starters) repo for more exam
 Losty can be used with `init_by_lua_block` and `content_by_lua_block` directives in OpenResty. Routes are registered once in `init_by_lua_block`, then each incoming request is handled by calling `run()` from `content_by_lua_block`. It matches HTTP requests to user defined routes, which associates one or more handler functions that process the request.
 Similar to frameworks like Koajs, handlers need to be explicitly invoked downstream, and then control flows back upstream.
 
-Lines 1, 2 and 3 in the Quickstart show the basic pattern to register route handlers.
-`require('losty.web')` returns a simple key/value table with two functions, `route()` and `run()`.
+Lines 1–4 in the Quickstart show the basic pattern: `require('losty.web')` returns a
+`new(name)` factory, and each call returns an app with `get`/`post`/… verbs,
+`route(prefix)` for grouping, and `run()`.
 
 `route()` may be called multiple times, each taking an optional path prefix for grouping purpose. In the quickstart, `/t` is the prefix used to group route handlers under `/t/...` url.
 If any combined prefix and path resolves to the same string, their associated handlers are accumulated (but still has to be explicitly invoked). For eg:
 
 ```
-local web = require('losty.web')
-local w = web.route()
-w.get('/a/b', function(q, r)
+local app = require('losty.web').new('demo')
+local w = app.route()
+w.get('/a/b', function(q, r, nxt)
    r.status = 403
-   return q.next()      -- explicitly invoke next handler if any
+   return nxt()      -- explicitly invoke next handler if any
 end)
 
-local w = web.route('/a')
+local w = app.route('/a')
 w.get('/b/', function(q, r) return "No entry" end)      -- line 4
 
 ```
@@ -113,45 +120,143 @@ Visiting `/a/b` will get "No entry" with HTTP status 403. Notice that the extra 
 After routes are established, `run()` must be called to start handling incoming requests.
 
 
+### More than one app
+
+An app is its own router. One app can serve `/` and another `/api/`, each with its own
+routes, middleware and error handling.
+
+Keep each app in its own module and return the app:
+
+app.site.lau
+```
+var web = require('losty.web')
+var app = web.new('site')                       -- the name is only for logs and errors
+
+app.get('/', function(q, r)
+   r.headers['Content-Type'] = 'text/plain'
+   return 'Home'
+end)
+
+app.get('/about', function(q, r)
+   r.headers['Content-Type'] = 'text/plain'
+   return 'About'
+end)
+return app
+```
+app.api.lau
+```
+var web     = require('losty.web')
+var content = require('losty.content')
+var app     = web.new('api')
+
+-- every POST under /api answers with JSON
+app.post('/api/{+}', content.json)
+
+app.get('/api/items', function(q, r)
+   return {items = {'a', 'b'}}                   -- table -> JSON
+end)
+
+app.post('/api/items', content.form, function(q, r, nxt, body)
+   return {created = body.name}
+end)
+return app
+```
+Load both once at init, and run the right one per location:
+
+nginx.conf
+```
+init_by_lua_block {
+   require('app.site')                          -- register routes once, at init
+   require('app.api')
+}
+server {
+   listen 80;
+
+   location /api/ {
+      content_by_lua_block {
+         require('app.api').run()
+      }
+   }
+   location / {
+      content_by_lua_block {
+         require('app.site').run()
+      }
+   }
+}
+```
+`require` caches, so each app is built once per worker and every request reuses it.
+
+Routes are written as full paths (`/api/items`), so nothing is stripped: nginx picks the
+location, and the location picks the app. Two locations may share one app, and one
+`init_by_lua_block` may load several apps. Creating an app with `web.new()` is safe at
+any time; only *registering routes* must happen in the init phase.
+
+
 ### Routes definition
 
-Routes are defined using HTTP methods, like get() for GET or post() for POST.
+Routes are defined using HTTP methods, like `get()` for GET or `post()` for POST.
 
-Route paths are strings that begins with '/', followed by multiple segments separated by '/' as well. A trailing slash is ignored.
+A route path begins with `/`, with segments separated by `/`. A trailing slash is
+ignored.
 
-A segment that begins with : specifies a capturing lua pattern. Captured values are stored in `match` array of request table (q).
+A segment is either a literal, or a `{...}` token. Braces are not valid URL characters,
+so they can never appear in a real request — everything inside them is route syntax:
 
-There is no named capture like in other frameworks, due to possible conflicting paths like:
-```
-  /page/:id
-  /page/:user
-```
-where :user may never be matched, causing `q.match['user']` to be always nil.
+| Segment    | Meaning |
+|------------|---------|
+| `users`    | literal: matches exactly `users` |
+| `{id}`     | named capture, one segment (default pattern `[^/]+`) |
+| `{id:%d+}` | named capture with an explicit Lua pattern |
+| `{:%d+}`   | positional capture with an explicit Lua pattern |
+| `{*}` / `{*rest}` | wildcard: the rest of the path (last segment only) |
+| `{+}`      | prefix middleware (last segment only) |
 
-Hence, q.match is not a keyed table, but an array instead, which also enables multiple captures within one segment.
-eg:
+Captures go into the `q.match` array. A named capture is also stored in `q.params`,
+keyed by name:
 ```
-/page/:%w-(%d)-(%d)
+/page/{id}        -- q.params.id
+/page/{id:%d+}    -- q.params.id, digits only
+/page/{:%w+}      -- q.match[1], %w+
+/past/{:p(%a+)}   -- q.match = {'past', 'ast'}
 ```
 
-There is no way to specify an optional last segment, to avoid possible conflicts:
+A pattern cannot contain `/`, which is always a path separator. The whole segment is
+captured, so an outermost `( )` around the pattern is redundant:
 ```
-  /page/:?  <- not valid
+/page/{:(%d+)}    -- same as {:%d+}
+```
+
+`{*}` captures the rest of the path:
+```
+/files/{*path}    -- /files/a/b -> q.params.path = 'a/b'
+```
+
+`{+}` registers a handler for a path prefix, so it runs for every route under it and
+falls through to the matched route. This is how prefix middleware is attached:
+```
+w.post('/api/{+}', csrf_guard)    -- runs for every POST under /api
+w.post('/api/items', create_item) -- then this, if the path matches
+```
+
+Patterns are matched in order of declaration, and a literal segment always beats a
+pattern. There is no optional last segment, to avoid conflicts:
+```
   /page
+  /page/{id}      -- not /page/{id?}
 ```
 Specify both routes instead, with and without the optional segment.
 
-The match pattern does not allow `%c, %s`, and obviously `/`, which is always a path separator.
+The pattern does not allow `%c`, `%s`, or `/`.
 
-For routes registered in specified order below:
+For routes registered in this order:
 ```
-1. /page/:%a+
-2. /page/:.*
-3. /page/:%d+
+1. /page/{:%a+}
+2. /page/{:.*}
+3. /page/{:%d+}
 4. /page/near
-5. /:p(%a+)/:%d(%d)
+5. /{:p(%a+)}/{:%d(%d)}
 ```
-Requests below are matched.
+Requests below are matched:
 ```
 /page/near  -> 4
 /page/last  -> 1,  q.match = {'last'}
@@ -161,60 +266,81 @@ Requests below are matched.
 ```
 Notice the last route receives multiple captures within a single segment.
 
-Path are matched in order of declaration, and non-pattern path gets a higher precedence.
-
 
 
 
 ### Handler
 
-A handler is a function that takes a request (q) and a response (r) table, and optionally more arguments which may be passed from previous handlers.
+A handler is a function that takes a request (q), a response (r), and the continuation (`nxt`) as its third argument. Values passed to `nxt(...)` are appended to the arguments of every handler further down the chain.
 
-Here is a handler for http POST, PUT or DELETE request, taken from the built in content.lua helper:
-```
-function form(q, r)
-   local val, fail = body.buffered(q)
-   local method = q.vars.request_method
-   if val or method == "DELETE" then
-      return q.next(val)
-   end
-   r.status = ngx.HTTP_BAD_REQUEST
-   return {fail = fail or method .. " should have request body"}
-end
-```
-When a route is matched with the requested URL, Losty dispatcher invokes the first handler, which may call the next handler with q.next() passing more arguments, like `val` in the above example, or simply return a response body.
+`nxt` belongs to the current position in the chain, not to the request, so it is passed as an argument. A nested dispatch (for example inside `content.dual`) gets its own `nxt` and cannot disturb an outer one.
 
-
-Here is another handler that opens a postgresql database connection and passes it to the next handler, then keepalives the connection and returns the received result.
-```
-local pg = require('losty.sql.pg')
-
-function database(q, r)
-   local db = pg(databasename, username, password)
-   db.connect()
-   local out = q.next(db)
-   db.disconnect()
-   return out
-end
-```
-
-The above handlers can be chained like this:
+Handlers declare only what they use, which gives three natural shapes:
 
 ```
-w.post('/path', form, database, function(q, r, body, db)
+-- leaf: the common case, ignores the continuation and the payload
+w.get('/hi', function(q, r)
+   r.status = 200
+   r.headers['Content-Type'] = 'text/plain'
+   return 'Hi world'
+end)
+
+-- middleware: continues the chain
+w.get('/admin', require_user, function(q, r)
+   ...
+end)
+
+-- payload tail: names the values earlier middleware passed down
+w.post('/path', form, database, function(q, r, nxt, body, db)
    -- use body and db
    db.insert("users(name) values (:?)", body.name)
    r.status = 201
    return {ok = true}    -- dict table is auto-encoded to JSON
 end)
 ```
-Notice how the form `body` and `db` are appended and passed as arguments to the following handlers, and the last handler returns JSON as response body.
+
+Here is the built in `content.form` middleware, which declares `nxt` because it continues the chain and passes the parsed body to the handlers below it:
+```
+function form(q, r, nxt)
+   local val, fail = body.buffered(q)
+   local method = q.vars.request_method
+   if val or method == "DELETE" then
+      return nxt(val)
+   end
+   r.status = ngx.HTTP_BAD_REQUEST
+   return {fail = fail or method .. " should have request body"}
+end
+```
+
+`nxt(...)` **returns** the downstream handler's value, so a middleware can wrap it and release resources afterwards:
+```
+local pg = require('losty.sql.pg')
+
+function database(q, r, nxt)
+   local db = pg(databasename, username, password)
+   db.connect()
+   local out = nxt(db)
+   db.disconnect()
+   return out
+end
+```
+
+Payload values are cumulative and positional: `form` appends `body`, then `database` appends `db`, so the tail declares `(q, r, nxt, body, db)`.
+
+To continue the chain without adding a value, call `nxt()` with no arguments. The dispatcher holds the accumulated payload, so a pass-through middleware has nothing to forward. Writing `return nxt(...)` is almost always wrong as it re-appends the payload the handler was given and doubles it on every hop.
+
+For data that does not belong to a particular position in the chain, use the per-request facilities instead of adding arguments:
+
+* `q.state` — a plain table for the current request, eg `q.state.user = u`, for cross-cutting values that many handlers need.
+* `r.defer(fn, ...)` — register cleanup to run once the chain has returned, before the response is sent.
+
+The third argument is named `nxt` rather than `next`, so that it does not shadow Lua's built-in `next()`, which handlers sometimes need for table traversal.
 
 Other frameworks normally use a context table that is extended with keys and passed across handlers, but Losty passes them as cumulative function arguments by default, thanks to Lua variable argument and multiple return values. Here are some considerations for Losty's design.
 
 * Arguments are easily visible.
 * Arguments (un)packing is slower, but may not be significant if there are only a handful of handlers.
-* Switching to a context table is easy for Losty; just append keys to the request (q) or response (r) table. But the reverse is not.
+* Values that do not belong to a chain position go in `q.state`, which is per-request and does not need to be threaded through every signature.
 
 
 If the response body is large, or may not be available all at once, we can return a function from the handler, and Losty will loop the function as iterator, returning its result in streaming fashion until its result is nil.
@@ -228,8 +354,7 @@ Handlers simply return a value — Losty infers how to send it:
 |---|---|
 | `string` or `number` | Sent as-is. Set `Content-Type` header yourself. |
 | `function` | Called repeatedly as an iterator and streamed until it returns `nil`. |
-| array table (integer keys) | Each element sent as a string chunk (used by `view()` output). |
-| dict table (string keys) | Auto JSON-encoded. `Content-Type: application/json` set if not already present. |
+| table | JSON-encoded, arrays and empty tables included. `Content-Type: application/json` set if not already present. |
 | `nil` | No body. |
 
 ```
@@ -240,23 +365,60 @@ w.get('/api/status', function(q, r)
 end)
 ```
 
-For richer control — ETags, cache headers, content negotiation — use the `losty.content` middleware (`content.json`, `content.html`, `content.form`, `content.dual`) instead, which builds on top of this.
+Because every table is JSON-encoded, an array such as `{'a', 'b'}` becomes the JSON `["a","b"]`, not the raw bytes `ab`. To stream a list of strings, return a function iterator instead.
+
+For richer control — ETags, cache headers, content negotiation — use the `losty.content` middleware (`content.json`, `content.html`, `content.form`, `content.dual`). `content.json` and `content.html` set the response type (`content.html` also disables caching); the body itself is still encoded by the rules above.
 
 
 
 ### Request Table
-Inside handlers, the passed in request table (q) is a thin wrapper for ngx.var and ngx.req, from which all properties are accessible.
+Inside handlers, the passed in request table (q) is a thin wrapper for ngx.var and ngx.req, with a few route and proxy helpers.
 
-Request table includes `q.request_id`, resolved from `X-Request-Id` header, then `$request_id`, then userid cookie fallback.
+| Field | What it is |
+|---|---|
+| `q.vars` | `ngx.var` — every nginx variable, eg `q.vars.request_method`, `q.vars.uri` |
+| `q.headers` | request headers, case-insensitive: `q.headers['Content-Type']` |
+| `q.cookies` | request cookies, URI-unescaped: `q.cookies.sid` |
+| `q.args` | query string arguments: `q.args.page` for `?page=2` |
+| `q.match` | array of route captures (see [Routes definition](#routes-definition)) |
+| `q.params` | key/value table of named captures, eg `q.params.id` |
+| `q.state` | empty table, created fresh for each request |
+| `q.request_id` | `X-Request-Id` header, else `$request_id`, else the userid cookie |
+| `q.secure()` | true when the request is HTTPS |
+| `q.client_ip(trusted)` | client address, honouring `Forwarded` / XFF from trusted proxies |
+| `q.forwarded()` | parsed `Forwarded` header |
+| `q.canonical_url(trusted)` | canonical public URL, from the forwarded details |
+
+Anything else falls through to `ngx.req`, so `q.get_body_data()` and friends work too. With `userid on;` in nginx, `q.id`, `q.id_binary` and `q.id_base64` give the browser id.
+
+`q.state` is the place for application data such as the signed-in user, eg `q.state.user = u`, instead of threading it through every handler signature.
 
 ### Response Table
-Inside handlers, the passed in response table (r) is a thin helper used to set HTTP headers and cookies, and wraps `ngx.status`. Setting `ngx.status` directly also works as expected.
+Inside handlers, the passed in response table (r) sets the status, headers and cookies, and wraps `ngx.status`. Setting `ngx.status` directly also works as expected.
+
+| Field | What it does |
+|---|---|
+| `r.status` | `ngx.status`; read or assign, eg `r.status = 201` |
+| `r.headers[Name] = value` | set a header (appends to an existing one; `nil` or `{}` clears it) |
+| `r.vary(name)` | add `name` to `Vary`, keeping the values already there |
+| `r.nocache()` | no-store caching headers |
+| `r.cache(status, sec)` | set the status and `Cache-Control: max-age=sec` |
+| `r.redirect(url, same_method?)` | 303 to `url` (307 when `same_method` is true) |
+| `r.exec(uri, args?)` | internal redirect that still lets the dispatcher finish |
+| `r.cookie(name, httponly?, domain?, path?)` | create a cookie (see [Cookies](#cookies)) |
+| `r.cookies` | read-only view of the cookies set on this response |
+| `r.defer(fn, ...)` | run `fn` after the chain returns, before the response is sent |
 
 ```
-r.headers[Name] = value
 r.status = 201
+r.headers['Content-Type'] = 'application/json'
+r.headers['X-Count'] = 3
 assert(ngx.status == 201)
 ```
+
+Assigning any other key stores it on `r` for the rest of the request, eg `r.user = u`.
+
+`r.defer(fn, ...)` hooks run in LIFO order once the handler chain has returned, before the response is sent — even when a handler throws and the app answers 500. Use it to release resources opened by middleware.
 
 #### Cookies
 
@@ -329,14 +491,14 @@ Setting `ngx.headers` directly prior to returning response should also work as e
 
 Note that calling `ngx.exec()`, `ngx.redirect()`, `ngx.exit()`, `ngx.flush()`, `ngx.say()`, `ngx.print()` or `ngx.eof()` in a handler would short circuit the Losty dispatcher flow and return control to Nginx immediately. An example would be to use `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages. Or calling `return ngx.exec()` to internally redirect to another location. Is recommended to always use `return` to be explicit that control is no longer in Losty. In such case, external resources like db connection that depend on normal return path from middlewares might not be released.
 
- To allow Losty dispatcher flow to complete, use `r.exec(uri, args)` instead of `ngx.exec()`. Note that headers set before `r.exec()` have no effect on the subrequest. Use `q.defer(fn, ...)` to register cleanup callbacks in middleware. Deferred callbacks run in LIFO order after dispatcher returns (even when handler throws and Losty sets 500). Use this for releasing external resources.
+ To allow Losty dispatcher flow to complete, use `r.exec(uri, args)` instead of `ngx.exec()`. Note that headers set before `r.exec()` have no effect on the subrequest. Use `r.defer(fn, ...)` to register cleanup callbacks in middleware. Deferred callbacks run in LIFO order after the handler chain returns and before the response is sent, even when a handler throws and Losty sets 500. Use this for releasing external resources.
 
 Example:
 ```
-w.get('/download/:id', function(q, r)
+w.get('/download/{id}', function(q, r)
    local db = pg(...)
    db.connect()
-   q.defer(function() db.disconnect() end)
+   r.defer(function() db.disconnect() end)
 
    r.headers['Content-Type'] = 'application/octet-stream'
    return r.exec('/_protected/' .. q.match[1])
