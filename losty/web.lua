@@ -47,14 +47,14 @@ local prepare_body = function(r, body)
     end
     return body
 end
-local is_exec_intent = function(body)
-    return type(body) == "table" and body.__ngx_exec == true and body.uri
-end
 local has_body = function(body)
     if body == nil or type(body) == "string" and body == "" then
         return false
     end
     return true
+end
+local trace_err = function(err)
+    return debug.traceback(err, 2)
 end
 local prefixed = function(base, path)
     if base and base ~= "/" then
@@ -83,13 +83,14 @@ local run = function(rt, name, error_page, check)
     local method = q.vars.request_method
     local params
     handlers, q.match, params = rt.match(method == "HEAD" and "GET" or method, q.vars.uri)
+    if not handlers then
+        q.match = {}
+    end
     q.params = params or {}
     if handlers then
         ok, trace = xpcall(function()
             body = dispatch(handlers, q, r)
-        end, function(err)
-            return debug.traceback(err, 2)
-        end)
+        end, trace_err)
         if not ok then
             r.status = 500
             ngx.log(ngx.ERR, (name and "[" .. name .. "] " or "") .. trace)
@@ -104,12 +105,6 @@ local run = function(rt, name, error_page, check)
         end
     end
     r.run_defers()
-    if is_exec_intent(body) then
-        if body.args ~= nil then
-            return ngx.exec(body.uri, body.args)
-        end
-        return ngx.exec(body.uri)
-    end
     body = prepare_body(r, body)
     body = etag.check(q, r, body)
     local code = r.status
@@ -132,16 +127,18 @@ local run = function(rt, name, error_page, check)
     end
     local err
     ok, err = r.send()
+    if not ok then
+        ngx.log(ngx.ERR, (name and "[" .. name .. "] " or "") .. "cannot send headers: " .. tostring(err))
+        return code, err or trace
+    end
+    if method ~= "HEAD" and not empty and body ~= nil then
+        ok, err = send_body(body)
+    end
     if ok then
-        if method ~= "HEAD" and not empty and body ~= nil then
-            ok, err = send_body(body)
-        end
-        if ok then
-            ok, err = ngx.eof()
-        end
+        ok, err = ngx.eof()
     end
     if not ok then
-        ngx.log(ngx.ERR, (name and "[" .. name .. "] " or "") .. tostring(err))
+        ngx.log(ngx.WARN, (name and "[" .. name .. "] " or "") .. "cannot send body: " .. tostring(err))
     end
     return code, err or trace
 end

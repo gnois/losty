@@ -404,10 +404,9 @@ Inside handlers, the passed in response table (r) sets the status, headers and c
 | `r.nocache()` | no-store caching headers |
 | `r.cache(status, sec)` | set the status and `Cache-Control: max-age=sec` |
 | `r.redirect(url, same_method?)` | 303 to `url` (307 when `same_method` is true) |
-| `r.exec(uri, args?)` | internal redirect that still lets the dispatcher finish |
 | `r.cookie(name, httponly?, domain?, path?)` | create a cookie (see [Cookies](#cookies)) |
 | `r.cookies` | read-only view of the cookies set on this response |
-| `r.defer(fn, ...)` | run `fn` after the chain returns, before the response is sent |
+| `r.defer(fn, ...)` | run `fn` after the chain returns, before the response is sent (won't work after an `ngx.exec`/`ngx.exit` abort) |
 
 ```
 r.status = 201
@@ -486,25 +485,25 @@ Both cookies is matched to ensure the session is not tampered with.
 
 ### Response completion and returning control to Nginx
 
-Response headers including cookies and sessions are accumulated and finally set into `ngx.headers` before response is returned.
-Setting `ngx.headers` directly prior to returning response should also work as expected.
+Response headers including cookies and sessions are accumulated and finally set into `ngx.headers` before response is returned. Setting `ngx.headers` directly prior to returning response should also work as expected.
 
-Note that calling `ngx.exec()`, `ngx.redirect()`, `ngx.exit()`, `ngx.flush()`, `ngx.say()`, `ngx.print()` or `ngx.eof()` in a handler would short circuit the Losty dispatcher flow and return control to Nginx immediately. An example would be to use `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages. Or calling `return ngx.exec()` to internally redirect to another location. Is recommended to always use `return` to be explicit that control is no longer in Losty. In such case, external resources like db connection that depend on normal return path from middlewares might not be released.
+Use `r.defer(fn, ...)` to register cleanup callbacks in middleware. Deferred callbacks run in LIFO order after the handler chain returns and before the response is sent, even when a handler throws and Losty sets 500. Use this for releasing external resources.
 
- To allow Losty dispatcher flow to complete, use `r.exec(uri, args)` instead of `ngx.exec()`. Note that headers set before `r.exec()` have no effect on the subrequest. Use `r.defer(fn, ...)` to register cleanup callbacks in middleware. Deferred callbacks run in LIFO order after the handler chain returns and before the response is sent, even when a handler throws and Losty sets 500. Use this for releasing external resources.
+Note that calling `ngx.exec()`, `ngx.redirect()`, `ngx.exit()`, `ngx.flush()`, `ngx.say()`, `ngx.print()` or `ngx.eof()` in a handler would terminate the Losty dispatcher flow including cleanup callbacks of `r.defer(fn, ...)` and return control to Nginx immediately. In such case, cookies may not be emitted and external resources like db connection might not be released. For example:
 
-Example:
 ```
 w.get('/download/{id}', function(q, r)
    local db = pg(...)
    db.connect()
-   r.defer(function() db.disconnect() end)
 
-   r.headers['Content-Type'] = 'application/octet-stream'
-   return r.exec('/_protected/' .. q.match[1])
+   -- ngx.exec() aborts this handler: nothing after it runs, including the
+   -- deferred callbacks, so release anything registered before handing over
+   db.disconnect()
+   return ngx.exec('/_protected/' .. q.match[1])
 end)
 ```
 
+It is recommended to always use `return` to be explicit that control is no longer in Losty. The example above use `return ngx.exec()` to internally redirect to another location. Another example is to `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages.
 
 
 

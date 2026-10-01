@@ -118,8 +118,25 @@ var client_ip = \trusted ->
 var forwarded = ->
 	return proxy.parse_forwarded(ngx_var.http_forwarded)
 
+var secure = -> return ngx_var.https == 'on'
+
 var canonical_url = \trusted ->
-	return proxy.canonical_url({vars = ngx_var, headers = headers, secure = -> return ngx_var.https == 'on'}, trusted)
+	return proxy.canonical_url({vars = ngx_var, headers = headers, secure = secure}, trusted)
+
+
+-- the request table is new per request; its metatable is not
+var MT = {
+	__metatable = false
+
+	, __index = \tbl, key ->
+		var fn = userid[key]
+		if fn
+			var v = fn()
+			-- memoize
+			tbl[key] = v
+			return v
+		return ngx.req[key]
+}
 
 
 return ->
@@ -128,19 +145,8 @@ return ->
 		, headers = headers
 		, cookies = cookies
 		, args = args
-		, secure = -> return ngx_var.https == 'on'
+		, secure = secure
 		, client_ip = client_ip
 		, forwarded = forwarded
 		, canonical_url = canonical_url
-	}, {
-		__metatable = false
-
-		, __index = \tbl, key ->
-			var fn = userid[key]
-			if fn
-				var v = fn()
-				-- memoize
-				tbl[key] = v
-				return v
-			return ngx.req[key]
-	})
+	}, MT)
