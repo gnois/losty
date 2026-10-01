@@ -72,30 +72,30 @@ end
 local forwarded = function()
     return proxy.parse_forwarded(ngx_var.http_forwarded)
 end
-local canonical_url = function(trusted)
-    return proxy.canonical_url({vars = ngx_var, headers = headers, secure = function()
-        return ngx_var.https == "on"
-    end}, trusted)
+local secure = function()
+    return ngx_var.https == "on"
 end
+local canonical_url = function(trusted)
+    return proxy.canonical_url({vars = ngx_var, headers = headers, secure = secure}, trusted)
+end
+local MT = {__metatable = false, __index = function(tbl, key)
+    local fn = userid[key]
+    if fn then
+        local v = fn()
+        tbl[key] = v
+        return v
+    end
+    return ngx.req[key]
+end}
 return function()
     return setmetatable({
         vars = ngx_var
         , headers = headers
         , cookies = cookies
         , args = args
-        , secure = function()
-            return ngx_var.https == "on"
-        end
+        , secure = secure
         , client_ip = client_ip
         , forwarded = forwarded
         , canonical_url = canonical_url
-    }, {__metatable = false, __index = function(tbl, key)
-        local fn = userid[key]
-        if fn then
-            local v = fn()
-            tbl[key] = v
-            return v
-        end
-        return ngx.req[key]
-    end})
+    }, MT)
 end

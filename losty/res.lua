@@ -3,12 +3,17 @@
 --
 local cjson = require("cjson")
 local hdr = require("losty.header")
-local exec = function(uri, args)
-    if not uri then
-        error("uri required", 2)
+local MT = {__metatable = false, __index = function(_, k)
+    if "status" == k then
+        return ngx.status
     end
-    return {__ngx_exec = true, uri = uri, args = args}
-end
+end, __newindex = function(t, k, v)
+    if "status" == k then
+        ngx.status = v
+    else
+        rawset(t, k, v)
+    end
+end}
 return function()
     local jar = {}
     local order, o = {}, 0
@@ -150,19 +155,8 @@ return function()
         , cookie = cookie
         , cookies = cookies
         , redirect = hdr.redirect
-        , exec = exec
         , defer = defer
         , run_defers = run_defers
         , send = send
-    }, {__metatable = false, __index = function(_, k)
-        if "status" == k then
-            return ngx.status
-        end
-    end, __newindex = function(t, k, v)
-        if "status" == k then
-            ngx.status = v
-        else
-            rawset(t, k, v)
-        end
-    end})
+    }, MT)
 end

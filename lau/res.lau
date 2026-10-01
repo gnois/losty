@@ -11,16 +11,6 @@ var capitalize = \txt ->
 		return string.lower(txt).gsub(@, "^%l", string.upper).gsub(@, "-%l", string.upper)
 ``
 
--- setting headers before ngx.exec() has no effect on subrequest
-var exec = \uri, args ->
-	if not uri
-		error("uri required", 2)
-	return {
-		__ngx_exec = true
-		, uri = uri
-		, args = args
-	}
-
 -- see http://www.nczonline.net/blog/2009/05/05/http-cookies-explained/ section 'Cookie maintenance and lifecycle'
 -- https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
 
@@ -28,6 +18,24 @@ var exec = \uri, args ->
 -- it cannot be deleted from browser if any of these mismatch
 -- domain shd be nil, to exclude subdomain. if specified, subdomains are always included
 -- https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie
+-- the response table is new per request; its metatable is not
+var MT = {
+	__metatable = false
+
+	, __index = \_, k ->
+		if 'status' == k
+			return ngx.status
+
+	, __newindex = \t, k, v ->
+		if 'status' == k
+			ngx.status = v
+		else
+			-- keep per-request fields (eg res.user) instead of dropping them
+			-- silently, as req() already allows
+			rawset(t, k, v)
+}
+
+
 return ->
 	-- per-response cookie state (must not be shared across requests)
 	var jar = {}
@@ -185,23 +193,8 @@ return ->
 		, cookie = cookie
 		, cookies = cookies
 		, redirect = hdr.redirect
-		, exec = exec
 		, defer = defer
 		, run_defers = run_defers
 		, send = send
 
-	}, {
-		__metatable = false
-
-		, __index = \_, k ->
-			if 'status' == k
-				return ngx.status
-
-		, __newindex = \t, k, v ->
-			if 'status' == k
-				ngx.status = v
-			else
-				-- keep per-request fields (eg res.user) instead of dropping them
-				-- silently, as req() already allows
-				rawset(t, k, v)
-	})
+	}, MT)
