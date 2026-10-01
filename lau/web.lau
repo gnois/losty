@@ -8,9 +8,6 @@ var cjson = require('cjson.safe')
 
 var METHODS = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'} -- 'TRACE', 'CONNECT'
 
--- Module-level singleton: require() caches this module, so one router per worker
-var rt = router()
-
 var send_body = \body ->
 	if type(body) == 'function'
 		while true
@@ -50,16 +47,24 @@ var has_body = \body ->
 	return true
 
 
-var route = \prefix ->
-	var phase = ngx.get_phase()
-	if phase ~= 'init'
-		error("route() must be called in init_by_lua_block instead of '" .. phase .. "' phase", 2)
+-- prepend base to path (nil and '/' mean no prefix)
+var prefixed = \base, path ->
+	if base and base ~= '/'
+		return base .. path
+	return path
+
+
+-- verbs that register into rt. the phase check lives here, not on new.
+-- an app is pure data, but registration must happen in init_by_lua_block so the tree is
+-- built once and inherited by every worker
+var registrar = \rt, base, name ->
 	var r = {}
 	for _, meth in ipairs(METHODS)
 		r[string.lower(meth)] = \path, f, ... ->
-			if prefix and prefix ~= '/'
-				path = prefix .. path
-			rt.set(meth, path, f, ...)
+			var phase = ngx.get_phase()
+			if phase ~= 'init'
+				error("route must be declared in init_by_lua_block, not '" .. phase .. "' phase (app '" .. (name or 'unnamed') .. "')", 2)
+			rt.set(meth, prefixed(base, path), f, ...)
 	return r
 
 
@@ -67,7 +72,7 @@ var route = \prefix ->
 -- check: true to check if status and content-type header exists
 -- returns
 --  truthy or nil/false, err
-var run = \error_page, check ->
+var run = \rt, name, error_page, check ->
 	var handlers, body, ok, trace
 	var q = req()
 	var r = res()
@@ -87,7 +92,7 @@ var run = \error_page, check ->
 		)
 		if not ok
 			r.status = 500
-			ngx.log(ngx.ERR, trace)
+			ngx.log(ngx.ERR, (name and ("[" .. name .. "] ") or "") .. trace)
 	else
 		-- path registered under another method -> 405 with Allow, else 404
 		var allow = rt.allowed(method, q.vars.uri)
@@ -140,12 +145,22 @@ var run = \error_page, check ->
 			ok, err = ngx.eof()
 
 	if not ok
-		ngx.log(ngx.ERR, err)
+		ngx.log(ngx.ERR, (name and ("[" .. name .. "] ") or "") .. tostring(err))
 	-- caller to check err/trace is not nil
 	return code, err or trace
 
 
+-- an app owns a router plus the verbs and run() that use it. name is for
+-- diagnostics only: the registration-phase error and the 500 log line
+var new = \name ->
+	var rt = router()
+	var app = registrar(rt, nil, name)
+	app.name = name
+	app.route = \prefix -> return registrar(rt, prefix, name)
+	app.run = \error_page, check -> return run(rt, name, error_page, check)
+	return app
+
+
 return {
-	route = route
-	, run = run
+	new = new
 }

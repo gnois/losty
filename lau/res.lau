@@ -155,7 +155,7 @@ return ->
 				return fn(unpack(args, 1, np))
 			)
 
-	-- called by web.run() after the chain returns,
+	-- called by run() after the chain returns,
 	-- including on the 500 path.
 	var run_defers = ->
 		if #hooks == 0

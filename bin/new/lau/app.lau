@@ -115,10 +115,10 @@ var require_user = \q, r, nxt ->
 	session.delete(r)
 	return r.redirect('/signin')
 
-var route = web.route()
+var app = web.new('@@APP_NAME@@')
 
 -- ── GET / ─────────────────────────────────────────────────────────────────────
-route.get('/',
+app.get('/',
 	content.html,
 	\q, r ->
 		return home({
@@ -128,7 +128,7 @@ route.get('/',
 )
 
 -- ── GET /signup ────────────────────────────────────────────────────────────────
-route.get('/signup',
+app.get('/signup',
 	content.html,
 	\q, r ->
 		if current_user(q)
@@ -142,7 +142,7 @@ route.get('/signup',
 )
 
 -- ── POST /signup ───────────────────────────────────────────────────────────────
-route.post('/signup',
+app.post('/signup',
 	content.html
 	, content.form
 	, \q, r, body ->
@@ -170,7 +170,7 @@ route.post('/signup',
 )
 
 -- ── GET /signin ────────────────────────────────────────────────────────────────
-route.get('/signin',
+app.get('/signin',
 	content.html,
 	\q, r ->
 		if current_user(q)
@@ -184,7 +184,7 @@ route.get('/signin',
 )
 
 -- ── POST /signin ───────────────────────────────────────────────────────────────
-route.post('/signin',
+app.post('/signin',
 	content.html
 	, content.form
 	, \q, r, body ->
@@ -206,7 +206,7 @@ route.post('/signin',
 )
 
 -- ── GET /app (protected) ──────────────────────────────────────────────────────
-route.get('/app',
+app.get('/app',
 	content.html
 	, require_user
 	, \q, r ->
@@ -219,7 +219,7 @@ route.get('/app',
 
 
 -- ── POST /signout (protected) ─────────────────────────────────────────────────
-route.post('/signout',
+app.post('/signout',
 	content.html
 	, content.form
 	, require_user
@@ -233,10 +233,10 @@ route.post('/signout',
 
 
 -- keep old GET signout endpoint for convenience; no mutation here.
-route.get('/signout', \q, r ->
+app.get('/signout', \q, r ->
 		session.delete(r)
 		r.redirect('/')
 )
 
--- Expose web so nginx content_by_lua_block can call require('app').run()
-return web
+-- the app object is what require('app') returns; nginx calls require('app').run()
+return app

@@ -87,18 +87,18 @@ local require_user = function(q, r, nxt)
     session.delete(r)
     return r.redirect("/signin")
 end
-local route = web.route()
-route.get("/", content.html, function(q, r)
+local app = web.new("@@APP_NAME@@")
+app.get("/", content.html, function(q, r)
     return home({title = "@@APP_NAME@@", user = current_user(q)})
 end)
-route.get("/signup", content.html, function(q, r)
+app.get("/signup", content.html, function(q, r)
     if current_user(q) then
         return r.redirect("/app")
     end
     local token = guard.create(q, r)
     return auth.signup({title = "Sign up — @@APP_NAME@@", csrf_token = token, error = pop_flash(q, r, "signup_error")})
 end)
-route.post("/signup", content.html, content.form, function(q, r, body)
+app.post("/signup", content.html, content.form, function(q, r, body)
     local ok = guard.check(q, r, body and body.token)
     if not ok then
         set_flash(q, r, "signup_error", "Request forbidden")
@@ -123,14 +123,14 @@ route.post("/signup", content.html, content.form, function(q, r, body)
     s.role = "user"
     r.redirect("/app")
 end)
-route.get("/signin", content.html, function(q, r)
+app.get("/signin", content.html, function(q, r)
     if current_user(q) then
         return r.redirect("/app")
     end
     local token = guard.create(q, r)
     return auth.signin({title = "Sign in — @@APP_NAME@@", csrf_token = token, error = pop_flash(q, r, "signin_error")})
 end)
-route.post("/signin", content.html, content.form, function(q, r, body)
+app.post("/signin", content.html, content.form, function(q, r, body)
     local ok = guard.check(q, r, body and body.token)
     if not ok then
         set_flash(q, r, "signin_error", "Request forbidden")
@@ -147,10 +147,10 @@ route.post("/signin", content.html, content.form, function(q, r, body)
     s.role = "user"
     r.redirect("/app")
 end)
-route.get("/app", content.html, require_user, function(q, r)
+app.get("/app", content.html, require_user, function(q, r)
     return protected({title = "@@APP_NAME@@ — Account", user = q.state.user, csrf_token = guard.create(q, r)})
 end)
-route.post("/signout", content.html, content.form, require_user, function(q, r, body)
+app.post("/signout", content.html, content.form, require_user, function(q, r, body)
     if guard.check(q, r, body and body.token) then
         session.delete(r)
         return r.redirect("/")
@@ -158,8 +158,8 @@ route.post("/signout", content.html, content.form, require_user, function(q, r, 
     r.status = 403
     return r.redirect("/app")
 end)
-route.get("/signout", function(q, r)
+app.get("/signout", function(q, r)
     session.delete(r)
     r.redirect("/")
 end)
-return web
+return app
