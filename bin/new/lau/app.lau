@@ -145,7 +145,7 @@ app.get('/signup',
 app.post('/signup',
 	content.html
 	, content.form
-	, \q, r, body ->
+	, \q, r, nxt, body ->
 		var ok = guard.check(q, r, body and body.token)
 		if not ok
 			set_flash(q, r, 'signup_error', 'Request forbidden')
@@ -187,7 +187,7 @@ app.get('/signin',
 app.post('/signin',
 	content.html
 	, content.form
-	, \q, r, body ->
+	, \q, r, nxt, body ->
 		var ok = guard.check(q, r, body and body.token)
 		if not ok
 			set_flash(q, r, 'signin_error', 'Request forbidden')
@@ -223,7 +223,7 @@ app.post('/signout',
 	content.html
 	, content.form
 	, require_user
-	, \q, r, body ->
+	, \q, r, nxt, body ->
 		if guard.check(q, r, body and body.token)
 			session.delete(r)
 			return r.redirect('/')
