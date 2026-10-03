@@ -61,6 +61,32 @@ var void_tags = set(
 	, 'wbr'
 )
 
+-- html5 element names, plus the obsolete `command` and `keygen` that void_tags
+-- lists. Checked only when view() is passed a truthy validate flag.
+var valid_tags = {
+	a = true, abbr = true, address = true, area = true, article = true, aside = true, audio = true
+	, b = true, base = true, bdi = true, bdo = true, blockquote = true, body = true, br = true, button = true
+	, canvas = true, caption = true, cite = true, code = true, col = true, colgroup = true, command = true
+	, data = true, datalist = true, dd = true, del = true, details = true, dfn = true, dialog = true, div = true, dl = true, dt = true
+	, em = true, embed = true
+	, fieldset = true, figcaption = true, figure = true, footer = true, form = true
+	, h1 = true, h2 = true, h3 = true, h4 = true, h5 = true, h6 = true, head = true, header = true, hgroup = true, hr = true, html = true
+	, i = true, iframe = true, img = true, input = true, ins = true
+	, kbd = true, keygen = true
+	, label = true, legend = true, li = true, link = true
+	, main = true, map = true, mark = true, menu = true, meta = true, meter = true
+	, nav = true, noscript = true
+	, object = true, ol = true, optgroup = true, option = true, output = true
+	, p = true, param = true, picture = true, pre = true, progress = true
+	, q = true
+	, rp = true, rt = true, ruby = true
+	, s = true, samp = true, script = true, search = true, section = true, select = true, slot = true, small = true, source = true, span = true, strong = true, style = true, sub = true, summary = true, sup = true
+	, table = true, tbody = true, td = true, template = true, textarea = true, tfoot = true, th = true, thead = true, time = true, title = true, tr = true, track = true
+	, u = true, ul = true
+	, var = true, video = true
+	, wbr = true
+}
+
 var parse = \s ->
 	var r = create( ->
 		var acc, n = {}, 1
@@ -199,9 +225,16 @@ var tag_name = '^[%w_%-:]+$'
 -- about two frames (a tag, then its children list)
 var max_depth = 256
 
+-- emit s verbatim (never escaped): <script>/<style> bodies, entities, or
+-- pre-rendered html. Never pass untrusted input to raw().
+var raw = \s ->
+	if nil == s
+		return {_raw = ''}
+	return {_raw = tostring(s)}
+
 
 var markup
-markup = \nodes, depth ->
+markup = \nodes, depth, validate ->
 	if nil == depth
 		depth = 1
 	else if depth > max_depth
@@ -209,9 +242,15 @@ markup = \nodes, depth ->
 	if nil ~= nodes
 		var o, n = {}, 1
 		if 'table' == type(nodes)
-			if nodes and nodes._tag
+			if nil ~= nodes._raw
+				-- raw() node: emitted verbatim, never escaped
+				o[n] = nodes._raw
+				n = n + 1
+			else if nodes and nodes._tag
 				if 'string' ~= type(nodes._tag) or not match(nodes._tag, tag_name)
 					error("Invalid tag name: " .. tostring(nodes._tag), 2)
+				if validate and nil == valid_tags[nodes._tag]
+					error("Invalid html5 tag: " .. nodes._tag, 2)
 				o[n] = '<' .. nodes._tag
 				n = n + 1
 				if nil ~= nodes.attrs
@@ -240,13 +279,13 @@ markup = \nodes, depth ->
 				o[n] = '>'
 				n = n + 1
 				if not void_tags.has(nodes._tag)
-					o[n] = markup(nodes._children, depth + 1)
+					o[n] = markup(nodes._children, depth + 1, validate)
 					n = n + 1
 					o[n] = '</' .. nodes._tag .. '>'
 					n = n + 1
 			else
 				for _, c in ipairs(nodes)
-					o[n] = markup(c, depth + 1)
+					o[n] = markup(c, depth + 1, validate)
 					n = n + 1
 		else
 			o[n] = esc(nodes)
@@ -287,15 +326,15 @@ var safe_globals = {
 }
 
 
-var view = \func, args ->
+var view = \func, args, validate ->
 	var env = {
 		concat = concat
 		, insert = insert
 		, remove = remove
+		, raw = raw
 	}
 	env = setmetatable(env, {
 		__index = \t, name ->
-			--print(name)
 			if void_tags.has(name)
 				return \attrs, w, x, y, z ->
 					if w or x or y or z
@@ -322,14 +361,13 @@ var view = \func, args ->
 		setfenv(func, oldenv)
 	if not ok
 		error(list, 2)
-	--print(tbl.dump(list))
-	var html = markup(list)
+	var html = markup(list, 1, validate)
 
 	return html  -- caller to prepent '<!DOCTYPE html>
 
 
 
----```
+--```
 var test = ->
 	var v = \fn, a -> return view(fn, a, true)
 	var as = assert
