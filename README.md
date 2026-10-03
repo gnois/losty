@@ -594,9 +594,7 @@ function tmpl(args)
       head({
          meta('[charset=UTF-8]')
          , title(args.title)
-         , style({
-            '.center { text-align: center; }'
-         })
+         , style(raw('.center { text-align: center; }'))
       })
       , body({
          div('.center', {
@@ -604,7 +602,7 @@ function tmpl(args)
          })
          , footer({
             hr()
-            , div('.center', '&copy' .. args.copyright)
+            , div('.center', raw('&copy'), args.copyright)
          })
       })
    })
@@ -625,7 +623,13 @@ returns this string
 ```
 <img alt="A" src="/a.png">
 ```
-In fact, you could quote and use the 2nd string and the resulting HTML will be the same, as demonstrated in the style() tag in the example above. That means you can copy existing HTML code and quote it as Lua strings, and interleave with Losty HTML tag functions as needed.
+Text and attribute values are html-escaped (`&`, `<`, `>`, and inside attributes the quotes as well), so a quoted string is never treated as markup: `div("<b>hi</b>")` renders `&lt;b&gt;hi&lt;/b&gt;`. To pass markup, entities or script/style bodies through verbatim, wrap them in `raw()`, which is emitted unescaped:
+```
+raw('<b>hi</b>')
+raw('&copy')
+raw('.center { text-align: center; }')
+```
+Never pass untrusted input to `raw()`; it is the one place where injection is possible.
 
 As you know there are void and normal HTML elements. Void elements such as `<br>`, `<hr>`, `<img>`, `<link>` etc cannot have children element, while normal elements like `<div>`, `<p>` can.
 So the below gives errors because `hr()` cannot have children.
@@ -670,8 +674,12 @@ Generally, Losty view templates are shorter than its HTML counterpart.
 
 Unfortunately the `<table>` tag and the table library in Lua have the same name. Hence, functions like `table.remove()`, `table.insert()` and `table.concat()` are exposed as just `remove()`, `insert()` and `concat()` without qualifying with the name `table`.
 
-Finally, to get your HTML string generated, call Losty `view()` function with your view template as first parameter, followed by the needed key/value table as argument.
-A third boolean parameter prevents `<!DOCTYPE html>` being prepended to the result if truthy, and a fourth boolean parameter turns on assertion if an invalid HTML5 tag is used.
+Attributes are emitted in name order, so the same node always renders to the same bytes.
+
+Inside a template only a fixed set of globals is reachable: `assert`, `error`, `getmetatable`, `ipairs`, `math`, `next`, `pairs`, `pcall`, `print`, `rawequal`, `rawget`, `rawset`, `setmetatable`, `string`, `table`, `tonumber`, `tostring`, `type`, `unpack`, `xpcall`, plus the html-facing `concat`, `insert`, `remove` and `raw`. `_G`, `os`, `io`, `require`, `load`, `dofile`, `debug` and `package` are deliberately unreachable, so a template cannot execute commands or touch the filesystem. A template must also not suspend mid-render: `view()` swaps the function's environment in place and restores it afterwards.
+
+Finally, to get your HTML string generated, call Losty `view()` function with your view template as first parameter, followed by the needed key/value table as argument. It returns the html body only, so prepend `<!DOCTYPE html>` yourself if you need it.
+An optional third boolean parameter turns on assertion that every tag is a known HTML5 element, which catches a typo like `dvi()` at render time instead of silently emitting `<dvi>`.
 
 
 ### (SQL) testing or seeding helpers
