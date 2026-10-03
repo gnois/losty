@@ -8,9 +8,11 @@ var create = coroutine.create
 var resume = coroutine.resume
 var gmatch = string.gmatch
 var gsub = string.gsub
+var match = string.match
+var sort = table.sort
 
 var esc = \txt, quote ->
-	if txt == nil
+	if nil == txt
 		return ''
 	txt = tostring(txt)
 	txt = gsub(txt, '&', '&amp;')
@@ -83,7 +85,7 @@ var NoChild = \tag ->
 var void = \tag, attrs ->
 	var cell = {_tag = tag, attrs = {}}
 	var classes, n = {}, 1
-	if attrs ~= nil
+	if nil ~= attrs
 		var kind = type(attrs)
 		if 'string' == kind
 			for v in parse(attrs)
@@ -135,11 +137,12 @@ var void = \tag, attrs ->
 var normal = \tag, ... ->
 	var args = {...}
 	var attr
-	if args[2]
+	-- count args, not args[2]: a `false` 2nd arg must still make args[1] an attribute
+	if select('#', ...) > 1
 		-- test if possible attr
 		var a = args[1]
 		var k = type(a)
-		if a == nil
+		if nil == a
 			attr = true
 		else if 'string' == k
 			-- be attr once is a string, and error if string is not empty and not starting with . # [
@@ -167,20 +170,45 @@ var normal = \tag, ... ->
 	return cell
 
 
+-- Attribute and element names must be plain HTML names. Without this a dynamic
+-- key (e.g. div({[user_key] = 'x'})) could inject extra attributes or tags.
+var attr_name = '^[%w_%-:%.]+$'
+var tag_name = '^[%w_%-:]+$'
+
+
 var markup
 markup = \nodes ->
-	if nodes ~= nil
+	if nil ~= nodes
 		var o, n = {}, 1
 		if 'table' == type(nodes)
 			if nodes and nodes._tag
+				if 'string' ~= type(nodes._tag) or not match(nodes._tag, tag_name)
+					error("Invalid tag name: " .. tostring(nodes._tag), 2)
 				o[n] = '<' .. nodes._tag
 				n = n + 1
-				for k, v in pairs(nodes.attrs)
-					o[n] = ' ' .. k
-					n = n + 1
-					if 'boolean' ~= type(v)
-						o[n] = '="' .. esc(v, true) .. '"'
-						n = n + 1
+				if nil ~= nodes.attrs
+					-- validate names first, then emit sorted, so the same node always
+					-- renders to the same bytes (stable across runs and LuaJIT builds)
+					var names = {}
+					var nn = 0
+					for k, v in pairs(nodes.attrs)
+						if 'string' ~= type(k) or not match(k, attr_name)
+							error("Invalid attribute name: " .. tostring(k), 2)
+						if 'table' == type(v) or 'function' == type(v) or 'userdata' == type(v) or 'thread' == type(v)
+							error("Invalid value for attribute '" .. k .. "': " .. type(v), 2)
+						nn = nn + 1
+						names[nn] = k
+					sort(names)
+					for i = 1, nn
+						var key = names[i]
+						var val = nodes.attrs[key]
+						-- a `false` boolean attribute is absent; `true` is a bare name
+						if false ~= val
+							o[n] = ' ' .. key
+							n = n + 1
+							if 'boolean' ~= type(val)
+								o[n] = '="' .. esc(val, true) .. '"'
+								n = n + 1
 				o[n] = '>'
 				n = n + 1
 				if not void_tags.has(nodes._tag)
@@ -199,6 +227,35 @@ markup = \nodes ->
 	return ''
 
 
+-- Globals a view template may reach. Everything else (_G, os, io, require,
+-- load/loadstring/loadfile, dofile, debug, package, collectgarbage,
+-- setfenv/getfenv, ...) is intentionally unreachable so a template cannot
+-- execute commands, read files, or otherwise escape its sandbox.
+-- NB: `table` and `select` are deliberately left out so the HTML tags of the
+-- same name win; use the unqualified concat/insert/remove instead.
+var safe_globals = {
+	assert = assert
+	, error = error
+	, getmetatable = getmetatable
+	, ipairs = ipairs
+	, math = math
+	, next = next
+	, pairs = pairs
+	, pcall = pcall
+	, print = print
+	, rawequal = rawequal
+	, rawget = rawget
+	, rawset = rawset
+	, setmetatable = setmetatable
+	, string = string
+	, tonumber = tonumber
+	, tostring = tostring
+	, type = type
+	, unpack = unpack
+	, xpcall = xpcall
+}
+
+
 var view = \func, args ->
 	var env = {
 		concat = concat
@@ -213,8 +270,8 @@ var view = \func, args ->
 					if w or x or y or z
 						error(NoChild(name), 2)
 					return void(name, attrs)
-			var x = _G[name]
-			if x
+			var x = safe_globals[name]
+			if nil ~= x
 				return x
 			return \... ->
 				return normal(name, ...)
@@ -248,7 +305,7 @@ var test = ->
 	as(v(-> return br('')) == '<br>')  -- or string
 	as(v(-> return br({})) == '<br>') -- or table
 	var htm = v(-> return img({src='/a.png', alt='A'}))
-	as(htm == '<img alt="A" src="/a.png">' or htm == '<img src="/a.png" alt="A">')  -- using table as attr
+	as(htm == '<img alt="A" src="/a.png">')  -- using table as attr; names emitted sorted
 
 	-- error: void element cannot have children
 	as(pcall(v, -> return hr(hr())) == false)
@@ -263,8 +320,8 @@ var test = ->
 	-- invalid attr
 	as(pcall(v, -> return div("   .foo", '')) == false)
 	as(v(-> return div("#id1.foo", '')) == '<div class="foo" id="id1"></div>')  -- #str is id, .str is class
-	as(v(-> return div("[class=foo][title=bar]", {})) == '<div title="bar" class="foo"></div>') -- or str of boxed [key=value] list
-	as(v(-> return div("[id=id1][title='bar']", "x")) == '<div title="bar" id="id1">x</div>')  -- quotes in boxed attr are optional
+	as(v(-> return div("[class=foo][title=bar]", {})) == '<div class="foo" title="bar"></div>') -- or str of boxed [key=value] list
+	as(v(-> return div("[id=id1][title='bar']", "x")) == '<div id="id1" title="bar">x</div>')  -- quotes in boxed attr are optional
 	as(v(-> return div("[title=\"bar\"]", 1)) == '<div title="bar">1</div>')  -- children can take number or str
 
 	as(v(-> return p(h1("blog"))) == '<p><h1>blog</h1></p>')  -- child can be a single element
@@ -277,6 +334,10 @@ var test = ->
 
 	as(v(-> return {img("[src=/img/tmp file.png]"), span("span1")}) == '<img src="/img/tmp file.png"><span>span1</span>') -- view function can return a list
 	as(v(-> return {"AAA", "bbb", p("para")}) == 'AAAbbb<p>para</p>')  -- list with plain string too
+
+	-- `table` and `select` are html tags in a template, not the lua libraries
+	as(v(-> return table({tr({td("x")})})) == '<table><tr><td>x</td></tr></table>')
+	as(v(-> return select({option("a")})) == '<select><option>a</option></select>')
 
 	print('pass')
 

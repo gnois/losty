@@ -11,8 +11,10 @@ local create = coroutine.create
 local resume = coroutine.resume
 local gmatch = string.gmatch
 local gsub = string.gsub
+local match = string.match
+local sort = table.sort
 local esc = function(txt, quote)
-    if txt == nil then
+    if nil == txt then
         return ""
     end
     txt = tostring(txt)
@@ -68,7 +70,7 @@ end
 local void = function(tag, attrs)
     local cell = {_tag = tag, attrs = {}}
     local classes, n = {}, 1
-    if attrs ~= nil then
+    if nil ~= attrs then
         local kind = type(attrs)
         if "string" == kind then
             for v in parse(attrs) do
@@ -124,10 +126,10 @@ end
 local normal = function(tag, ...)
     local args = {...}
     local attr
-    if args[2] then
+    if select("#", ...) > 1 then
         local a = args[1]
         local k = type(a)
-        if a == nil then
+        if nil == a then
             attr = true
         elseif "string" == k then
             attr = true
@@ -144,20 +146,44 @@ local normal = function(tag, ...)
     cell._children = args
     return cell
 end
+local attr_name = "^[%w_%-:%.]+$"
+local tag_name = "^[%w_%-:]+$"
 local markup
 markup = function(nodes)
-    if nodes ~= nil then
+    if nil ~= nodes then
         local o, n = {}, 1
         if "table" == type(nodes) then
             if nodes and nodes._tag then
+                if "string" ~= type(nodes._tag) or not match(nodes._tag, tag_name) then
+                    error("Invalid tag name: " .. tostring(nodes._tag), 2)
+                end
                 o[n] = "<" .. nodes._tag
                 n = n + 1
-                for k, v in pairs(nodes.attrs) do
-                    o[n] = " " .. k
-                    n = n + 1
-                    if "boolean" ~= type(v) then
-                        o[n] = "=\"" .. esc(v, true) .. "\""
-                        n = n + 1
+                if nil ~= nodes.attrs then
+                    local names = {}
+                    local nn = 0
+                    for k, v in pairs(nodes.attrs) do
+                        if "string" ~= type(k) or not match(k, attr_name) then
+                            error("Invalid attribute name: " .. tostring(k), 2)
+                        end
+                        if "table" == type(v) or "function" == type(v) or "userdata" == type(v) or "thread" == type(v) then
+                            error("Invalid value for attribute '" .. k .. "': " .. type(v), 2)
+                        end
+                        nn = nn + 1
+                        names[nn] = k
+                    end
+                    sort(names)
+                    for i = 1, nn do
+                        local key = names[i]
+                        local val = nodes.attrs[key]
+                        if false ~= val then
+                            o[n] = " " .. key
+                            n = n + 1
+                            if "boolean" ~= type(val) then
+                                o[n] = "=\"" .. esc(val, true) .. "\""
+                                n = n + 1
+                            end
+                        end
                     end
                 end
                 o[n] = ">"
@@ -182,6 +208,27 @@ markup = function(nodes)
     end
     return ""
 end
+local safe_globals = {
+    assert = assert
+    , error = error
+    , getmetatable = getmetatable
+    , ipairs = ipairs
+    , math = math
+    , next = next
+    , pairs = pairs
+    , pcall = pcall
+    , print = print
+    , rawequal = rawequal
+    , rawget = rawget
+    , rawset = rawset
+    , setmetatable = setmetatable
+    , string = string
+    , tonumber = tonumber
+    , tostring = tostring
+    , type = type
+    , unpack = unpack
+    , xpcall = xpcall
+}
 local view = function(func, args)
     local env = {concat = concat, insert = insert, remove = remove}
     env = setmetatable(env, {__index = function(t, name)
@@ -193,8 +240,8 @@ local view = function(func, args)
                 return void(name, attrs)
             end
         end
-        local x = _G[name]
-        if x then
+        local x = safe_globals[name]
+        if nil ~= x then
             return x
         end
         return function(...)
