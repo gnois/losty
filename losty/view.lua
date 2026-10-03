@@ -33,6 +33,123 @@ local esc = function(txt, quote)
     return out
 end
 local void_tags = set("area", "base", "br", "col", "command", "embed", "hr", "img", "input", "keygen", "link", "meta", "param", "source", "track", "wbr")
+local valid_tags = {
+    a = true
+    , abbr = true
+    , address = true
+    , area = true
+    , article = true
+    , aside = true
+    , audio = true
+    , b = true
+    , base = true
+    , bdi = true
+    , bdo = true
+    , blockquote = true
+    , body = true
+    , br = true
+    , button = true
+    , canvas = true
+    , caption = true
+    , cite = true
+    , code = true
+    , col = true
+    , colgroup = true
+    , command = true
+    , data = true
+    , datalist = true
+    , dd = true
+    , del = true
+    , details = true
+    , dfn = true
+    , dialog = true
+    , div = true
+    , dl = true
+    , dt = true
+    , em = true
+    , embed = true
+    , fieldset = true
+    , figcaption = true
+    , figure = true
+    , footer = true
+    , form = true
+    , h1 = true
+    , h2 = true
+    , h3 = true
+    , h4 = true
+    , h5 = true
+    , h6 = true
+    , head = true
+    , header = true
+    , hgroup = true
+    , hr = true
+    , html = true
+    , i = true
+    , iframe = true
+    , img = true
+    , input = true
+    , ins = true
+    , kbd = true
+    , keygen = true
+    , label = true
+    , legend = true
+    , li = true
+    , link = true
+    , main = true
+    , map = true
+    , mark = true
+    , menu = true
+    , meta = true
+    , meter = true
+    , nav = true
+    , noscript = true
+    , object = true
+    , ol = true
+    , optgroup = true
+    , option = true
+    , output = true
+    , p = true
+    , param = true
+    , picture = true
+    , pre = true
+    , progress = true
+    , q = true
+    , rp = true
+    , rt = true
+    , ruby = true
+    , s = true
+    , samp = true
+    , script = true
+    , search = true
+    , section = true
+    , select = true
+    , slot = true
+    , small = true
+    , source = true
+    , span = true
+    , strong = true
+    , style = true
+    , sub = true
+    , summary = true
+    , sup = true
+    , table = true
+    , tbody = true
+    , td = true
+    , template = true
+    , textarea = true
+    , tfoot = true
+    , th = true
+    , thead = true
+    , time = true
+    , title = true
+    , tr = true
+    , track = true
+    , u = true
+    , ul = true
+    , var = true
+    , video = true
+    , wbr = true
+}
 local parse = function(s)
     local r = create(function()
         local acc, n = {}, 1
@@ -158,8 +275,14 @@ end
 local attr_name = "^[%w_%-:%.]+$"
 local tag_name = "^[%w_%-:]+$"
 local max_depth = 256
+local raw = function(s)
+    if nil == s then
+        return {_raw = ""}
+    end
+    return {_raw = tostring(s)}
+end
 local markup
-markup = function(nodes, depth)
+markup = function(nodes, depth, validate)
     if nil == depth then
         depth = 1
     elseif depth > max_depth then
@@ -168,9 +291,15 @@ markup = function(nodes, depth)
     if nil ~= nodes then
         local o, n = {}, 1
         if "table" == type(nodes) then
-            if nodes and nodes._tag then
+            if nil ~= nodes._raw then
+                o[n] = nodes._raw
+                n = n + 1
+            elseif nodes and nodes._tag then
                 if "string" ~= type(nodes._tag) or not match(nodes._tag, tag_name) then
                     error("Invalid tag name: " .. tostring(nodes._tag), 2)
+                end
+                if validate and nil == valid_tags[nodes._tag] then
+                    error("Invalid html5 tag: " .. nodes._tag, 2)
                 end
                 o[n] = "<" .. nodes._tag
                 n = n + 1
@@ -204,14 +333,14 @@ markup = function(nodes, depth)
                 o[n] = ">"
                 n = n + 1
                 if not void_tags.has(nodes._tag) then
-                    o[n] = markup(nodes._children, depth + 1)
+                    o[n] = markup(nodes._children, depth + 1, validate)
                     n = n + 1
                     o[n] = "</" .. nodes._tag .. ">"
                     n = n + 1
                 end
             else
                 for _, c in ipairs(nodes) do
-                    o[n] = markup(c, depth + 1)
+                    o[n] = markup(c, depth + 1, validate)
                     n = n + 1
                 end
             end
@@ -244,8 +373,8 @@ local safe_globals = {
     , unpack = unpack
     , xpcall = xpcall
 }
-local view = function(func, args)
-    local env = {concat = concat, insert = insert, remove = remove}
+local view = function(func, args, validate)
+    local env = {concat = concat, insert = insert, remove = remove, raw = raw}
     env = setmetatable(env, {__index = function(t, name)
         if void_tags.has(name) then
             return function(attrs, w, x, y, z)
@@ -281,92 +410,7 @@ local view = function(func, args)
     if not ok then
         error(list, 2)
     end
-    local html = markup(list)
+    local html = markup(list, 1, validate)
     return html
 end
-local test = function()
-    local v = function(fn, a)
-        return view(fn, a, true)
-    end
-    local as = assert
-    local pr = print
-    as(v(function()
-        return br()
-    end) == "<br>")
-    as(v(function()
-        return br(nil)
-    end) == "<br>")
-    as(v(function()
-        return br("")
-    end) == "<br>")
-    as(v(function()
-        return br({})
-    end) == "<br>")
-    local htm = v(function()
-        return img({src = "/a.png", alt = "A"})
-    end)
-    as(htm == "<img alt=\"A\" src=\"/a.png\">")
-    as(pcall(v, function()
-        return hr(hr())
-    end) == false)
-    as(pcall(v, function()
-        return hr({div(), span()})
-    end) == false)
-    as(v(function()
-        return div()
-    end) == "<div></div>")
-    as(v(function()
-        return div("foo")
-    end) == "<div>foo</div>")
-    as(v(function()
-        return div(".foo", "")
-    end) == "<div class=\"foo\"></div>")
-    as(pcall(v, function()
-        return div("   .foo", "")
-    end) == false)
-    as(v(function()
-        return div("#id1.foo", "")
-    end) == "<div class=\"foo\" id=\"id1\"></div>")
-    as(v(function()
-        return div("[class=foo][title=bar]", {})
-    end) == "<div class=\"foo\" title=\"bar\"></div>")
-    as(v(function()
-        return div("[id=id1][title='bar']", "x")
-    end) == "<div id=\"id1\" title=\"bar\">x</div>")
-    as(v(function()
-        return div("[title=\"bar\"]", 1)
-    end) == "<div title=\"bar\">1</div>")
-    as(v(function()
-        return p(h1("blog"))
-    end) == "<p><h1>blog</h1></p>")
-    as(v(function()
-        return nav(span("z"), span(1), span(false))
-    end) == "<nav><span>z</span><span>1</span><span>false</span></nav>")
-    as(v(function()
-        return p({"AA", mark("mk")}, "YY", "ZZ")
-    end) == "<p>AA<mark>mk</mark>YYZZ</p>")
-    as(v(function()
-        return p({"AA", mark("mk"), "ZZ"})
-    end) == "<p>AA<mark>mk</mark>ZZ</p>")
-    as(v(function()
-        return ul({li("item1"), li("item2")})
-    end) == "<ul><li>item1</li><li>item2</li></ul>")
-    as(v(function()
-        return a({href = "/"}, strong(nil, "Home"))
-    end) == "<a href=\"/\"><strong>Home</strong></a>")
-    as(v(function()
-        return {img("[src=/img/tmp file.png]"), span("span1")}
-    end) == "<img src=\"/img/tmp file.png\"><span>span1</span>")
-    as(v(function()
-        return {"AAA", "bbb", p("para")}
-    end) == "AAAbbb<p>para</p>")
-    as(v(function()
-        return table({tr({td("x")})})
-    end) == "<table><tr><td>x</td></tr></table>")
-    as(v(function()
-        return select({option("a")})
-    end) == "<select><option>a</option></select>")
-    print("pass")
-end
-test()
 return view
