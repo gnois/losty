@@ -10,18 +10,33 @@ var gmatch = string.gmatch
 var gsub = string.gsub
 var match = string.match
 var sort = table.sort
+var find = string.find
+
+-- Escaping map for gsub's table form: one pass with one lookup per special
+-- char, instead of one whole-string pass per char.
+var esc_map = {
+	'&' = '&amp;'
+	, '<' = '&lt;'
+	, '>' = '&gt;'
+	, '"' = '&quot;'
+	, "'" = '&#39;'
+}
+var esc_text = '[&<>]'
+var esc_quote = "[&<>\"']"
 
 var esc = \txt, quote ->
 	if nil == txt
 		return ''
 	txt = tostring(txt)
-	txt = gsub(txt, '&', '&amp;')
-	txt = gsub(txt, '<', '&lt;')
-	txt = gsub(txt, '>', '&gt;')
+	-- quotes are only special inside an attribute value
+	var pattern = esc_text
 	if quote
-		txt = gsub(txt, '"', '&quot;')
-		txt = gsub(txt, "'", '&#39;')
-	return txt
+		pattern = esc_quote
+	-- most text has nothing to escape: one scan, no allocation
+	if nil == find(txt, pattern)
+		return txt
+	var out = gsub(txt, pattern, esc_map)
+	return out
 --
 -- _G.table and _G.select are masked by html tag of the same name
 --   select has no replacement
@@ -136,9 +151,10 @@ var void = \tag, attrs ->
 -- normal tag
 var normal = \tag, ... ->
 	var args = {...}
+	var nargs = select('#', ...)
 	var attr
 	-- count args, not args[2]: a `false` 2nd arg must still make args[1] an attribute
-	if select('#', ...) > 1
+	if nargs > 1
 		-- test if possible attr
 		var a = args[1]
 		var k = type(a)
@@ -163,7 +179,11 @@ var normal = \tag, ... ->
 	var attrib
 	if attr
 		attrib = args[1]
-		remove(args, 1)
+		-- shift left by hand: remove() uses #args, which is undefined when args[1]
+		-- is nil (e.g. strong(nil, 'Home'))
+		for i = 1, nargs - 1
+			args[i] = args[i + 1]
+		args[nargs] = nil
 
 	var cell = void(tag, attrib)
 	cell._children = args
@@ -175,9 +195,17 @@ var normal = \tag, ... ->
 var attr_name = '^[%w_%-:%.]+$'
 var tag_name = '^[%w_%-:]+$'
 
+-- Guard against circular node tables / runaway nesting: each html level costs
+-- about two frames (a tag, then its children list)
+var max_depth = 256
+
 
 var markup
-markup = \nodes ->
+markup = \nodes, depth ->
+	if nil == depth
+		depth = 1
+	else if depth > max_depth
+		error("markup: nesting too deep (circular reference?)", 2)
 	if nil ~= nodes
 		var o, n = {}, 1
 		if 'table' == type(nodes)
@@ -212,13 +240,13 @@ markup = \nodes ->
 				o[n] = '>'
 				n = n + 1
 				if not void_tags.has(nodes._tag)
-					o[n] = markup(nodes._children)
+					o[n] = markup(nodes._children, depth + 1)
 					n = n + 1
 					o[n] = '</' .. nodes._tag .. '>'
 					n = n + 1
 			else
 				for _, c in ipairs(nodes)
-					o[n] = markup(c)
+					o[n] = markup(c, depth + 1)
 					n = n + 1
 		else
 			o[n] = esc(nodes)
@@ -233,6 +261,9 @@ markup = \nodes ->
 -- execute commands, read files, or otherwise escape its sandbox.
 -- NB: `table` and `select` are deliberately left out so the HTML tags of the
 -- same name win; use the unqualified concat/insert/remove instead.
+-- Nothing here may yield (no coroutine, ngx, io, socket): view() swaps the
+-- template's environment in place and restores it afterwards, which is only
+-- re-entrancy-safe while a template cannot suspend mid-render.
 var safe_globals = {
 	assert = assert
 	, error = error
@@ -276,14 +307,19 @@ var view = \func, args ->
 			return \... ->
 				return normal(name, ...)
 	})
-	var oldenv = getfenv(func)
-	setfenv(func, env)
+	-- a C function cannot take an environment; leave it alone rather than raise
+	var oldenv
+	if 'function' == type(func)
+		oldenv = getfenv(func)
+		if not pcall(setfenv, func, env)
+			oldenv = nil
 	var ok, list = xpcall(->
 		return func(args)
 	, \err ->
 		return err
 	)
-	setfenv(func, oldenv)
+	if nil ~= oldenv
+		setfenv(func, oldenv)
 	if not ok
 		error(list, 2)
 	--print(tbl.dump(list))
@@ -293,7 +329,7 @@ var view = \func, args ->
 
 
 
---```
+---```
 var test = ->
 	var v = \fn, a -> return view(fn, a, true)
 	var as = assert

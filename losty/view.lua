@@ -13,19 +13,24 @@ local gmatch = string.gmatch
 local gsub = string.gsub
 local match = string.match
 local sort = table.sort
+local find = string.find
+local esc_map = {["&"] = "&amp;", ["<"] = "&lt;", [">"] = "&gt;", ["\""] = "&quot;", ["'"] = "&#39;"}
+local esc_text = "[&<>]"
+local esc_quote = "[&<>\"']"
 local esc = function(txt, quote)
     if nil == txt then
         return ""
     end
     txt = tostring(txt)
-    txt = gsub(txt, "&", "&amp;")
-    txt = gsub(txt, "<", "&lt;")
-    txt = gsub(txt, ">", "&gt;")
+    local pattern = esc_text
     if quote then
-        txt = gsub(txt, "\"", "&quot;")
-        txt = gsub(txt, "'", "&#39;")
+        pattern = esc_quote
     end
-    return txt
+    if nil == find(txt, pattern) then
+        return txt
+    end
+    local out = gsub(txt, pattern, esc_map)
+    return out
 end
 local void_tags = set("area", "base", "br", "col", "command", "embed", "hr", "img", "input", "keygen", "link", "meta", "param", "source", "track", "wbr")
 local parse = function(s)
@@ -125,8 +130,9 @@ local void = function(tag, attrs)
 end
 local normal = function(tag, ...)
     local args = {...}
+    local nargs = select("#", ...)
     local attr
-    if select("#", ...) > 1 then
+    if nargs > 1 then
         local a = args[1]
         local k = type(a)
         if nil == a then
@@ -140,7 +146,10 @@ local normal = function(tag, ...)
     local attrib
     if attr then
         attrib = args[1]
-        remove(args, 1)
+        for i = 1, nargs - 1 do
+            args[i] = args[i + 1]
+        end
+        args[nargs] = nil
     end
     local cell = void(tag, attrib)
     cell._children = args
@@ -148,8 +157,14 @@ local normal = function(tag, ...)
 end
 local attr_name = "^[%w_%-:%.]+$"
 local tag_name = "^[%w_%-:]+$"
+local max_depth = 256
 local markup
-markup = function(nodes)
+markup = function(nodes, depth)
+    if nil == depth then
+        depth = 1
+    elseif depth > max_depth then
+        error("markup: nesting too deep (circular reference?)", 2)
+    end
     if nil ~= nodes then
         local o, n = {}, 1
         if "table" == type(nodes) then
@@ -189,14 +204,14 @@ markup = function(nodes)
                 o[n] = ">"
                 n = n + 1
                 if not void_tags.has(nodes._tag) then
-                    o[n] = markup(nodes._children)
+                    o[n] = markup(nodes._children, depth + 1)
                     n = n + 1
                     o[n] = "</" .. nodes._tag .. ">"
                     n = n + 1
                 end
             else
                 for _, c in ipairs(nodes) do
-                    o[n] = markup(c)
+                    o[n] = markup(c, depth + 1)
                     n = n + 1
                 end
             end
@@ -248,18 +263,110 @@ local view = function(func, args)
             return normal(name, ...)
         end
     end})
-    local oldenv = getfenv(func)
-    setfenv(func, env)
+    local oldenv
+    if "function" == type(func) then
+        oldenv = getfenv(func)
+        if not pcall(setfenv, func, env) then
+            oldenv = nil
+        end
+    end
     local ok, list = xpcall(function()
         return func(args)
     end, function(err)
         return err
     end)
-    setfenv(func, oldenv)
+    if nil ~= oldenv then
+        setfenv(func, oldenv)
+    end
     if not ok then
         error(list, 2)
     end
     local html = markup(list)
     return html
 end
+local test = function()
+    local v = function(fn, a)
+        return view(fn, a, true)
+    end
+    local as = assert
+    local pr = print
+    as(v(function()
+        return br()
+    end) == "<br>")
+    as(v(function()
+        return br(nil)
+    end) == "<br>")
+    as(v(function()
+        return br("")
+    end) == "<br>")
+    as(v(function()
+        return br({})
+    end) == "<br>")
+    local htm = v(function()
+        return img({src = "/a.png", alt = "A"})
+    end)
+    as(htm == "<img alt=\"A\" src=\"/a.png\">")
+    as(pcall(v, function()
+        return hr(hr())
+    end) == false)
+    as(pcall(v, function()
+        return hr({div(), span()})
+    end) == false)
+    as(v(function()
+        return div()
+    end) == "<div></div>")
+    as(v(function()
+        return div("foo")
+    end) == "<div>foo</div>")
+    as(v(function()
+        return div(".foo", "")
+    end) == "<div class=\"foo\"></div>")
+    as(pcall(v, function()
+        return div("   .foo", "")
+    end) == false)
+    as(v(function()
+        return div("#id1.foo", "")
+    end) == "<div class=\"foo\" id=\"id1\"></div>")
+    as(v(function()
+        return div("[class=foo][title=bar]", {})
+    end) == "<div class=\"foo\" title=\"bar\"></div>")
+    as(v(function()
+        return div("[id=id1][title='bar']", "x")
+    end) == "<div id=\"id1\" title=\"bar\">x</div>")
+    as(v(function()
+        return div("[title=\"bar\"]", 1)
+    end) == "<div title=\"bar\">1</div>")
+    as(v(function()
+        return p(h1("blog"))
+    end) == "<p><h1>blog</h1></p>")
+    as(v(function()
+        return nav(span("z"), span(1), span(false))
+    end) == "<nav><span>z</span><span>1</span><span>false</span></nav>")
+    as(v(function()
+        return p({"AA", mark("mk")}, "YY", "ZZ")
+    end) == "<p>AA<mark>mk</mark>YYZZ</p>")
+    as(v(function()
+        return p({"AA", mark("mk"), "ZZ"})
+    end) == "<p>AA<mark>mk</mark>ZZ</p>")
+    as(v(function()
+        return ul({li("item1"), li("item2")})
+    end) == "<ul><li>item1</li><li>item2</li></ul>")
+    as(v(function()
+        return a({href = "/"}, strong(nil, "Home"))
+    end) == "<a href=\"/\"><strong>Home</strong></a>")
+    as(v(function()
+        return {img("[src=/img/tmp file.png]"), span("span1")}
+    end) == "<img src=\"/img/tmp file.png\"><span>span1</span>")
+    as(v(function()
+        return {"AAA", "bbb", p("para")}
+    end) == "AAAbbb<p>para</p>")
+    as(v(function()
+        return table({tr({td("x")})})
+    end) == "<table><tr><td>x</td></tr></table>")
+    as(v(function()
+        return select({option("a")})
+    end) == "<select><option>a</option></select>")
+    print("pass")
+end
+test()
 return view
