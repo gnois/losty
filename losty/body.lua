@@ -12,7 +12,7 @@ local body_size = function(req)
     end
     local file = req.get_body_file()
     if file then
-        local fp = io.open(file, "r")
+        local fp = io.open(file, "rb")
         if fp then
             local sz = fp:seek("end")
             fp:close()
@@ -23,15 +23,18 @@ local body_size = function(req)
 end
 local raw = function(req)
     local data = req.get_body_data()
-    if data ~= nil then
+    if data == nil then
         local file = req.get_body_file()
         if file then
-            local fp, err = io.open(file, "r")
+            local fp, err = io.open(file, "rb")
             if not fp then
-                return fp, err
+                return nil, err
             end
             data = fp:read("*a")
             fp:close()
+            if data == nil then
+                return nil, "failed to read request body file"
+            end
         end
     end
     return data
@@ -111,9 +114,11 @@ end, prepare = function(req, max)
     end
     if req.headers["Transfer-Encoding"] or req.headers["Content-Length"] then
         req.read_body()
-        local size = body_size(req)
-        if size and size > limit then
-            return nil, "too_large", size
+        if not len then
+            local size = body_size(req)
+            if size and size > limit then
+                return nil, "too_large", size
+            end
         end
         local ctype = req.headers["Content-Type"]
         if ctype then
