@@ -1,42 +1,53 @@
 var concat = table.concat
 var ngx_header = ngx.header
 var hdr = require('losty.header')
+var to = require('losty.to')
 var insert = hdr.insert
 
 --``
 Cross-Origin Resource Sharing (CORS) middleware.
 
-Build one instance per route group, configure it, then use .run as a handler
-in the chain. It sets the CORS headers and always continues with nxt(), so it
-can also be the last handler.
+Build one configurator per route group with cors.new(), configure it, then call
+it to get the middleware handler. The handler sets the CORS headers and
+continues with nxt() for a normal request; a preflight (an OPTIONS request
+carrying an Origin) is answered with 204 and does NOT continue to the handlers
+below it.
 
   local cors = require('losty.cors')
-  local C = cors()                 -- new instance, own settings
-  C.host("example%.com")           -- "%.", not ".": this is a PCRE pattern
-  C.host("https://app%.example%.com")
-  C.method("GET")
-  C.method("POST")
-  C.header("Content-Type")         -- allowed request headers (preflight)
-  C.expose_header("X-Total")       -- response headers js may read
-  C.max_age(3600)                  -- preflight cache seconds, default 3600
-  C.credentials(true)              -- default true
+  local c = cors.new()             -- new configurator, own settings
+  c.host("example%.com")           -- "%.", not ".": this is a PCRE pattern
+  c.host("https://app%.example%.com")
+  c.method("GET")
+  c.method("POST")
+  c.header("Content-Type")         -- allowed request headers (preflight)
+  c.expose_header("X-Total")       -- response headers js may read
+  c.max_age(3600)                  -- preflight cache seconds, default 3600
+  c.credentials(true)              -- default true
 
-  w.get('/api/items', C.run, handler)
-  w.options('/api/items', C.run)   -- preflight needs an OPTIONS route
+  w.options('/api/{*}', c())       -- one wildcard route answers every
+                                   -- preflight under /api, so no per-path
+                                   -- OPTIONS route is needed
+  w.get('/api/items', c(), handler)
+  w.post('/api/items', c(), handler)
 
 Notes
 - host patterns are anchored as "^" .. pattern .. "$", so escape dots and
   other regex metacharacters.
-- no Origin, or an Origin matching no host: nothing is set, the chain just
-  continues (a normal, non-CORS response).
-- the allowed Origin is echoed back, so Vary: Origin is always set.
+- no Origin: nothing is set and the chain continues (a normal, non-CORS
+  request).
+- an Origin matching no host: a normal request continues without CORS headers;
+  a preflight is still answered 204 but without Access-Control-Allow-Origin,
+  so the browser blocks the actual request.
+- the allowed Origin is echoed back (never "*"), so Vary: Origin is always set.
 - only OPTIONS requests get Allow-Methods / Allow-Headers / Max-Age.
-- settings live in the instance closure: make a separate instance with its
-  own hosts for each route group.
+- Allow-Headers reflects Access-Control-Request-Headers when no C.header() was
+  configured; Vary: Access-Control-Request-Headers is added in that case.
+- settings live in the configurator closure: make a separate configurator with
+  its own hosts for each route group.
 ``
 
 
-return ->
+var new = ->
 	var hosts = {}
 	var headers = {}
 	var methods = {}
@@ -63,9 +74,28 @@ return ->
 	K.credentials = \cred ->
 		credentials = cred
 
-	-- middleware: set the CORS headers, then continue the chain. works as the
-	-- last handler too (nxt() returns nothing when there is no next)
-	K.run = \req, res, nxt ->
+	-- reflect the request's Access-Control-Request-Headers, trimmed and
+	-- re-joined, or nil when it is absent/empty. used when no C.header() was
+	-- configured, so an unknown custom header is allowed by default
+	var reflected = \req ->
+		var raw = req.headers["Access-Control-Request-Headers"]
+		if not raw
+			return nil
+		var out = {}
+		for one in string.gmatch(raw, "[^,]+")
+			var t = to.trim(one)
+			if t ~= ''
+				out[#out + 1] = t
+		if #out == 0
+			return nil
+		return concat(out, ",")
+
+	-- the middleware handler: c() returns it. set the CORS headers and continue
+	-- the chain for a normal request. a preflight (an OPTIONS request carrying
+	-- an Origin) is answered here with 204 and does NOT continue, so it needs no
+	-- OPTIONS route of its own: register one wildcard route per group,
+	-- w.options('/api/{*}', c())
+	var run = \req, res, nxt ->
 		var origin = req.headers["Origin"]
 		if not origin
 			return nxt()
@@ -82,22 +112,53 @@ return ->
 				allowed = true
 				break
 
+		var preflight = 'OPTIONS' == req.vars.request_method
+
 		if not allowed
+			-- answer the preflight, but without Allow-Origin, so the browser
+			-- blocks the actual request; a normal request falls through
+			if preflight
+				res.status = 204
+				return
 			return nxt()
 
 		ngx_header["Access-Control-Allow-Origin"] = origin
-		ngx_header["Access-Control-Expose-Headers"] = concat(expose_headers, ",")
 		-- "false" is the default, so only send the header when it is needed
 		if credentials
 			ngx_header["Access-Control-Allow-Credentials"] = "true"
-		-- preflight only
-		if 'OPTIONS' == req.vars.request_method
+		if #expose_headers > 0
+			ngx_header["Access-Control-Expose-Headers"] = concat(expose_headers, ",")
+
+		if preflight
 			ngx_header["Access-Control-Max-Age"] = max_age
-			ngx_header["Access-Control-Allow-Headers"] = concat(headers, ",")
-			ngx_header["Access-Control-Allow-Methods"] = concat(methods, ",")
+			if #methods > 0
+				ngx_header["Access-Control-Allow-Methods"] = concat(methods, ",")
+			var allow
+			if #headers > 0
+				allow = concat(headers, ",")
+			else
+				allow = reflected(req)
+				if allow
+					-- the response depends on the requested header list
+					res.vary("Access-Control-Request-Headers")
+			if allow
+				ngx_header["Access-Control-Allow-Headers"] = allow
+			-- a 204 carries no entity
+			ngx_header["Content-Type"] = nil
+			ngx_header["Content-Length"] = nil
+			res.status = 204
+			return
 
 		return nxt()
 
-	return K
+	return setmetatable(K, {
+		__call = \_ ->
+			return run
+	})
+
+
+return {
+	new = new
+}
 
 

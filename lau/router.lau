@@ -20,10 +20,12 @@ Route grammar (a segment is a literal, or a {...} token)
 A pattern cannot contain %c, %s, and obviously /, which is always a path separator, nor { }.
 The whole segment is captured; an outermost ( ) around the pattern is redundant.
 
-Named captures are collected into q.params (nil when none were bound); positional
-ones (and the whole segment of a named one) remain in the q.match array. A pattern
-node is shared by pattern text, so every name given to it is bound to the same
-captured segment.
+Captures land in the single q.match table. A named token ({id}, {id:%d+}, {*rest})
+is bound by name, q.match.id; an unnamed token ({:%d+}, {*}) is bound positionally,
+q.match[1], q.match[2], ... A named token's own pattern submatches still go
+positionally. A pattern node is shared only by an identical token (same pattern text
+and same name), so named and unnamed captures are never conflated. A name may appear
+at most once in a route.
 
 There is no way to specify an optional last segment, to avoid possible conflicts
   /page/{:?}  <-
@@ -67,8 +69,8 @@ var NAME = "^[%a_][%w_]*$"
 -- canonical order for the Allow header (HEAD follows GET; not a registerable verb)
 var ALLOW_ORDER = {'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'}
 
--- a node holds literal children (kids), pattern children (pats), an optional
--- wildcard child, terminal handlers (leaf) and prefix middleware handlers (mw)
+-- a node holds literal children (kids), pattern children (pats), wildcard
+-- children (wilds), terminal handlers (leaf) and prefix middleware handlers (mw)
 var new_node = ->
 	return {kids = {}, pats = {}}
 
@@ -84,13 +86,16 @@ var router = ->
 	var has_mw = {}
 	var has_name = {}
 
-	var bind = \matches, m, token, toklen, names, caps, s, e, ... ->
+	var bind = \matches, m, token, toklen, name, caps, s, e, ... ->
 		if s == 1 and e == toklen
-			matches[m] = token
-			if names
-				for _, nm in ipairs(names)
-					caps[#caps + 1] = {nm, token}
-			m = m + 1
+			if name
+				-- named token: bind by name, no positional slot
+				caps[#caps + 1] = {name, token}
+			else
+				-- unnamed token: bind the whole segment positionally
+				matches[m] = token
+				m = m + 1
+			-- pattern submatches always go positionally
 			var n = select('#', ...)
 			for i = 1, n
 				var v = select(i, ...)
@@ -134,7 +139,7 @@ var router = ->
 			var prev = m
 			var c0 = caps and #caps or 0
 			var ok
-			ok, m = bind(matches, m, token, toklen, e.names, caps, str_find(token, e.pat))
+			ok, m = bind(matches, m, token, toklen, e.name, caps, str_find(token, e.pat))
 			if ok
 				var leaf, pm = resolve(path, e.node, matches, m, caps, mws)
 				if leaf
@@ -143,16 +148,22 @@ var router = ->
 			if caps truncate(caps, c0)
 			if mws truncate(mws, keepmw)
 
-		-- wildcard: bind the rest of the path
-		if node.wild
+		-- wildcard: bind the rest of the path. named and unnamed wildcards are
+		-- distinct tokens, tried in registration order like pattern children.
+		if node.wilds
 			var rest = token .. path
-			matches[m] = rest
-			if node.wild.name
-				caps[#caps + 1] = {node.wild.name, rest}
-			if node.wild.leaf
-				return node.wild.leaf, m + 1
-			matches[m] = nil
-			if caps truncate(caps, keepcap)
+			for _, w in ipairs(node.wilds)
+				if w.name
+					-- named wildcard: bind by name, no positional slot
+					caps[#caps + 1] = {w.name, rest}
+					if w.node.leaf
+						return w.node.leaf, m
+					if caps truncate(caps, keepcap)
+				else
+					matches[m] = rest
+					if w.node.leaf
+						return w.node.leaf, m + 1
+					matches[m] = nil
 		return false
 
 
@@ -178,27 +189,26 @@ var router = ->
 			return str_sub(pat, 2, -2)
 		return pat
 
-	-- pattern children are shared by pattern text, so a route and a prefix
-	-- middleware on the same pattern land on the same node. every name given to
-	-- the shared pattern is bound to the captured segment.
+	-- pattern children are keyed by pattern text AND name, so a named capture and
+	-- an unnamed one with the same pattern are distinct tokens. a route and a
+	-- prefix middleware on the same token land on the same node; a positional
+	-- capture can never be reclassified as named by sharing a node with one.
 	var find_pat = \node, pat, name ->
 		for _, e in ipairs(node.pats)
-			if e.pat == pat
-				if name
-					e.names = e.names or {}
-					var found
-					for _, nm in ipairs(e.names)
-						if nm == name
-							found = true
-							break
-					if not found
-						e.names[#e.names + 1] = name
+			if e.pat == pat and e.name == name
 				return e.node
-		var names
-		if name
-			names = {name}
-		node.pats[#node.pats + 1] = {pat = pat, names = names, node = new_node()}
+		node.pats[#node.pats + 1] = {pat = pat, name = name, node = new_node()}
 		return node.pats[#node.pats].node
+
+	-- wildcard children are keyed by name too, so {*} and {*rest} are distinct
+	-- tokens and neither can reclassify the other
+	var find_wild = \node, name ->
+		for _, w in ipairs(node.wilds)
+			if w.name == name
+				return w.node
+		var child = new_node()
+		node.wilds[#node.wilds + 1] = {name = name, node = child}
+		return child
 
 	-- classify one path segment into a descriptor, or fail loudly
 	var segment = \token, path ->
@@ -265,12 +275,8 @@ var router = ->
 			if seg.kind == 'wild'
 				if i ~= n
 					error("route '" .. path .. "': '{*}' must be the last segment", 4)
-				node.wild = node.wild or new_node()
-				if seg.name
-					if node.wild.name and node.wild.name ~= seg.name
-						error("route '" .. path .. "': wildcard already named '" .. node.wild.name .. "'", 4)
-					node.wild.name = seg.name
-				node = node.wild
+				node.wilds = node.wilds or {}
+				node = find_wild(node, seg.name)
 			else if seg.kind == 'cap'
 				node = find_pat(node, seg.pat, seg.name)
 			else
@@ -317,13 +323,12 @@ var router = ->
 			if not leaf
 				return nil, "unmatched path: " .. (path or "")
 			truncate(matches, m)
-			var params
-			if caps and #caps > 0
-				params = {}
+			-- fold named captures into the same table, keyed by name
+			if caps
 				for _, c in ipairs(caps)
-					params[c[1]] = c[2]
+					matches[c[1]] = c[2]
 			if not mws or #mws == 0
-				return leaf, matches, params
+				return leaf, matches
 			-- compose prefix middleware in front of the terminal handlers.
 			-- build a new array: never mutate the stored leaf
 			var handlers = {}
@@ -331,7 +336,7 @@ var router = ->
 				handlers[#handlers + 1] = f
 			for _, f in ipairs(leaf)
 				handlers[#handlers + 1] = f
-			return handlers, matches, params
+			return handlers, matches
 
 		, allowed = \method, path ->
 			-- `match` already returned nothing for this method. return the methods
@@ -363,16 +368,19 @@ var router = ->
 			if not tree[method]
 				tree[method] = new_node()
 			var segs = parse(path)
+			var seen = {}
 			for _, seg in ipairs(segs)
 				if seg.kind == 'mw'
 					has_mw[method] = true
 				else if seg.name
 					-- a named segment: {name}, {name:%d+} or {*name}
+					if seen[seg.name]
+						error("route '" .. path .. "': duplicate capture name '" .. seg.name .. "'", 4)
+					seen[seg.name] = true
 					has_name[method] = true
 			build(tree[method], segs, path, ...)
 			return tree[method]
 	}
-
 
 
 return router

@@ -82,12 +82,10 @@ var run = \rt, name, error_page, check ->
 	q.state = {}
 
 	var method = q.vars.request_method
-	var params
-	handlers, q.match, params = rt.match(method == 'HEAD' and 'GET' or method, q.vars.uri)
+	handlers, q.match = rt.match(method == 'HEAD' and 'GET' or method, q.vars.uri)
 	-- on a miss rt.match returns the reason string in place of the captures
 	if not handlers
 		q.match = {}
-	q.params = params or {}
 	if handlers
 		ok, trace = xpcall(->
 			body = dispatch(handlers, q, r)

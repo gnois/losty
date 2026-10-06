@@ -47,17 +47,61 @@ Use [opm](https://opm.openresty.org):
 opm get gnois/losty
 ```
 
+Or scaffold a complete, self-contained app with the bundled CLI — see [Quickstart](#quickstart).
+
 
 ## Quickstart
 
-Routes are registered once at init time, and requests are served per connection. nginx.conf therefore has two distinct blocks:
+### Scaffold a new app
+
+`bin/losty.lua` generates a complete app (routes, views, nginx config and run scripts) and bundles the framework under `lualib/losty`, so the app has no dependency on this repo at runtime:
+
+```
+luajit bin/losty.lua myapp -domain example.com        -- lauzy (default)
+luajit bin/losty.lua myapp -lua -domain example.com   -- plain Lua
+```
+
+`-domain` sets `server_name`; it is prompted for if omitted.
+
+The lauzy flavor (default) scaffolds `.lau` sources that must be compiled to `.lua` before the app can run, and recompiled after each edit — the CLI prints the exact `lau.zy` commands, one per file.
+The `-lua` flavor is ready to run as generated.
+
+```
+cd myapp
+./run.sh dev        # *nix: generate conf + start nginx
+run dev             # Windows
+```
+
+Open <http://localhost:8080>. Stop or reload from another terminal:
+
+```
+./run.sh reload     # or: ./run.sh quit      (*nix)
+run reload          # or: run quit           (Windows)
+```
+
+The generated layout:
+
+```
+myapp/
+  app.lau              routes and handlers
+  views/               HTML templates (home, auth, protected)
+  _tmpl/               nginx.conf / www.conf / config.lua templates
+  conf/                mime.conf, ssl.conf, certs/
+  lualib/losty/        bundled framework
+  run.sh, run.bat      dev | prod | reload | quit
+```
+
+
+### Minimal setup by hand
+
+A minimal app is one module plus an nginx.conf.
 
 app.lau
 ```
-var web = require('losty.web')                  -- line 1
-var app = web.new('site')                       -- line 2
-var w = app.route('/t')                         -- line 3
-w.get('/hi', function(q, r)                     -- line 4
+var web = require('losty.web')      -- line 1
+var app = web.new('site')           -- line 2
+var w = app.route('/t')             -- line 3
+w.get('/hi', function(q, r)         -- line 4
    r.status = 200
    r.headers["content-type"] = "text/plain"
    return "Hi world"
@@ -71,14 +115,14 @@ events {
 }
 http {
    init_by_lua_block {
-      require('app')                             -- register routes once, at init
+      require('app')                -- register routes once per worker
    }
    server {
       listen 80;
 
       location / {
          content_by_lua_block {
-            require('app').run()                 -- handle each request
+            require('app').run()    -- handle each request
          }
       }
    }
@@ -95,12 +139,10 @@ See [losty-starters](https://github.com/gnois/losty-starters) repo for more exam
 Losty can be used with `init_by_lua_block` and `content_by_lua_block` directives in OpenResty. Routes are registered once in `init_by_lua_block`, then each incoming request is handled by calling `run()` from `content_by_lua_block`. It matches HTTP requests to user defined routes, which associates one or more handler functions that process the request.
 Similar to frameworks like Koajs, handlers need to be explicitly invoked downstream, and then control flows back upstream.
 
-Lines 1–4 in the Quickstart show the basic pattern: `require('losty.web')` returns a
-`new(name)` factory, and each call returns an app with `get`/`post`/… verbs,
-`route(prefix)` for grouping, and `run()`.
+Lines 1–4 in the Quickstart show the basic pattern: `require('losty.web')` returns a `new(name)` factory, and each call returns an app with `get`/`post`/… verbs, `route(prefix)` for grouping, and `run()`.
 
-`route()` may be called multiple times, each taking an optional path prefix for grouping purpose. In the quickstart, `/t` is the prefix used to group route handlers under `/t/...` url.
-If any combined prefix and path resolves to the same string, their associated handlers are accumulated (but still has to be explicitly invoked). For eg:
+`route()` may be called multiple times, each taking an optional path prefix for grouping purpose. In the quickstart, `/t` is a prefix used to group route handlers under `/t/...` url.
+If any combined prefix and path resolves to the same string, their associated handlers are accumulated. For eg:
 
 ```
 local app = require('losty.web').new('demo')
@@ -115,17 +157,14 @@ w.get('/b/', function(q, r) return "No entry" end)      -- line 4
 
 ```
 
-Visiting `/a/b` will get "No entry" with HTTP status 403. Notice that the extra `/` on line 4 is ignored.
+Visiting `/a/b` will get "No entry" with HTTP status 403. Notice that the extra `/` in the path on line 4 is ignored.
 
 After routes are established, `run()` must be called to start handling incoming requests.
 
 
-### More than one app
+### One app per nginx location
 
-An app is its own router. One app can serve `/` and another `/api/`, each with its own
-routes, middleware and error handling.
-
-Keep each app in its own module and return the app:
+An app has its own router. We can use one app for all nginx locations, or one app can serve `/` and another `/api/`, each with its own routes, middleware and error handling. In this case, keep each app in its own module and return the app:
 
 app.site.lau
 ```
@@ -153,7 +192,7 @@ var app     = web.new('api')
 app.post('/api/{+}', content.json)
 
 app.get('/api/items', function(q, r)
-   return {items = {'a', 'b'}}                   -- table -> JSON
+   return {items = {'a', 'b'}}               -- table outputs as JSON
 end)
 
 app.post('/api/items', content.form, function(q, r, nxt, body)
@@ -166,7 +205,7 @@ Load both once at init, and run the right one per location:
 nginx.conf
 ```
 init_by_lua_block {
-   require('app.site')                          -- register routes once, at init
+   require('app.site')                       -- register routes once, at init
    require('app.api')
 }
 server {
@@ -186,18 +225,14 @@ server {
 ```
 `require` caches, so each app is built once per worker and every request reuses it.
 
-Routes are written as full paths (`/api/items`), so nothing is stripped: nginx picks the
-location, and the location picks the app. Two locations may share one app, and one
-`init_by_lua_block` may load several apps. Creating an app with `web.new()` is safe at
-any time; only *registering routes* must happen in the init phase.
+Routes are internally written as full paths (`/api/items`), so nothing is stripped: nginx picks the location, and the location picks the app. One `init_by_lua_block` may load several apps. Creating an app with `web.new()` is safe at any time; only *registering routes* must happen in the init phase.
 
 
 ### Routes definition
 
 Routes are defined using HTTP methods, like `get()` for GET or `post()` for POST.
 
-A route path begins with `/`, with segments separated by `/`. A trailing slash is
-ignored.
+A route path begins with `/`, with segments separated by `/`. A trailing slash is ignored.
 
 A segment is either a literal, or a `{...}` token. Braces are not valid URL characters,
 so they can never appear in a real request — everything inside them is route syntax:
@@ -208,38 +243,48 @@ so they can never appear in a real request — everything inside them is route s
 | `{id}`     | named capture, one segment (default pattern `[^/]+`) |
 | `{id:%d+}` | named capture with an explicit Lua pattern |
 | `{:%d+}`   | positional capture with an explicit Lua pattern |
-| `{*}` / `{*rest}` | wildcard: the rest of the path (last segment only) |
-| `{+}`      | prefix middleware (last segment only) |
+| `{*}` / `{*rest}` | wildcard: the rest of the path, ≥1 segment (last token only) |
+| `{+}`      | prefix middleware (last token only) |
 
-Captures go into the `q.match` array. A named capture is also stored in `q.params`,
-keyed by name:
+Because Lua table is versatile as both hash table and array, captures go into the single `q.match` table. A named segment is stored under its name; an unnamed (positional) segment is stored at an integer index:
 ```
-/page/{id}        -- q.params.id
-/page/{id:%d+}    -- q.params.id, digits only
+/page/{id}        -- q.match.id
+/page/{id:%d+}    -- q.match.id, digits only
 /page/{:%w+}      -- q.match[1], %w+
-/past/{:p(%a+)}   -- q.match = {'past', 'ast'}
+/page/{:p(%a+)}   -- q.match = {'past', 'ast'}
 ```
+A named segment's own pattern submatches still go to integer indices:
+```
+/page/{id:p(%a+)} -- /page/past -> q.match = {'ast', id = 'past'}
+```
+A name may appear at most once in a route; a duplicate is a registration error.
 
-A pattern cannot contain `/`, which is always a path separator. The whole segment is
-captured, so an outermost `( )` around the pattern is redundant:
+A pattern cannot contain `/`, which is always a path separator. The whole segment is captured, so an outermost `( )` around the pattern is redundant:
 ```
 /page/{:(%d+)}    -- same as {:%d+}
 ```
 
-`{*}` captures the rest of the path:
+`{*}` captures the rest of the path as a single string (e.g. `'a/b'`). A named wildcard is stored under its name, an unnamed one in the array:
 ```
-/files/{*path}    -- /files/a/b -> q.params.path = 'a/b'
+/files/{*path}    -- /files/a/b -> q.match.path = 'a/b'
+/files/{*}        -- /files/a/b -> q.match = {'a/b'}
 ```
 
-`{+}` registers a handler for a path prefix, so it runs for every route under it and
-falls through to the matched route. This is how prefix middleware is attached:
+`{+}` registers a handler for a path prefix, so it runs for every route under it and falls through to the matched route. This allows middlewares to be attached for all path matching the same prefix:
 ```
 w.post('/api/{+}', csrf_guard)    -- runs for every POST under /api
 w.post('/api/items', create_item) -- then this, if the path matches
 ```
 
-Patterns are matched in order of declaration, and a literal segment always beats a
-pattern. There is no optional last segment, to avoid conflicts:
+Precedence is fixed, not dependent on registration order: a literal segment always
+beats a pattern, and a pattern always beats a wildcard. Among patterns, the first
+declared one that reaches a handler wins.
+
+A named and an unnamed token are distinct even when their pattern text is identical:
+`{id:%d+}` and `{:%d+}` are two separate routes, so their handlers do not
+accumulate. If both can match the same URL, only the one declared first is used.
+
+There is no optional last segment, to avoid conflicts:
 ```
   /page
   /page/{id}      -- not /page/{id?}
@@ -264,7 +309,7 @@ Requests below are matched:
 /page/123   -> 2 due to precedence, q.match = {'123'}
 /past/56    -> 5,  q.match = {'past', 'ast', '56', '6'}
 ```
-Notice the last route receives multiple captures within a single segment.
+Notice the last route receives multiple captures within a single segment. More examples in `t/router-test.lua`.
 
 
 
@@ -272,8 +317,6 @@ Notice the last route receives multiple captures within a single segment.
 ### Handler
 
 A handler is a function that takes a request (q), a response (r), and the continuation (`nxt`) as its third argument. Values passed to `nxt(...)` are appended to the arguments of every handler further down the chain.
-
-`nxt` belongs to the current position in the chain, not to the request, so it is passed as an argument. A nested dispatch (for example inside `content.dual`) gets its own `nxt` and cannot disturb an outer one.
 
 Handlers declare only what they use, which gives three natural shapes:
 
@@ -329,19 +372,7 @@ Payload values are cumulative and positional: `form` appends `body`, then `datab
 
 To continue the chain without adding a value, call `nxt()` with no arguments. The dispatcher holds the accumulated payload, so a pass-through middleware has nothing to forward. Writing `return nxt(...)` is almost always wrong as it re-appends the payload the handler was given and doubles it on every hop.
 
-For data that does not belong to a particular position in the chain, use the per-request facilities instead of adding arguments:
-
-* `q.state` — a plain table for the current request, eg `q.state.user = u`, for cross-cutting values that many handlers need.
-* `r.defer(fn, ...)` — register cleanup to run once the chain has returned, before the response is sent.
-
-The third argument is named `nxt` rather than `next`, so that it does not shadow Lua's built-in `next()`, which handlers sometimes need for table traversal.
-
-Other frameworks normally use a context table that is extended with keys and passed across handlers, but Losty passes them as cumulative function arguments by default, thanks to Lua variable argument and multiple return values. Here are some considerations for Losty's design.
-
-* Arguments are easily visible.
-* Arguments (un)packing is slower, but may not be significant if there are only a handful of handlers.
-* Values that do not belong to a chain position go in `q.state`, which is per-request and does not need to be threaded through every signature.
-
+We can also use `q.state` — a plain table, eg `q.state.user = u`, for cross-cutting values that many handlers need for the current request.
 
 If the response body is large, or may not be available all at once, we can return a function from the handler, and Losty will loop the function as iterator, returning its result in streaming fashion until its result is nil.
 
@@ -380,8 +411,7 @@ Inside handlers, the passed in request table (q) is a thin wrapper for ngx.var a
 | `q.headers` | request headers, case-insensitive: `q.headers['Content-Type']` |
 | `q.cookies` | request cookies, URI-unescaped: `q.cookies.sid` |
 | `q.args` | query string arguments: `q.args.page` for `?page=2` |
-| `q.match` | array of route captures (see [Routes definition](#routes-definition)) |
-| `q.params` | key/value table of named captures, eg `q.params.id` |
+| `q.match` | route captures for this request (a fresh table): unnamed at integer indices, named under their name (see [Routes definition](#routes-definition)) |
 | `q.state` | empty table, created fresh for each request |
 | `q.request_id` | `X-Request-Id` header, else `$request_id`, else the userid cookie |
 | `q.secure()` | true when the request is HTTPS |
@@ -505,6 +535,61 @@ end)
 
 It is recommended to always use `return` to be explicit that control is no longer in Losty. The example above use `return ngx.exec()` to internally redirect to another location. Another example is to `return ngx.exit(status)` to fall back to error_page directive in nginx.conf instead of using Losty generated error pages.
 
+
+
+### CORS
+
+The `losty.cors` middleware sets the cross-origin headers and answers preflight
+requests. Create one configurator per route group with `cors.new()`, configure
+it, then call it to get the handler:
+
+```
+local cors = require('losty.cors')
+local c = cors.new()
+c.host("example%.com")            -- "%.", not ".": this is a PCRE pattern
+c.method("GET")
+c.method("POST")
+c.header("Content-Type")          -- allowed request headers (preflight)
+c.expose_header("X-Total")        -- response headers js may read
+c.max_age(3600)
+c.credentials(true)               -- default true
+
+fn = c()
+w.options('/api/{*}', fn)      -- once per group: answers every preflight
+w.get('/api/items', fn, list_items)
+w.post('/api/items', fn, create_item)
+```
+
+For a normal request the handler sets the CORS headers and continues with
+`nxt()`. For a preflight (an `OPTIONS` request carrying an `Origin`) it answers
+**204** itself and does **not** continue, so no per-path OPTIONS route is needed.
+When no `c.header()` list is configured, `Access-Control-Request-Headers` is
+reflected and `Vary: Access-Control-Request-Headers` is added. A preflight from
+an origin matching no `c.host()` is still answered 204, but without
+`Access-Control-Allow-Origin`, so the browser blocks the actual request.
+
+#### `{*}` or `{+}` for the OPTIONS route?
+
+Use `{*}`:
+
+* `{*}` is a terminal route leaf — it matches the rest of the path (one or more
+  segments) and its handlers are the leaf. `w.options('/api/{*}', c())` gives
+  the OPTIONS tree a leaf that any `/api/...` request resolves to, even when no
+  OPTIONS route exists for that specific path. That is exactly the preflight case.
+* `{+}` is prefix middleware, not a route. The router only collects a node's
+  `{+}` handlers while resolving down to a matching **leaf of the same method**.
+  With no OPTIONS leaf under `/api`, the OPTIONS tree has no leaf to reach, so
+  `w.options('/api/{+}', c())` never runs for a preflight on a path that has
+  only GET/POST routes.
+
+Rule of thumb: use `{+}` only when a downstream route *of the same method* should
+be wrapped; use `{*}` when the middleware is the handler-of-last-resort for a set
+of paths.
+
+Because `{*}` registers a real OPTIONS route, `OPTIONS` is now included in the
+`Allow` header for other methods under `/api`. Note that `{*}` matches one or
+more segments, so `OPTIONS /api` (bare, no trailing segment) does not match it —
+preflights always target a concrete resource path.
 
 
 ### SQL Operations

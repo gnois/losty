@@ -47,15 +47,14 @@ local router = function()
     local tree = {}
     local has_mw = {}
     local has_name = {}
-    local bind = function(matches, m, token, toklen, names, caps, s, e, ...)
+    local bind = function(matches, m, token, toklen, name, caps, s, e, ...)
         if s == 1 and e == toklen then
-            matches[m] = token
-            if names then
-                for _, nm in ipairs(names) do
-                    caps[#caps + 1] = {nm, token}
-                end
+            if name then
+                caps[#caps + 1] = {name, token}
+            else
+                matches[m] = token
+                m = m + 1
             end
-            m = m + 1
             local n = select("#", ...)
             for i = 1, n do
                 local v = select(i, ...)
@@ -100,7 +99,7 @@ local router = function()
             local prev = m
             local c0 = caps and #caps or 0
             local ok
-            ok, m = bind(matches, m, token, toklen, e.names, caps, str_find(token, e.pat))
+            ok, m = bind(matches, m, token, toklen, e.name, caps, str_find(token, e.pat))
             if ok then
                 local leaf, pm = resolve(path, e.node, matches, m, caps, mws)
                 if leaf then
@@ -115,18 +114,24 @@ local router = function()
                 truncate(mws, keepmw)
             end
         end
-        if node.wild then
+        if node.wilds then
             local rest = token .. path
-            matches[m] = rest
-            if node.wild.name then
-                caps[#caps + 1] = {node.wild.name, rest}
-            end
-            if node.wild.leaf then
-                return node.wild.leaf, m + 1
-            end
-            matches[m] = nil
-            if caps then
-                truncate(caps, keepcap)
+            for _, w in ipairs(node.wilds) do
+                if w.name then
+                    caps[#caps + 1] = {w.name, rest}
+                    if w.node.leaf then
+                        return w.node.leaf, m
+                    end
+                    if caps then
+                        truncate(caps, keepcap)
+                    end
+                else
+                    matches[m] = rest
+                    if w.node.leaf then
+                        return w.node.leaf, m + 1
+                    end
+                    matches[m] = nil
+                end
             end
         end
         return false
@@ -153,29 +158,22 @@ local router = function()
     end
     local find_pat = function(node, pat, name)
         for _, e in ipairs(node.pats) do
-            if e.pat == pat then
-                if name then
-                    e.names = e.names or {}
-                    local found
-                    for _, nm in ipairs(e.names) do
-                        if nm == name then
-                            found = true
-                            break
-                        end
-                    end
-                    if not found then
-                        e.names[#e.names + 1] = name
-                    end
-                end
+            if e.pat == pat and e.name == name then
                 return e.node
             end
         end
-        local names
-        if name then
-            names = {name}
-        end
-        node.pats[#node.pats + 1] = {pat = pat, names = names, node = new_node()}
+        node.pats[#node.pats + 1] = {pat = pat, name = name, node = new_node()}
         return node.pats[#node.pats].node
+    end
+    local find_wild = function(node, name)
+        for _, w in ipairs(node.wilds) do
+            if w.name == name then
+                return w.node
+            end
+        end
+        local child = new_node()
+        node.wilds[#node.wilds + 1] = {name = name, node = child}
+        return child
     end
     local segment = function(token, path)
         if str_sub(token, 1, 1) == "{" then
@@ -259,14 +257,8 @@ local router = function()
                 if i ~= n then
                     error("route '" .. path .. "': '{*}' must be the last segment", 4)
                 end
-                node.wild = node.wild or new_node()
-                if seg.name then
-                    if node.wild.name and node.wild.name ~= seg.name then
-                        error("route '" .. path .. "': wildcard already named '" .. node.wild.name .. "'", 4)
-                    end
-                    node.wild.name = seg.name
-                end
-                node = node.wild
+                node.wilds = node.wilds or {}
+                node = find_wild(node, seg.name)
             elseif seg.kind == "cap" then
                 node = find_pat(node, seg.pat, seg.name)
             else
@@ -320,15 +312,13 @@ local router = function()
             return nil, "unmatched path: " .. (path or "")
         end
         truncate(matches, m)
-        local params
-        if caps and #caps > 0 then
-            params = {}
+        if caps then
             for _, c in ipairs(caps) do
-                params[c[1]] = c[2]
+                matches[c[1]] = c[2]
             end
         end
         if not mws or #mws == 0 then
-            return leaf, matches, params
+            return leaf, matches
         end
         local handlers = {}
         for _, f in ipairs(mws) do
@@ -337,7 +327,7 @@ local router = function()
         for _, f in ipairs(leaf) do
             handlers[#handlers + 1] = f
         end
-        return handlers, matches, params
+        return handlers, matches
     end, allowed = function(method, path)
         path = path or ""
         local q = str_find(path, "?", 1, true)
@@ -373,10 +363,15 @@ local router = function()
             tree[method] = new_node()
         end
         local segs = parse(path)
+        local seen = {}
         for _, seg in ipairs(segs) do
             if seg.kind == "mw" then
                 has_mw[method] = true
             elseif seg.name then
+                if seen[seg.name] then
+                    error("route '" .. path .. "': duplicate capture name '" .. seg.name .. "'", 4)
+                end
+                seen[seg.name] = true
                 has_name[method] = true
             end
         end

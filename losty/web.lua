@@ -81,12 +81,10 @@ local run = function(rt, name, error_page, check)
     local r = res()
     q.state = {}
     local method = q.vars.request_method
-    local params
-    handlers, q.match, params = rt.match(method == "HEAD" and "GET" or method, q.vars.uri)
+    handlers, q.match = rt.match(method == "HEAD" and "GET" or method, q.vars.uri)
     if not handlers then
         q.match = {}
     end
-    q.params = params or {}
     if handlers then
         ok, trace = xpcall(function()
             body = dispatch(handlers, q, r)
