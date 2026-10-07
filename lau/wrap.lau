@@ -20,13 +20,14 @@ return \secret, key, length ->
 			return nil, err
 
 		, unwrap = \sig, text, func ->
-			assert(text)
-			if pen.verify_raw(sig, text)
-				var obj, err = enc.decode(text, func)
-				if obj
-					if obj.key == key
-						return obj.data
-					return nil, "wrong key"
+			if not text
+				return nil, "missing token"
+			if not pen.verify_raw(sig, text)
+				return nil, "wrong signature"
+			var obj, err = enc.decode(text, func)
+			if not obj
 				return nil, err
-			return nil, "wrong signature"
+			if type(obj) == 'table' and obj.key == key
+				return obj.data
+			return nil, "wrong key"
 	}

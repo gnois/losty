@@ -16,17 +16,19 @@ return function(secret, key, length)
         end
         return nil, err
     end, unwrap = function(sig, text, func)
-        assert(text)
-        if pen.verify_raw(sig, text) then
-            local obj, err = enc.decode(text, func)
-            if obj then
-                if obj.key == key then
-                    return obj.data
-                end
-                return nil, "wrong key"
-            end
+        if not text then
+            return nil, "missing token"
+        end
+        if not pen.verify_raw(sig, text) then
+            return nil, "wrong signature"
+        end
+        local obj, err = enc.decode(text, func)
+        if not obj then
             return nil, err
         end
-        return nil, "wrong signature"
+        if type(obj) == "table" and obj.key == key then
+            return obj.data
+        end
+        return nil, "wrong key"
     end}
 end

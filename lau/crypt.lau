@@ -13,6 +13,11 @@ var decode64 = ngx.decode_base64
 -- A random 16-byte salt is generated per encrypt() call and prepended (base64) to the
 -- ciphertext so that EVP_BytesToKey derives a fresh IV each time, preventing identical
 -- plaintexts from producing identical ciphertexts under the same key.
+--
+-- NOTE: this provides confidentiality only, not integrity. CBC ciphertext is
+-- malleable and a decrypt failure can be observed as a padding oracle, so wrap or
+-- sign the output when integrity matters (losty.wrap / losty.sigurl, or losty.sess,
+-- which authenticates with encrypt-then-MAC).
 ``
 var SaltLen = 16
 
@@ -35,13 +40,17 @@ return \key, size, mode, hash, rounds ->
 			return encode64(salt) .. '.' .. encode64(ct)
 
 		, decrypt = \str ->
+			if not str
+				return nil, 'malformed ciphertext'
 			var s, ct = string.match(str, '^([^.]+)%.(.*)')
 			if not s
 				return nil, 'malformed ciphertext'
 			var salt = decode64(s)
 			var data = decode64(ct)
-			if not salt or not data
+			if not salt or not data or #salt ~= SaltLen
 				return nil, 'malformed ciphertext'
-			var a = aes.new(@, key, salt, cipher, hash, rounds)
-			return a and a.decrypt(@, data)
+			var a, err = aes.new(@, key, salt, cipher, hash, rounds)
+			if not a
+				return nil, err or 'decryption failed'
+			return a.decrypt(@, data)
 	}

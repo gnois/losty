@@ -23,16 +23,22 @@ return function(key, size, mode, hash, rounds)
         end
         return encode64(salt) .. "." .. encode64(ct)
     end, decrypt = function(str)
+        if not str then
+            return nil, "malformed ciphertext"
+        end
         local s, ct = string.match(str, "^([^.]+)%.(.*)")
         if not s then
             return nil, "malformed ciphertext"
         end
         local salt = decode64(s)
         local data = decode64(ct)
-        if not salt or not data then
+        if not salt or not data or #salt ~= SaltLen then
             return nil, "malformed ciphertext"
         end
-        local a = aes:new(key, salt, cipher, hash, rounds)
-        return a and a:decrypt(data)
+        local a, err = aes:new(key, salt, cipher, hash, rounds)
+        if not a then
+            return nil, err or "decryption failed"
+        end
+        return a:decrypt(data)
     end}
 end
