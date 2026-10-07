@@ -3,6 +3,9 @@
 
 var K = {}
 
+-- days per month, indexed by month; Feb is adjusted for leap years in date()
+var DAYS = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
+
 -- null check
 K.null = \t ->
 	if t == nil or t == ngx.null
@@ -34,7 +37,7 @@ K.func = typeof('function')
 
 
 -- `of` should be a type checking function from above
-K.array = \of -> 
+K.array = \of ->
 	return \t ->
 		if type(t) ~= 'table'
 			return false, 'be an array'
@@ -46,7 +49,7 @@ K.array = \of ->
 			if of
 				var ok, err = of(t[i])
 				if not ok
-					return false, err .. ' array' 
+					return false, err .. ' array'
 		return true, i
 
 
@@ -80,27 +83,24 @@ K.email = \t ->
 
 K.date = \fmt ->
 	return \t ->
-		var ok = false
-		if string.match(t, "^%d+%p%d+%p%d%d%d%d$")
-			var d, m, y
-			if not fmt
-				d, m, y = string.match(t, "(%d+)%p(%d+)%p(%d+)")
-			else 
-				if fmt == 'us'
-					m, d, y = string.match(t, "(%d+)%p(%d+)%p(%d+)")
-				else if fmt == 'iso'
-					y, m, d = string.match(t, "(%d+)%p(%d+)%p(%d+)")
-
-			d, m, y = tonumber(d), tonumber(m), tonumber(y)
-
-			if d and d > 0 and m and m > 0 and y and y > 1000
-				var dmm = d * m * m
-				if d > 31 or m > 12 or dmm == 116 or dmm == 120 or dmm == 124 or dmm == 496 or dmm == 1116 or dmm == 2511 or dmm == 3751
-					-- leap year
-					if dmm == 116 and (y % 400 == 0 or (y % 100 ~= 0 and y % 4 == 0))
-						ok = true
-
-		if not ok
+		var a, b, c = string.match(t, "^(%d+)%p(%d+)%p(%d%d%d%d)$")
+		if not a
+			return false, 'be a valid date'
+		var d, m, y
+		if not fmt
+			d, m, y = tonumber(a), tonumber(b), tonumber(c)
+		else if fmt == 'us'
+			m, d, y = tonumber(a), tonumber(b), tonumber(c)
+		else if fmt == 'iso'
+			y, m, d = tonumber(a), tonumber(b), tonumber(c)
+		else
+			return false, 'be a valid date'
+		if m < 1 or m > 12 or d < 1 or y <= 1000
+			return false, 'be a valid date'
+		var dim = DAYS[m]
+		if m == 2 and (y % 400 == 0 or (y % 100 ~= 0 and y % 4 == 0))
+			dim = 29
+		if d > dim
 			return false, 'be a valid date'
 		return true
 
@@ -134,7 +134,7 @@ K.max = \n ->
 
 K.int = \t ->
 	if math.floor(t) == t
-		return false, 'be an integer'
-	return true
+		return true
+	return false, 'be an integer'
 
 return K

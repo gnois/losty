@@ -2,6 +2,20 @@
 -- Generated from is.lau
 --
 local K = {}
+local DAYS = {
+    31
+    , 28
+    , 31
+    , 30
+    , 31
+    , 30
+    , 31
+    , 31
+    , 30
+    , 31
+    , 30
+    , 31
+}
 K.null = function(t)
     if t == nil or t == ngx.null then
         return true
@@ -83,29 +97,28 @@ K.email = function(t)
 end
 K.date = function(fmt)
     return function(t)
-        local ok = false
-        if string.match(t, "^%d+%p%d+%p%d%d%d%d$") then
-            local d, m, y
-            if not fmt then
-                d, m, y = string.match(t, "(%d+)%p(%d+)%p(%d+)")
-            else
-                if fmt == "us" then
-                    m, d, y = string.match(t, "(%d+)%p(%d+)%p(%d+)")
-                elseif fmt == "iso" then
-                    y, m, d = string.match(t, "(%d+)%p(%d+)%p(%d+)")
-                end
-            end
-            d, m, y = tonumber(d), tonumber(m), tonumber(y)
-            if d and d > 0 and m and m > 0 and y and y > 1000 then
-                local dmm = d * m * m
-                if d > 31 or m > 12 or dmm == 116 or dmm == 120 or dmm == 124 or dmm == 496 or dmm == 1116 or dmm == 2511 or dmm == 3751 then
-                    if dmm == 116 and (y % 400 == 0 or y % 100 ~= 0 and y % 4 == 0) then
-                        ok = true
-                    end
-                end
-            end
+        local a, b, c = string.match(t, "^(%d+)%p(%d+)%p(%d%d%d%d)$")
+        if not a then
+            return false, "be a valid date"
         end
-        if not ok then
+        local d, m, y
+        if not fmt then
+            d, m, y = tonumber(a), tonumber(b), tonumber(c)
+        elseif fmt == "us" then
+            m, d, y = tonumber(a), tonumber(b), tonumber(c)
+        elseif fmt == "iso" then
+            y, m, d = tonumber(a), tonumber(b), tonumber(c)
+        else
+            return false, "be a valid date"
+        end
+        if m < 1 or m > 12 or d < 1 or y <= 1000 then
+            return false, "be a valid date"
+        end
+        local dim = DAYS[m]
+        if m == 2 and (y % 400 == 0 or y % 100 ~= 0 and y % 4 == 0) then
+            dim = 29
+        end
+        if d > dim then
             return false, "be a valid date"
         end
         return true
@@ -145,8 +158,8 @@ K.max = function(n)
 end
 K.int = function(t)
     if math.floor(t) == t then
-        return false, "be an integer"
+        return true
     end
-    return true
+    return false, "be an integer"
 end
 return K
