@@ -8,7 +8,7 @@ local K = {try = function(...)
         for _, fn in ipairs(funs) do
             v, err = fn(v)
             if v == nil then
-                return nil, "cannot " .. err
+                return nil, "cannot " .. (err or "convert")
             end
         end
         return v

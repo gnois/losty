@@ -5,10 +5,16 @@ var bit = require('bit')
 var split = \str, pattern, plain ->
 	var arr = {}
 	if pattern and #pattern > 0
-		var pos = 1
+		var pos, n = 1, #str
 		for st, sp in -> return string.find(str, pattern, pos, plain)
 			table.insert(arr, string.sub(str, pos, st-1))
-			pos = sp + 1
+			if sp < st
+				-- zero-width match: advance a byte so the loop always progresses
+				if st > n
+					break
+				pos = st + 1
+			else
+				pos = sp + 1
 		table.insert(arr, string.sub(str, pos))
 	return arr
 
@@ -68,15 +74,25 @@ K.split = split
 
 -- Same as split but returns iterator instead
 K.gsplit = \str, pattern, plain ->
-	var pos
-	var st, sp = 0, 0
+	var pos, n = 1, #str
+	var done = false
 	return ->
-		if sp
-			pos = sp + 1
-			st, sp = string.find(str, pattern, pos, plain)
-			if st
-				return string.sub(str, pos, st-1)
+		if done
+			return nil
+		var st, sp = string.find(str, pattern, pos, plain)
+		if not st
+			done = true
 			return string.sub(str, pos)
+		var field = string.sub(str, pos, st-1)
+		if sp < st
+			-- zero-width match: advance a byte so the iterator always progresses
+			if st > n
+				done = true
+			else
+				pos = st + 1
+		else
+			pos = sp + 1
+		return field
 
 
 -- Find the last instance of a pattern in a string

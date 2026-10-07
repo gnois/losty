@@ -4,13 +4,13 @@ var K = {
 	-- return converted val or nil with msg on first error, since we cannot convert further
 	try = \... ->
 		var funs = {...}
-		
+
 		return \val ->
 			var v, err = val
 			for _, fn in ipairs(funs)
 				v, err = fn(v)
 				if v == nil
-					return nil, 'cannot ' .. err
+					return nil, 'cannot ' .. (err or 'convert')
 			return v
 }
 
@@ -21,8 +21,8 @@ var to = \fn, atype ->
 		if x
 			return x
 		return nil, 'convert to ' .. atype
-		
-		
+
+
 K.str = to(tostring, 'string')
 K.num = to(tonumber, 'number')
 K.int = to(\t ->
@@ -42,6 +42,6 @@ K.trim = \str ->
 		return str.gsub(@, "^%s+", "").reverse(@).gsub(@, "^%s+", "").reverse(@), 'trim string'
 	else
 		return string.match(str, "^%s*(.-)%s*$"), 'trim string'
-		
+
 
 return K

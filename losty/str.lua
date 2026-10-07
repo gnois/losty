@@ -5,12 +5,19 @@ local bit = require("bit")
 local split = function(str, pattern, plain)
     local arr = {}
     if pattern and #pattern > 0 then
-        local pos = 1
+        local pos, n = 1, #str
         for st, sp in function()
             return string.find(str, pattern, pos, plain)
         end do
             table.insert(arr, string.sub(str, pos, st - 1))
-            pos = sp + 1
+            if sp < st then
+                if st > n then
+                    break
+                end
+                pos = st + 1
+            else
+                pos = sp + 1
+            end
         end
         table.insert(arr, string.sub(str, pos))
     end
@@ -70,17 +77,28 @@ K.ends = function(str, part)
 end
 K.split = split
 K.gsplit = function(str, pattern, plain)
-    local pos
-    local st, sp = 0, 0
+    local pos, n = 1, #str
+    local done = false
     return function()
-        if sp then
-            pos = sp + 1
-            st, sp = string.find(str, pattern, pos, plain)
-            if st then
-                return string.sub(str, pos, st - 1)
-            end
+        if done then
+            return nil
+        end
+        local st, sp = string.find(str, pattern, pos, plain)
+        if not st then
+            done = true
             return string.sub(str, pos)
         end
+        local field = string.sub(str, pos, st - 1)
+        if sp < st then
+            if st > n then
+                done = true
+            else
+                pos = st + 1
+            end
+        else
+            pos = sp + 1
+        end
+        return field
     end
 end
 K.findlast = function(str, pattern, plain)
