@@ -7,6 +7,29 @@ advance == incr(key, 1, 0, lifetime)
 value - number if progressing in state machine, else is string of encoded result
 flags - crc32 of identity for the key that needs to match when retrieving
 
+Usage
+-----
+    local idempotent = require('losty.idempotent')
+    local idem = idempotent('locks', 'caches', ngx.var.arg_key)
+    -- key indexes both shdicts: 'locks' (mutex) and 'caches' (state/result)
+
+    -- id     : optional identity (eg. request uri/params). only a caller quoting the
+    --          same id can read a result back; a different id -> 'identity mismatch'
+    -- secs   : hold the lock this long; auto unlock if release() is not called
+    -- expiry : optional secs to keep the state; 0/nil keeps it until evicted
+    local state, data = idem.acquire(ngx.var.request_uri, 10, 24 * 3600)
+    if state == 1 then                  -- 1: we started it, no result yet
+        ...do the work...
+        idem.advance()                  -- 2, 3, ... progress while holding the lock
+        idem.save(200, 'done')          -- cache terminal state + optional data
+        idem.release()                  -- else it auto unlocks after secs
+    elseif state == false then          -- false, err: 'exists' (lock held elsewhere)
+        ngx.status = 409
+    elseif state == nil then            -- nil, err: eg. 'identity mismatch'
+        ngx.status = 400
+    else                                -- replayed result: state, data
+        return state, data
+    end
 
 nginx.conf
 ----------
@@ -33,13 +56,17 @@ return \lock_name, dict_name, key ->
 	var lock = locker(lock_name)
 	var ctx_key = "losty_idemp_" .. dict_name .. "_" .. key
 
+	-- map the identity crc into the range 1..intmax: shdict:get() only
+	-- returns the stored flags when they are non-zero, so 0 cannot be used
+	var idcrc = \id -> return crc32(id) % intmax + 1
+
 	-- id must be nil or string
 	-- if already started, return false, "exists"
 	-- may return false, "no memory"
 	-- if ok, return 1
 	var start = \id, expire, crc ->
 		if id ~= nil
-			crc = crc32(id) % intmax
+			crc = idcrc(id)
 		-- print(id, ' crc ', crc)
 		var ok, err = cache.safe_add(@, key, 1, expire, crc)
 		if ok
@@ -55,9 +82,7 @@ return \lock_name, dict_name, key ->
 		var val, flags = cache.get(@, key)
 		--print(id, ' flags ', flags)
 		if "number" == type(flags) -- not error
-			if id == nil and flags == 1
-				return val, flags
-			if id and crc32(id) % intmax ~= flags
+			if id ~= nil and idcrc(id) ~= flags
 				return val, "identity mismatch"
 		return val, flags
 
@@ -78,26 +103,45 @@ return \lock_name, dict_name, key ->
 		-- sec - (required) hold secs before auto unlock, eg: 10
 		-- expiry - (optional) how many secs to keep state in secs, eg: 24 * 3600 is 24 hrs
 		acquire = \id, secs, expiry ->
-			-- try read
+			-- quick reject before taking the lock
 			var val, c = get(id)
 			if 'string' == type(c) -- error
 				return nil, c
 
-			-- save request-scoped state for save() later
-			var crc = c or 1
-			expiry = expiry or 0
 			var ok, err = lock.lock(key, secs)
-			if ok
-				ngx.ctx[ctx_key] = {locked = true, crc = crc, expire = expiry}
-				if c == nil -- not found
-					return start(id, expiry, crc), nil
-				-- decode if saved state
-				if 'number' == type(val)
-					return val, nil
-				var out = json.decode(val)
-				return out.state, out.data
-			ngx.ctx[ctx_key] = nil
-			return ok, err
+			if not ok
+				ngx.ctx[ctx_key] = nil
+				return ok, err
+
+			-- re-read now that the lock is held: the value may have changed
+			-- between the check above and the lock being acquired
+			val, c = get(id)
+			if 'string' == type(c)
+				lock.unlock(key)
+				ngx.ctx[ctx_key] = nil
+				return nil, c
+
+			-- save request-scoped state for save() later
+			expiry = expiry or 0
+			ngx.ctx[ctx_key] = {locked = true, crc = c or 1, expire = expiry}
+			if c == nil -- not found
+				var started, scrc = start(id, expiry, c or 1)
+				if not started
+					-- release the lock so a retry is not blocked until secs
+					lock.unlock(key)
+					ngx.ctx[ctx_key] = nil
+					return started, scrc
+				-- remember the flags actually stored so save() keeps them
+				var st = ngx.ctx[ctx_key]
+				st.crc = scrc
+				return started, nil
+			-- decode if saved state
+			if 'number' == type(val)
+				return val, nil
+			var out = json.decode(val)
+			if not out
+				return nil, 'corrupt state'
+			return out.state, out.data
 
 
 		, release = ->
@@ -124,11 +168,15 @@ return \lock_name, dict_name, key ->
 		--    if data is nil then can call advance() again
 		-- returns true if ok
 		, save = \state, data ->
+			if state == nil
+				return nil, 'state required'
 			var st = ngx.ctx[ctx_key]
 			if st and st.locked and lock.locked(key)
 				var val = state
 				if data ~= nil
 					val = json.encode({state = state, data = data})
+					if not val
+						return nil, 'failed to encode data'
 				var ok, err = cache.replace(@, key, val, st.expire, st.crc)
 				if ok
 					return state
