@@ -1,5 +1,75 @@
 -- security-related HTTP response headers middleware
 
+var rnd = require('resty.random')
+var cjson = require('cjson')
+
+var concat = table.concat
+var sort = table.sort
+var gmatch = string.gmatch
+var gsub = string.gsub
+var match = string.match
+var lower = string.lower
+
+--``
+Security-related HTTP response headers middleware.
+
+  local s = require('losty.security')
+
+  -- one handler per group; it is reusable across routes
+  local sec = s.new()                       -- all defaults
+
+  local sec = s.new({
+     x_frame_options = "DENY"
+     , content_security_policy = s.csp{
+        default_src = "'self'"
+        , script_src = { "'self'", s.nonce }
+        , style_src = { "'self'", s.nonce }
+        , img_src = { "'self'", "data:" }
+        , upgrade_insecure_requests = true
+     }
+     , reporting_endpoints = { { name = "csp", url = "https://example.com/reports" } }
+     , report_to = { { group = "csp", max_age = 10886400, endpoints = { { url = "https://example.com/reports" } } } }
+  })
+
+  w.get('/x', sec, handler)
+
+Every header below is set unless the response already carries it:
+  X-Content-Type-Options, Referrer-Policy, X-Frame-Options, Permissions-Policy,
+  Cross-Origin-Opener-Policy, Cross-Origin-Resource-Policy,
+  Cross-Origin-Embedder-Policy, Origin-Agent-Cluster, X-DNS-Prefetch-Control,
+  X-Download-Options, X-Permitted-Cross-Domain-Policies, X-XSS-Protection,
+  Content-Security-Policy, Report-To, Reporting-Endpoints and
+  Strict-Transport-Security (only over https).
+
+Set an option to `false` to disable that header, or to a string to override its
+default. X-Powered-By is removed when `remove_powered_by` is true (the default).
+
+CSP: pass a plain string, or build one with s.csp{...} whose keys are directive
+names and whose values are a string, an array of strings, or `true` for a
+valueless directive (upgrade-insecure-requests). A key may be written snake_case
+(default_src) or camelCase (defaultSrc); either becomes the directive name
+(default-src). Directives are emitted sorted by name, so the header is stable.
+
+Put the s.nonce sentinel in a directive and the middleware generates a fresh
+nonce per request, writes it into the header as 'nonce-<random>' and exposes the
+raw value as q.state.nonce, so the handler can hand it to the view that renders
+the matching tags:
+
+  w.get('/page', sec, \q, r ->
+     r.headers["Content-Type"] = "text/html"
+     return "<!DOCTYPE html>" .. view(tmpl, { nonce = q.state.nonce })
+  end)
+
+  -- in the template:  script({ nonce = args.nonce, src = '/app.js' }, '')
+
+Report-To takes a list of { group, max_age, endpoints = { { url } } }; endpoints
+is a list of { name, url } for Reporting-Endpoints.
+``
+
+-- a per-request CSP nonce placeholder: put this (by identity) in a directive and
+-- the middleware replaces it with 'nonce-<random>'
+var nonce = {}
+
 var default = {
 	x_content_type_options = "nosniff"
 	, referrer_policy = "strict-origin-when-cross-origin"
@@ -8,14 +78,24 @@ var default = {
 	, cross_origin_opener_policy = "same-origin"
 	, cross_origin_resource_policy = "same-site"
 	, cross_origin_embedder_policy = nil
+	, origin_agent_cluster = "?1"
+	, x_dns_prefetch_control = "off"
+	, x_download_options = "noopen"
+	, x_permitted_cross_domain_policies = "none"
+	, x_xss_protection = "0"
 	, content_security_policy = nil
+	, report_to = nil
+	, reporting_endpoints = nil
 	, hsts_max_age = 31536000
 	, hsts_include_subdomains = true
 	, hsts_preload = false
+	, remove_powered_by = true
 }
 
+-- set the header when val is a string/table; `false` disables it, nil leaves
+-- whatever the handler already set
 var set_if_empty = \headers, key, val ->
-	if val ~= nil and headers[key] == nil
+	if val ~= nil and val ~= false and headers[key] == nil
 		headers[key] = val
 
 var hsts = \cfg, secure ->
@@ -26,15 +106,146 @@ var hsts = \cfg, secure ->
 		out[#out + 1] = "includeSubDomains"
 	if cfg.hsts_preload
 		out[#out + 1] = "preload"
-	return table.concat(out, "; ")
+	return concat(out, "; ")
 
-return \opts ->
+
+-- directive key -> directive name: default_src and defaultSrc both become
+-- default-src; reportURI becomes report-uri. Underscores become dashes, then a
+-- dash goes before an uppercase letter that follows a lowercase letter/digit.
+var kebab = \name ->
+	name = gsub(name, '_', '-')
+	var out, n = {}, 0
+	var prev
+	for c in gmatch(name, '.')
+		if prev and match(c, '%u') and match(prev, '[%l%d]')
+			n = n + 1
+			out[n] = '-'
+		n = n + 1
+		out[n] = lower(c)
+		prev = c
+	return concat(out)
+
+
+-- a directive value is a string or an array; the nonce sentinel becomes
+-- 'nonce-<n>'
+var render_values = \vals, n ->
+	if 'table' == type(vals)
+		var out, c = {}, 0
+		for _, v in ipairs(vals)
+			c = c + 1
+			out[c] = v == nonce and ("'nonce-" .. n .. "'") or tostring(v)
+		return concat(out, ' ')
+	return vals == nonce and ("'nonce-" .. n .. "'") or tostring(vals)
+
+
+-- a directive with `true` or an empty list carries no value
+var render_directive = \name, vals, n ->
+	if true == vals
+		return name
+	if 'table' == type(vals) and vals ~= nonce and next(vals) == nil
+		return name
+	return name .. ' ' .. render_values(vals, n)
+
+
+var uses_nonce = \vals ->
+	if 'table' == type(vals)
+		if vals == nonce
+			return true
+		for _, v in ipairs(vals)
+			if v == nonce
+				return true
+	return false
+
+
+-- build a CSP spec; the middleware renders it per request (for the nonce)
+var csp = \directives ->
+	return {_directives = directives}
+
+
+-- render the policy; directives sorted by name so header bytes are stable
+-- across runs (pairs() has no order)
+var render_csp = \directives, n ->
+	var parts, names = {}, {}
+	var i = 0
+	for k, v in pairs(directives)
+		var name = kebab(k)
+		i = i + 1
+		names[i] = name
+		parts[name] = render_directive(name, v, n)
+	sort(names)
+	var out, c = {}, 0
+	for j = 1, i
+		c = c + 1
+		out[c] = parts[names[j]]
+	return concat(out, '; ')
+
+
+-- Reporting-Endpoints: name="url", name2="url2"
+var reporting_endpoints = \list ->
+	var out, n = {}, 0
+	for _, e in ipairs(list)
+		n = n + 1
+		out[n] = e.name .. '="' .. e.url .. '"'
+	return concat(out, ', ')
+
+
+-- Report-To: one JSON object per group, comma-joined. Built by hand in a fixed
+-- key order so the header is deterministic (cjson does not order keys).
+var report_to = \groups ->
+	var out, n = {}, 0
+	for _, g in ipairs(groups)
+		var eps, m = {}, 0
+		for _, e in ipairs(g.endpoints or {})
+			m = m + 1
+			eps[m] = '{"url":' .. cjson.encode(e.url) .. '}'
+		var max_age = g.max_age
+		if max_age == nil
+			max_age = g.maxAge
+		var obj = '{"group":' .. cjson.encode(g.group)
+		obj = obj .. ',"max_age":' .. tostring(max_age)
+		obj = obj .. ',"endpoints":[' .. concat(eps, ',') .. ']}'
+		n = n + 1
+		out[n] = obj
+	return concat(out, ', ')
+
+
+var render_policy = \policy, n ->
+	if 'table' ~= type(policy)
+		return policy
+	if policy._directives
+		return render_csp(policy._directives, n)
+	error("content_security_policy must be a string or security.csp{...}", 2)
+
+
+var new = \opts ->
 	opts = opts or {}
 	var cfg = {}
 	for k, v in pairs(default)
-		cfg[k] = opts[k] ~= nil and opts[k] or v
+		if opts[k] ~= nil
+			cfg[k] = opts[k]
+		else
+			cfg[k] = v
+
+	-- the nonce is generated only when the policy actually references it
+	var policy = cfg.content_security_policy
+	var needs_nonce = false
+	if 'table' == type(policy) and policy._directives
+		for _, v in pairs(policy._directives)
+			if uses_nonce(v)
+				needs_nonce = true
+				break
+
+	-- request-independent header values, rendered once
+	var report_value = cfg.report_to and #cfg.report_to > 0 and report_to(cfg.report_to) or nil
+	var endpoints_value = cfg.reporting_endpoints and #cfg.reporting_endpoints > 0 and reporting_endpoints(cfg.reporting_endpoints) or nil
 
 	return \q, r, nxt ->
+		var n
+		if needs_nonce
+			var b = rnd.bytes(16)
+			n = b and ngx.encode_base64(b) or ngx.var.request_id
+			q.state.nonce = n
+
 		set_if_empty(r.headers, "X-Content-Type-Options", cfg.x_content_type_options)
 		set_if_empty(r.headers, "Referrer-Policy", cfg.referrer_policy)
 		set_if_empty(r.headers, "X-Frame-Options", cfg.x_frame_options)
@@ -42,6 +253,25 @@ return \opts ->
 		set_if_empty(r.headers, "Cross-Origin-Opener-Policy", cfg.cross_origin_opener_policy)
 		set_if_empty(r.headers, "Cross-Origin-Resource-Policy", cfg.cross_origin_resource_policy)
 		set_if_empty(r.headers, "Cross-Origin-Embedder-Policy", cfg.cross_origin_embedder_policy)
-		set_if_empty(r.headers, "Content-Security-Policy", cfg.content_security_policy)
+		set_if_empty(r.headers, "Origin-Agent-Cluster", cfg.origin_agent_cluster)
+		set_if_empty(r.headers, "X-DNS-Prefetch-Control", cfg.x_dns_prefetch_control)
+		set_if_empty(r.headers, "X-Download-Options", cfg.x_download_options)
+		set_if_empty(r.headers, "X-Permitted-Cross-Domain-Policies", cfg.x_permitted_cross_domain_policies)
+		set_if_empty(r.headers, "X-XSS-Protection", cfg.x_xss_protection)
+		set_if_empty(r.headers, "Content-Security-Policy", render_policy(policy, n))
 		set_if_empty(r.headers, "Strict-Transport-Security", hsts(cfg, q.secure()))
-		return nxt()
+		set_if_empty(r.headers, "Report-To", report_value)
+		set_if_empty(r.headers, "Reporting-Endpoints", endpoints_value)
+
+		-- X-Powered-By may be set by a handler below; drop it after the chain
+		var out = nxt()
+		if cfg.remove_powered_by
+			r.headers["X-Powered-By"] = nil
+		return out
+
+
+return {
+	new = new
+	, csp = csp
+	, nonce = nonce
+}
