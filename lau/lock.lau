@@ -1,4 +1,4 @@
---`` 
+--``
 - Using shdict as lock: Shd explicitly unlock, else hold max n secs before auto unlock
 lock == add(key, true, n sec)
 unlock == delete(key)
@@ -12,6 +12,10 @@ nginx.conf
 
 ``
 
+-- secs before an un-released lock auto expires, so a forgotten unlock (or a
+-- crashed worker) does not block the key forever
+var Default_ttl = 30
+
 return \lock_name ->
 
 	var lock = ngx.shared[lock_name]
@@ -19,11 +23,11 @@ return \lock_name ->
 		error("missing lua_shared_dict ".. lock_name)
 
 	return {
-		-- sec - hold secs before auto unlock
+		-- sec - hold secs before auto unlock, defaults to Default_ttl
 		-- if already locked, return false, "exists"
 		-- may return false, "no memory"
 		lock = \key, sec ->
-			return lock.add(@, key, true, sec)
+			return lock.add(@, key, true, sec or Default_ttl)
 
 		, locked = \key ->
 			return true == lock.get(@, key)
