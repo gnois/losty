@@ -2,55 +2,70 @@ var aes = require('resty.aes')
 var rnd = require('resty.random')
 var encode64 = ngx.encode_base64
 var decode64 = ngx.decode_base64
+var hmac = ngx.hmac_sha1
 
 --``
--- size, mode, hash, rounds all optional
+-- size, mode all optional
 -- size = <int> 128, 192, 256 bits key sizes
--- mode = <string> ecb, cbc, cfb1, cfb8, cfb128, ofb, or ctr (not available with 256 bit keys)
--- hash = <aes.hash> md5, sha1, sha224, sha256, sha384, sha512
--- rounds = <int>
+-- mode = <string> ecb, cbc, cfb1, cfb8, cfb128, ofb, or ctr
 --
--- A random 16-byte salt is generated per encrypt() call and prepended (base64) to the
--- ciphertext so that EVP_BytesToKey derives a fresh IV each time, preventing identical
--- plaintexts from producing identical ciphertexts under the same key.
+-- A random 16-byte iv is generated per encrypt() call and prepended (base64) to the
+-- ciphertext and used as the CBC iv, so identical plaintexts never produce identical
+-- ciphertexts under the same key. It is passed via resty.aes's {iv = iv} form; the
+-- EVP_BytesToKey salt arg cannot be used because resty.aes limits it to 8 bytes.
+--
+-- key is a secret of any length: the AES key is derived from it with HMAC-SHA1 (two
+-- blocks, enough for 128/192/256-bit keys). The derivation is fast, so key must be
+-- high-entropy (random), not a human-chosen password.
 --
 -- NOTE: this provides confidentiality only, not integrity. CBC ciphertext is
 -- malleable and a decrypt failure can be observed as a padding oracle, so wrap or
 -- sign the output when integrity matters (losty.wrap / losty.sigurl, or losty.sess,
 -- which authenticates with encrypt-then-MAC).
 ``
-var SaltLen = 16
+var IvLen = 16
 
-return \key, size, mode, hash, rounds ->
+return \key, size, mode ->
+	if 'string' ~= type(key)
+		error("key must be a string", 2)
 	size = size or 256
 	mode = mode or "cbc"
-	hash = hash or aes.hash.sha256
 	var cipher = aes.cipher(size, mode)
+	if not cipher
+		error("unsupported cipher: size=" .. tostring(size) .. " mode=" .. tostring(mode), 2)
+	-- HMAC-SHA1 gives 20 bytes per call; two calls cover a 256-bit key
+	var k = hmac(key, 'crypt-key|1') .. hmac(key, 'crypt-key|2')
+	var aeskey = string.sub(k, 1, size / 8)
 
 	return {
 		encrypt = \str ->
-			var salt = rnd.bytes(SaltLen)
-			if not salt
+			var iv = rnd.bytes(IvLen)
+			if not iv
 				return nil, 'failed to generate random bytes'
-			var a = aes.new(@, key, salt, cipher, hash, rounds)
-			var ct = a and a.encrypt(@, str)
+			var a, err = aes.new(@, aeskey, nil, cipher, {iv = iv})
+			if not a
+				return nil, err or 'encryption failed'
+			var ct = a.encrypt(@, str)
 			if not ct
 				return nil, 'encryption failed'
-			-- prepend base64(salt) + '.' so decrypt can recover the salt
-			return encode64(salt) .. '.' .. encode64(ct)
+			-- prepend base64(iv) + '.' so decrypt can recover the iv
+			return encode64(iv) .. '.' .. encode64(ct)
 
 		, decrypt = \str ->
-			if not str
+			if 'string' ~= type(str)
 				return nil, 'malformed ciphertext'
 			var s, ct = string.match(str, '^([^.]+)%.(.*)')
 			if not s
 				return nil, 'malformed ciphertext'
-			var salt = decode64(s)
+			var iv = decode64(s)
 			var data = decode64(ct)
-			if not salt or not data or #salt ~= SaltLen
+			if not iv or #iv ~= IvLen or not data
 				return nil, 'malformed ciphertext'
-			var a, err = aes.new(@, key, salt, cipher, hash, rounds)
+			var a, err = aes.new(@, aeskey, nil, cipher, {iv = iv})
 			if not a
 				return nil, err or 'decryption failed'
-			return a.decrypt(@, data)
+			var out = a.decrypt(@, data)
+			if not out
+				return nil, 'decryption failed'
+			return out
 	}
