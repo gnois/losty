@@ -30,7 +30,7 @@ return function()
     end
     local subscribe = function()
         local headers = ngx.req.get_headers()
-        local prefs = accept(headers["Accept"], {EVstream})
+        local prefs = accept.media(headers["Accept"], {EVstream})
         if tostring(prefs[1]) == EVstream then
             ngx.header["Content-Type"] = EVstream
             ngx.header["Cache-Control"] = "no-cache"

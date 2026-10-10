@@ -70,7 +70,7 @@ var dual = \... ->
 		-- merge rather than overwrite: cors.lau may have added Origin already
 		res.vary("Accept")
 
-		var pref = accept(req.headers["Accept"], {HTML, JSON})
+		var pref = accept.media(req.headers["Accept"], {HTML, JSON})
 		if not pref[1]
 			-- nothing in Accept is acceptable, eg `Accept: image/png`
 			res.status = ngx.HTTP_NOT_ACCEPTABLE

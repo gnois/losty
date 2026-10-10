@@ -1,55 +1,85 @@
 -- translated from
 --  https://github.com/jshttp/negotiator
 
+--``
+Accept negotiation (media type, language, charset, encoding), after
+jshttp/negotiator.
+
+  local accept = require('losty.accept')
+  local pick = accept('text/html, application/json', {'text/html', 'application/json'})
+  local lang = accept.language('en-GB, en;q=0.8', {'en', 'en-GB'})
+  local enc  = accept.encoding('gzip, br;q=0.5', {'br', 'gzip'})
+
+The module is callable and negotiates media types (its historical API), the
+same as accept.media(header, avails). accept.language / accept.charset /
+accept.encoding negotiate Accept-Language / Accept-Charset / Accept-Encoding.
+Each returns the acceptable values in preference order as objects whose
+tostring() is the canonical value: media objects expose .media/.subtype/.params,
+language objects .full/.prefix/.suffix, charset objects .charset, encoding
+objects .encoding. Every object also carries .q, .s, .o and .i, the numeric
+tie-breakers.
+
+header may be a string, or the table that ngx.req.get_headers() returns for a
+repeated header: such a table is joined with ',' (the list separator in these
+grammars) instead of raising.
+``
+
 var bit = require('bit')
 var to = require('losty.to')
 
-var yield = coroutine.yield
-var create = coroutine.create
-var resume = coroutine.resume
 var gmatch = string.gmatch
 var lower = string.lower
 var concat = table.concat
 
--- parse a string without breaking "quoted" apart
-var parse = \s, sep ->
-	var r = create( ->
-		var acc, n = {}, 0
-		var bracket = false
-		var esc = false
-		for c in gmatch(s, '.')
-			if esc
-				esc = false
-				n = n + 1
-				acc[n] = c
-			else if c == '\\' and bracket
-				esc = true
-				n = n + 1
-				acc[n] = c
-			else if c == '"'
-				bracket = not bracket
-				n = n + 1
-				acc[n] = c
-			else
-				if c == sep and not bracket
-					if n > 0
-						yield(concat(acc))
-						acc, n = {}, 0
-				else
-					n = n + 1
-					acc[n] = c
-		-- remainder
-		if n > 0
-			yield(concat(acc))
-	)
-	return ->
-		var res = select(2, resume(r))
-		return res
+-- coerce a header value to a string. ngx.req.get_headers() hands back a table
+-- when a header was sent more than once; feeding that to the parser would
+-- raise, and a client-triggerable raise is a 500
+var as_string = \v ->
+	var t = type(v)
+	if t == 'string' or v == nil
+		return v
+	if t == 'table'
+		return concat(v, ',')
+	return tostring(v)
+
+
+-- split `s` on `sep` without breaking "quoted" parts apart. a backslash inside
+-- quotes escapes the next character. every field is returned, empty ones too;
+-- split() drops the empties.
+var fields = \s, sep ->
+	var acc, a = {}, 0
+	var buf, n = {}, 0
+	var quoted = false
+	var esc = false
+	for c in gmatch(s, '.')
+		if esc
+			esc = false
+			n = n + 1
+			buf[n] = c
+		else if c == '\\' and quoted
+			esc = true
+			n = n + 1
+			buf[n] = c
+		else if c == '"'
+			quoted = not quoted
+			n = n + 1
+			buf[n] = c
+		else if c == sep and not quoted
+			a = a + 1
+			acc[a] = concat(buf, '')
+			buf, n = {}, 0
+		else
+			n = n + 1
+			buf[n] = c
+	-- remainder
+	a = a + 1
+	acc[a] = concat(buf, '')
+	return acc
 
 
 var split = \str, sep ->
 	var acc, a = {}, 0
-	for each in parse(str, sep)
+	for _, each in ipairs(fields(str, sep))
 		var x = to.trim(each)
 		if #x > 0
 			a = a + 1
@@ -57,45 +87,63 @@ var split = \str, sep ->
 	return acc
 
 
-var media_re = `^\s*([^\s\/;]+)\/([^;\s]+)\s*(?:;(.*))?$`
+-- the `;`-separated parameters of a media type / language range. returns the
+-- params (key -> value, keys lowercased) and the q value. a malformed q makes
+-- the whole entry invalid (nil), as negotiator does.
+var params_of = \details ->
+	var params = {}
+	var q = 1
+	if details
+		for _, param in ipairs(split(details, ';'))
+			var k, v = string.match(param, '^(.-)=(.*)$')
+			if k and v
+				k = lower(k)
+				if k == 'q'
+					var n = tonumber(v)
+					if not n or n < 0 or n > 1
+						return
+					q = n
+				else
+					params[k] = v
+	return params, q
+
+
+-- media type, eg text/html;level=1. a Lua pattern, not PCRE, so the module
+-- has no ngx dependency and can be unit-tested with plain luajit
+var media_re = `^%s*([^%s/;]+)/([^%s;]+)%s*;?(.*)$`
+
+-- param names are emitted sorted: pairs() order is unspecified, so an unsorted
+-- tostring() would not be stable across workers or runs
+var sorted_keys = \t ->
+	var keys, n = {}, 0
+	for k in pairs(t)
+		n = n + 1
+		keys[n] = k
+	table.sort(keys, \a, b -> return a < b)
+	return keys
+
 
 var media_mt = {
 	__tostring = \m ->
-		var out = { m.media .. '/' .. m.subtype }
-		var o = 2
-		for k, v in pairs(m.params)
-			out[o] = k .. '=' .. (v or '')
-			o = o + 1
+		var out, n = { m.media .. '/' .. m.subtype }, 1
+		for _, k in ipairs(sorted_keys(m.params))
+			n = n + 1
+			out[n] = k .. '=' .. (m.params[k] or '')
 		return concat(out, ';')
 }
 
 var parse_media = \mt, i ->
-	-- https://segmentfault.com/a/1190000007298100  optimize PCRE
-	var arr = ngx.re.match(mt, media_re, "jo")
-	if arr
-		var m = {
-			media = lower(arr[1])
-			, subtype = lower(arr[2])
-			, q = 1
-			, i = i
-			, params = {}
-		}
-
-		if arr[3]
-			var params = split(arr[3], ';')
-			for _, param in ipairs(params)
-				var k, v = string.match(param, '^(.-)=(.*)$')
-				if k and v
-					k = lower(k)
-					if k == 'q'
-						var q = tonumber(v)
-						if not q or q < 0 or q > 1
-							return
-						m.q = q
-					else
-						m.params[k] = v
-
-		return setmetatable(m, media_mt)
+	var media, subtype, details = string.match(mt, media_re)
+	if media
+		var params, q = params_of(details)
+		if params
+			return setmetatable({
+				media = lower(media)
+				, subtype = lower(subtype)
+				, q = q
+				, i = i
+				, params = params
+			}, media_mt)
 
 
 var parse_accept = \accept ->
@@ -139,6 +187,27 @@ var specify = \mt, i, spec ->
 		}
 
 
+-- the highest-priority reduction shared by every grammar: the spec with the
+-- greatest specificity (s) wins; ties fall back to the greatest q, then the
+-- earliest client position (o), then the earlier registered entry
+var best = \i, accepts, spec_of ->
+	var prio = {
+		i = i
+		, o = 0
+		, q = 0
+		, s = 0
+	}
+	for _, spec in ipairs(accepts)
+		var one = spec_of(spec)
+		if one
+			if one.s > prio.s
+				prio = one
+			else if one.s == prio.s and one.q > prio.q
+				prio = one
+			else if one.s == prio.s and one.q == prio.q and one.o < prio.o
+				prio = one
+	return prio
+
 
 var prioritize = \media, i, accepts ->
 	var parsed = parse_media(media, i)
@@ -151,24 +220,7 @@ var prioritize = \media, i, accepts ->
 	}
 	setmetatable(mt, media_mt)
 
-	var prio = {
-		i = i
-		, o = 0
-		, q = 0
-		, s = 0
-	}
-	for _, acc in ipairs(accepts)
-		var spec = specify(mt, i, acc)
-		if spec
-			--print(spec.s, ',', spec.q, ',', spec.o, ',', spec.i)
-			if spec.s > prio.s
-				prio = spec
-			else if spec.s == prio.s and spec.q > prio.q
-				prio = spec
-			else if spec.s == prio.s and spec.q == prio.q and spec.o < prio.o
-				prio = spec
-
-	--print(' final -->  ', prio.s, ',', prio.q, ',', prio.o, ',', prio.i)
+	var prio = best(i, accepts, \spec -> return specify(mt, i, spec))
 	mt.i = prio.i
 	mt.o = prio.o
 	mt.q = prio.q
@@ -231,6 +283,7 @@ var sort_with_q = \list ->
 
 -- avails is string array of media types, eg: {'text/html', 'application/json'}
 var choose = \accept, avails ->
+	accept = as_string(accept)
 	-- RFC 2616 sec 14.2: no header means */*
 	if not accept or #accept == 0
 		accept = '*/*'
@@ -241,6 +294,293 @@ var choose = \accept, avails ->
 		var prio = {}
 		for i, av in ipairs(avails)
 			prio[i] = prioritize(av, i, acc)
+		acc = prio
+
+	return sort_with_q(acc)
+
+
+-- a generic Accept-style entry: the token before the first ; is the value and
+-- the rest are parameters (the q split out). Accept-Language, Accept-Charset
+-- and Accept-Encoding all share this shape: negotiator parses all three with
+-- one accept.js.
+var simple_re = `^%s*([^%s;]+)%s*;?(.*)$`
+
+var parse_simple = \str, i ->
+	var token, details = string.match(str, simple_re)
+	if token
+		var params, q = params_of(details)
+		if params
+			return {
+				token = token
+				, q = q
+				, i = i
+			}
+
+
+-- Accept-Language. each range is lang[-subtag], optionally with ;q=, plus the
+-- `*` range. matching follows negotiator, where `spec` is the range the client
+-- sent and `lang` is an available tag:
+--   spec.full == lang.full    -> 4   (en-GB asked, en-GB available)
+--   spec.prefix == lang.full  -> 2   (en-US asked, en available)
+--   spec.full == lang.prefix  -> 1   (en asked, en-GB available)
+--   spec.full == '*'          -> 0   (matches anything)
+var lang_mt = {
+	__tostring = \m -> return m.full
+}
+
+var parse_lang = \str, i ->
+	var r = parse_simple(str, i)
+	if r
+		var full = r.token
+		var dash = string.find(full, '%-')
+		var prefix = full
+		var suffix
+		if dash
+			prefix = string.sub(full, 1, dash - 1)
+			suffix = string.sub(full, dash + 1)
+		return setmetatable({
+			full = lower(full)
+			, prefix = lower(prefix)
+			, suffix = suffix and lower(suffix)
+			, q = r.q
+			, i = i
+		}, lang_mt)
+
+
+var parse_accept_lang = \accept ->
+	var acc, a = {}, 0
+	for i, lang in ipairs(split(accept, ','))
+		var m = parse_lang(lang, i)
+		if m
+			a = a + 1
+			acc[a] = m
+	return acc
+
+
+var specify_lang = \lang, i, spec ->
+	if lang
+		var s = 0
+		if spec.full == lang.full
+			s = bit.bor(s, 4)
+		else if spec.prefix == lang.full
+			s = bit.bor(s, 2)
+		else if spec.full == lang.prefix
+			s = bit.bor(s, 1)
+		else if spec.full ~= '*'
+			return
+
+		return {
+			i = i
+			, o = spec.i
+			, q = spec.q
+			, s = s
+		}
+
+
+var prioritize_lang = \lang, i, accepts ->
+	var text = as_string(lang) or ''
+	var parsed = parse_lang(text, i)
+	var m = {
+		full = parsed and parsed.full or lower(text)
+		, prefix = parsed and parsed.prefix or lower(text)
+		, q = parsed and parsed.q or 1
+		, i = i
+	}
+	setmetatable(m, lang_mt)
+
+	var prio = best(i, accepts, \spec -> return specify_lang(m, i, spec))
+	m.i = prio.i
+	m.o = prio.o
+	m.q = prio.q
+	m.s = prio.s
+	return m
+
+
+-- avails is a string array of language tags, eg {'en', 'en-GB', 'fr'}
+var language = \accept, avails ->
+	accept = as_string(accept)
+	-- RFC 2616 sec 14.4: no header means any language
+	if not accept or #accept == 0
+		accept = '*'
+
+	var acc = parse_accept_lang(accept)
+
+	if avails
+		var prio = {}
+		for i, av in ipairs(avails)
+			prio[i] = prioritize_lang(av, i, acc)
+		acc = prio
+
+	return sort_with_q(acc)
+
+
+-- Accept-Charset. a charset matches only exactly or through `*`; there is no
+-- partial match, so specificity is 1 for an exact hit and 0 for `*`.
+var charset_mt = {
+	__tostring = \m -> return m.charset
+}
+
+var parse_charset = \str, i ->
+	var r = parse_simple(str, i)
+	if r
+		return setmetatable({
+			charset = lower(r.token)
+			, q = r.q
+			, i = i
+		}, charset_mt)
+
+
+var parse_accept_charset = \accept ->
+	var acc, a = {}, 0
+	for i, c in ipairs(split(accept, ','))
+		var m = parse_charset(c, i)
+		if m
+			a = a + 1
+			acc[a] = m
+	return acc
+
+
+var specify_charset = \cset, i, spec ->
+	if cset
+		var s = 0
+		if spec.charset == cset.charset
+			s = 1
+		else if spec.charset ~= '*'
+			return
+		return {
+			i = i
+			, o = spec.i
+			, q = spec.q
+			, s = s
+		}
+
+
+var prioritize_charset = \cset, i, accepts ->
+	var text = as_string(cset) or ''
+	var parsed = parse_charset(text, i)
+	var m = {
+		charset = parsed and parsed.charset or lower(text)
+		, q = parsed and parsed.q or 1
+		, i = i
+	}
+	setmetatable(m, charset_mt)
+
+	var prio = best(i, accepts, \spec -> return specify_charset(m, i, spec))
+	m.i = prio.i
+	m.o = prio.o
+	m.q = prio.q
+	m.s = prio.s
+	return m
+
+
+-- avails is a string array of charsets, eg {'utf-8', 'iso-8859-1'}
+var charset = \accept, avails ->
+	accept = as_string(accept)
+	-- RFC 2616 sec 14.2: no header means any charset
+	if not accept or #accept == 0
+		accept = '*'
+
+	var acc = parse_accept_charset(accept)
+
+	if avails
+		var prio = {}
+		for i, av in ipairs(avails)
+			prio[i] = prioritize_charset(av, i, acc)
+		acc = prio
+
+	return sort_with_q(acc)
+
+
+-- Accept-Encoding. identity is special: it is acceptable unless the client
+-- named it (or `*`) and excluded it, so a client that never mentions identity
+-- gets it appended with the lowest q seen (RFC 2616 sec 14.3). `*` matches
+-- identity too, so a bare `*` suppresses the extra entry.
+var encoding_mt = {
+	__tostring = \m -> return m.encoding
+}
+
+var parse_encoding = \str, i ->
+	var r = parse_simple(str, i)
+	if r
+		return setmetatable({
+			encoding = lower(r.token)
+			, q = r.q
+			, i = i
+		}, encoding_mt)
+
+
+var parse_accept_encoding = \accept ->
+	var acc, a = {}, 0
+	var identity = false
+	var min_q = 1
+	for i, e in ipairs(split(accept, ','))
+		var m = parse_encoding(e, i)
+		if m
+			a = a + 1
+			acc[a] = m
+			if m.encoding == 'identity' or m.encoding == '*'
+				identity = true
+			-- negotiator treats a q of 0 as 1 here (`q || 1`): a rejected
+			-- coding must not drag identity down with it
+			if m.q > 0 and m.q < min_q
+				min_q = m.q
+	if not identity
+		a = a + 1
+		acc[a] = setmetatable({
+			encoding = 'identity'
+			, q = min_q
+			, i = a
+		}, encoding_mt)
+	return acc
+
+
+var specify_encoding = \enc, i, spec ->
+	if enc
+		var s = 0
+		if spec.encoding == enc.encoding
+			s = 1
+		else if spec.encoding ~= '*'
+			return
+		return {
+			i = i
+			, o = spec.i
+			, q = spec.q
+			, s = s
+		}
+
+
+var prioritize_encoding = \enc, i, accepts ->
+	var text = as_string(enc) or ''
+	var parsed = parse_encoding(text, i)
+	var m = {
+		encoding = parsed and parsed.encoding or lower(text)
+		, q = parsed and parsed.q or 1
+		, i = i
+	}
+	setmetatable(m, encoding_mt)
+
+	var prio = best(i, accepts, \spec -> return specify_encoding(m, i, spec))
+	m.i = prio.i
+	m.o = prio.o
+	m.q = prio.q
+	m.s = prio.s
+	return m
+
+
+-- avails is a string array of codings, eg {'gzip', 'br'}
+var encoding = \accept, avails ->
+	accept = as_string(accept)
+	-- no default to `*`: an absent header must still yield the identity entry
+	-- that parse_accept_encoding appends
+	if not accept or #accept == 0
+		accept = ''
+
+	var acc = parse_accept_encoding(accept)
+
+	if avails
+		var prio = {}
+		for i, av in ipairs(avails)
+			prio[i] = prioritize_encoding(av, i, acc)
 		acc = prio
 
 	return sort_with_q(acc)
@@ -345,4 +685,16 @@ tests()
 
 --````
 
-return choose
+-- keep the module callable as before (accept(header, avails) negotiates media
+-- types), so existing callers keep working; the other grammars are reachable
+-- as accept.language / accept.charset / accept.encoding
+return setmetatable({
+	media = choose
+	, language = language
+	, charset = charset
+	, encoding = encoding
+}, {
+	__metatable = false
+	, __call = \_, accept, avails ->
+		return choose(accept, avails)
+})

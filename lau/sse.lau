@@ -45,7 +45,7 @@ return ->
 
 	var subscribe = ->
 		var headers = ngx.req.get_headers()
-		var prefs = accept(headers["Accept"], {EVstream})
+		var prefs = accept.media(headers["Accept"], {EVstream})
 
 		if tostring(prefs[1]) == EVstream
 			ngx.header["Content-Type"] = EVstream

@@ -42,7 +42,7 @@ local dual = function(...)
     local inner = {...}
     return function(req, res, nxt, ...)
         res.vary("Accept")
-        local pref = accept(req.headers["Accept"], {HTML, JSON})
+        local pref = accept.media(req.headers["Accept"], {HTML, JSON})
         if not pref[1] then
             res.status = ngx.HTTP_NOT_ACCEPTABLE
             return 
