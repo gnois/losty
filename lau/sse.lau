@@ -6,75 +6,138 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=906896
 https://bugs.chromium.org/p/chromium/issues/detail?id=275955
 https://fastmail.blog/historical/inter-tab-communication-using-local-storage/
 
+Server-Sent Events.
+
+  var sse = require('losty.sse')
+  var news = sse.new()              -- a new, independent topic
+  var alerts = sse.new()            -- another one
+
+  w.get('/news', news.sub)
+  w.post('/news', \q, r -> news.pub(\-> tostring(r.status)), r end)
+
+  w.get('/alerts', alerts.sub)
+  alerts.pub(\-> 'alert: ' .. msg)
+
+sse.new() returns an independent topic {ping, pub, sub}. every call makes a
+fresh topic, so keep each handle module-level and share it between the
+publishing and the subscribing routes. s.sub is a handler: it negotiates
+text/event-stream, sends a retry hint and an initial ping, then streams
+whatever is published to its topic, plus a ping every `timeout` seconds. A
+publish wakes only the subscribers of its own topic.
+
+Delivery coalesces per subscriber and its queue is capped at `MaxQueue`, so a
+stalled client cannot grow the worker without bound; an event id /
+Last-Event-ID replay is deliberately out of scope.
+
+NOTE: lua_code_cache must be on, and the topic handles must outlive a request
+(keep them module-level as above), else a fresh topic is built per request.
 ``
 
 
 var semaphore = require('ngx.semaphore')
 var accept = require('losty.accept')
 
---print(ngx.worker.id())
-
 var EVstream = "text/event-stream"
--- timeout in secs
+-- keep-alive ping period, secs
 var timeout = 30
-var ping = "event:ping\ndata:\n\n"
+-- how many published values a stalled subscriber may accumulate before the
+-- oldest is dropped; delivery coalesces, there is no unbounded backlog
+var MaxQueue = 16
+var Ping = "event:ping\ndata:\n\n"
 
 
-return ->
-	-- lua_code_cache must be on, bcoz of these:
-	var sema = semaphore.new()
-	var content = ping
+var push = \str ->
+	ngx.print(str)
+	ngx.flush(true)
 
-	var pinging = ->
-		var clients = sema.count(@)
-		if clients < 0
-			content = ping
-			sema.post(@, -clients)
+
+-- append to a subscriber queue, dropping the oldest at the cap so a stalled
+-- client cannot grow the worker without bound
+var enqueue = \sub, msg ->
+	var q = sub.q
+	var n = #q
+	if n >= MaxQueue
+		table.remove(q, 1)
+		q[n] = msg
+	else
+		q[n + 1] = msg
+
+
+-- a new, independent topic. every call makes a fresh channel, so each handle is
+-- kept where the publishing and the subscribing routes can share it
+var new = ->
+	var subs = {}
+	var n = 0
+
+	-- wake only this topic's subscribers. each has its own queue and semaphore,
+	-- so a slow one buffers (bounded by MaxQueue) on its own
+	var ping = ->
+		if next(subs)
+			for _, client in pairs(subs)
+				enqueue(client, Ping)
+				client.sema.post(@, 1)
 
 	var publish = \gen, ... ->
-		var clients = sema.count(@)
-		if clients < 0
-			content = gen(...) or ping
-			sema.post(@, -clients)
-			ngx.sleep(0.01)  -- post() is non blocking, so yield to wake up waiters immediately.
-			-- it would be perfect to have a sync version of post
-
-	var push = \str ->
-		ngx.print(str)
-		ngx.flush(true)
+		if not next(subs)
+			return
+		var msg = gen(...) or ping
+		for _, client in pairs(subs)
+			enqueue(client, msg)
+			client.sema.post(@, 1)
+		-- post() is non blocking, so yield to wake up waiters immediately.
+		-- it would be perfect to have a sync version of post
+		ngx.sleep(0.01)
 
 	var subscribe = ->
 		var headers = ngx.req.get_headers()
 		var prefs = accept.media(headers["Accept"], {EVstream})
+		if tostring(prefs[1]) ~= EVstream
+			ngx.status = ngx.HTTP_NOT_ACCEPTABLE -- not acceptable
+			return
 
-		if tostring(prefs[1]) == EVstream
-			ngx.header["Content-Type"] = EVstream
-			ngx.header["Cache-Control"] = "no-cache"
-			ngx.status = 200
-			ngx.send_headers()
-			var alive = true
-			ngx.on_abort(->
-				alive = false
-				return ngx.exit(499)
-			)
-			-- first message
-			var sec = math.random(timeout - 10, timeout - 5)
-			push("retry:" .. tostring(sec) .. "000\n" .. ping)
+		n = n + 1
+		var id = n
+		var client = {
+			q = {}
+			, sema = semaphore.new()
+		}
+		subs[id] = client
 
-			while alive
-				var ok = sema.wait(@, timeout)  -- send a ping on timeout
+		ngx.header["Content-Type"] = EVstream
+		ngx.header["Cache-Control"] = "no-cache"
+		ngx.status = 200
+		ngx.send_headers()
+
+		var alive = true
+		ngx.on_abort(->
+			alive = false
+			subs[id] = nil
+			return ngx.exit(499)
+		)
+		-- first message: retry hint + ping
+		var sec = math.random(timeout - 10, timeout - 5)
+		push("retry:" .. tostring(sec) .. "000\n" .. ping)
+
+		while alive
+			if #client.q > 0
+				push(client.q[1])
+				table.remove(client.q, 1)
+			else
+				var ok = client.sema.wait(@, timeout)  -- send a ping on timeout
 				if not ok
 					push(ping)
-				else
-					push(content)
-		else
-			ngx.status = ngx.HTTP_NOT_ACCEPTABLE -- not acceptable
+		subs[id] = nil
 
 	return {
-		pinging = pinging
+		ping = ping
 		, pub = publish
 		, sub = subscribe
 	}
+
+
+return {
+	new = new
+}
 
 
 
