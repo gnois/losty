@@ -1,6 +1,15 @@
--- turn off pgmoon using lpeg warning
--- _G write guard:12: writing a global lua variable ('lpeg') which may lead to race conditions between concurrent requests, so prefer the use of 'local' variables
-setmetatable(_G, {__newindex = \t, n, v -> rawset(t, n, v)})
+-- pgmoon writes a global `lpeg`, which trips OpenResty's _G write guard:
+--   _G write guard:12: writing a global lua variable ('lpeg') which may lead to
+--   race conditions between concurrent requests, so prefer the use of 'local' variables
+-- Let only that one name through and keep the guard for everything else, so real
+-- accidental globals (the ones that actually race) are still reported while testing.
+var mt = getmetatable(_G)
+if mt and mt.__newindex
+	var guard = mt.__newindex
+	mt.__newindex = \t, n, v ->
+		if 'lpeg' == n
+			return rawset(t, n, v)
+		return guard(t, n, v)
 
 var c = require('losty.shell')
 var tbl = require('losty.tbl')
@@ -65,7 +74,7 @@ return \db, func, continue_on_err ->  -- by default, stops testing on error or c
 	var passes = 0
 	var params = {}  -- as scratch table for passing data among tests
 
-	var test = \desc, fn, rollback ->  -- rollback on error
+	var test = \desc, fn, rollback ->  -- wrap test in a savepoint, always rolled back
 		if not continue_on_err and (errors > 0 or fails > 0)
 			return
 
@@ -80,16 +89,24 @@ return \db, func, continue_on_err ->  -- by default, stops testing on error or c
 		print("                                         " .. title .. c.reset)
 		if q and rollback
 			q.begin()
-		var _, err = xpcall(fn, \err ->
-			return debug.traceback(err, 2)
-		, params)
-		if err
+		-- use an explicit flag instead of xpcall's return shape: Lua 5.1/JIT and
+		-- Lua 5.2 disagree on whether xpcall forwards args / returns a status
+		var failed
+		var trace
+		var run = -> return fn(params)
+		xpcall(run, \e ->
+			failed = true
+			trace = debug.traceback(e, 2)
+			return trace
+		)
+		if failed
 			if q and rollback
 				q.rollback()
-			print(c.bright .. c.red, "\nERROR: " .. err .. "\n" .. c.reset)
+			print(c.bright .. c.red, "\nERROR: " .. s(trace) .. "\n" .. c.reset)
 			errors = errors + 1
 		else
 			if q and rollback
+				-- testing: always undo the test's savepoint so it cannot pollute the db
 				q.rollback()
 
 		if fails == 0 and errors == 0
@@ -106,8 +123,17 @@ return \db, func, continue_on_err ->  -- by default, stops testing on error or c
 
 
 	if q q.connect()
-	func(test, chk, prn, q)
+	-- always disconnect, even if func raises, so the pooled connection is returned
+	-- instead of being leaked for the rest of the process
+	var trace
+	var run = -> return func(test, chk, prn, q)
+	xpcall(run, \e ->
+		trace = debug.traceback(e, 2)
+		return trace
+	)
 	if q q.disconnect()
+	if trace
+		error(trace, 0)
 
 	var color = groups - passes > 0 and c.magenta or c.yellow
 	print(c.bright .. color .. '                                         === ' .. groups .. " cases:    " .. passes .. " ok,    " .. groups - passes .. " not ok ===\n" .. c.reset)

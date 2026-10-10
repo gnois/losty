@@ -1,9 +1,16 @@
 --
 -- Generated from test.lau
 --
-setmetatable(_G, {__newindex = function(t, n, v)
-    rawset(t, n, v)
-end})
+local mt = getmetatable(_G)
+if mt and mt.__newindex then
+    local guard = mt.__newindex
+    mt.__newindex = function(t, n, v)
+        if "lpeg" == n then
+            return rawset(t, n, v)
+        end
+        return guard(t, n, v)
+    end
+end
 local c = require("losty.shell")
 local tbl = require("losty.tbl")
 local s = function(...)
@@ -71,14 +78,21 @@ return function(db, func, continue_on_err)
         if q and rollback then
             q.begin()
         end
-        local _, err = xpcall(fn, function(err)
-            return debug.traceback(err, 2)
-        end, params)
-        if err then
+        local failed
+        local trace
+        local run = function()
+            return fn(params)
+        end
+        xpcall(run, function(e)
+            failed = true
+            trace = debug.traceback(e, 2)
+            return trace
+        end)
+        if failed then
             if q and rollback then
                 q.rollback()
             end
-            print(c.bright .. c.red, "\nERROR: " .. err .. "\n" .. c.reset)
+            print(c.bright .. c.red, "\nERROR: " .. s(trace) .. "\n" .. c.reset)
             errors = errors + 1
         else
             if q and rollback then
@@ -101,9 +115,19 @@ return function(db, func, continue_on_err)
     if q then
         q.connect()
     end
-    func(test, chk, prn, q)
+    local trace
+    local run = function()
+        return func(test, chk, prn, q)
+    end
+    xpcall(run, function(e)
+        trace = debug.traceback(e, 2)
+        return trace
+    end)
     if q then
         q.disconnect()
+    end
+    if trace then
+        error(trace, 0)
     end
     local color = groups - passes > 0 and c.magenta or c.yellow
     print(c.bright .. color .. "                                         === " .. groups .. " cases:    " .. passes .. " ok,    " .. groups - passes .. " not ok ===\n" .. c.reset)
