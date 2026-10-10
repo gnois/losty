@@ -2,17 +2,17 @@
 -- Generated from cmdargs.lau
 --
 local insert = function(tbl, key, val)
-    if tbl[key] then
-        if "table" == type(tbl[key]) then
-            table.insert(tbl[key], val)
-        else
-            tbl[key] = {tbl[key], val}
-        end
-    else
+    local cur = tbl[key]
+    if nil == cur then
         tbl[key] = val
+    elseif "table" == type(cur) then
+        table.insert(cur, val)
+    else
+        tbl[key] = {cur, val}
     end
 end
 local parse = function(args)
+    args = args or {}
     local out = {}
     local key
     local a = 1

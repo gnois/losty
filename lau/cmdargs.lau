@@ -22,18 +22,19 @@ Calling parse({...}) returns table
 ``
 
 
--- insert key value into table
+-- insert key value into table; a repeated key accumulates into an array
 var insert = \tbl, key, val ->
-	if tbl[key]
-		if 'table' == type(tbl[key])
-			table.insert(tbl[key], val)
-		else
-			tbl[key] = {tbl[key], val}
-	else
+	var cur = tbl[key]
+	if nil == cur
 		tbl[key] = val
+	else if 'table' == type(cur)
+		table.insert(cur, val)
+	else
+		tbl[key] = {cur, val}
 
 
 var parse = \args ->
+	args = args or {}
 	var out = {}
 	var key
 
