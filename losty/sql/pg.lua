@@ -7,6 +7,7 @@ local pjson = require("pgmoon.json")
 local phstore = require("pgmoon.hstore")
 local sql = require("losty.sql.base")
 local str_gsub = string.gsub
+local RAW = {}
 local escape = {literal = function(val)
     if val == nil or val == ngx.null then
         return "NULL"
@@ -17,18 +18,20 @@ local escape = {literal = function(val)
     elseif "string" == ty then
         return "'" .. str_gsub(val, "'", "''") .. "'"
     end
-    error("cannot escape literal " .. tostring(val))
+    return nil, "cannot escape literal " .. tostring(val)
 end, identifier = function(val)
     if "string" == type(val) then
         return "\"" .. str_gsub(val, "\"", "\"\"") .. "\""
     end
-    error("cannot escape identifier " .. tostring(val))
-end, any = function(val, mode)
+    return nil, "cannot escape identifier " .. tostring(val)
+end, raw = function(val)
+    if "string" ~= type(val) then
+        return nil, "raw SQL must be a string"
+    end
     local s = str_gsub(val, "/%*", "/ *")
     s = str_gsub(s, "%*/", "* /")
     s = str_gsub(s, "%-%-", "- -")
-    s = str_gsub(s, ";", "")
-    return str_gsub(s, mode, "")
+    return str_gsub(s, ";", "")
 end}
 return function(database, user, password, host, port, pool, dbg)
     local db = pgmoon.new({
@@ -68,6 +71,9 @@ return function(database, user, password, host, port, pool, dbg)
         if v == nil or v == ngx.null then
             return "NULL"
         end
+        if getmetatable(v) == RAW then
+            return escape.raw(v[1])
+        end
         local ty = type(v)
         if "table" == ty then
             if mode == "r" then
@@ -84,36 +90,118 @@ return function(database, user, password, host, port, pool, dbg)
                 return db:encode_bytea(v)
             elseif mode == "?" then
                 return escape.literal(v)
-            elseif mode == "!" then
+            elseif mode == "i" then
                 return escape.identifier(v)
-            elseif mode == ")" or mode == "]" then
-                return escape.any(v, "%" .. mode)
             end
         end
         return nil, "invalid placeholder `:" .. mode .. "` for a " .. ty
     end
+    local skip_quote = function(query, pos, q, bs)
+        local i, len = pos + 1, #query
+        while i <= len do
+            local ch = string.sub(query, i, i)
+            if bs and "\\" == ch then
+                i = i + 2
+            elseif q == ch then
+                if q == string.sub(query, i + 1, i + 1) then
+                    i = i + 2
+                else
+                    return i + 1
+                end
+            else
+                i = i + 1
+            end
+        end
+        return len + 1
+    end
     local interpolate = function(query, ...)
         local args = {...}
         local i = 0
-        return str_gsub(query, "(:?):([a-z!%?%)%]])", function(c, mode)
-            if c == ":" then
-                return "::" .. mode
+        local bad
+        local buf, n = {}, 0
+        local pos, len = 1, #query
+        local push = function(s)
+            n = n + 1
+            buf[n] = s
+        end
+        while pos <= len do
+            local ch = string.sub(query, pos, pos)
+            local ch2 = string.sub(query, pos + 1, pos + 1)
+            if "'" == ch or "\"" == ch then
+                local bs = false
+                if "'" == ch and pos > 1 then
+                    local p = string.sub(query, pos - 1, pos - 1)
+                    if "E" == p or "e" == p then
+                        bs = true
+                    end
+                end
+                local stop = skip_quote(query, pos, ch, bs)
+                push(string.sub(query, pos, stop - 1))
+                pos = stop
+            elseif "-" == ch and "-" == ch2 then
+                local e = string.find(query, "\n", pos, true) or len + 1
+                push(string.sub(query, pos, e - 1))
+                pos = e
+            elseif "/" == ch and "*" == ch2 then
+                local depth, e = 1, pos + 2
+                while depth > 0 and e <= len do
+                    if "/*" == string.sub(query, e, e + 1) then
+                        depth = depth + 1
+                        e = e + 2
+                    elseif "*/" == string.sub(query, e, e + 1) then
+                        depth = depth - 1
+                        e = e + 2
+                    else
+                        e = e + 1
+                    end
+                end
+                push(string.sub(query, pos, e - 1))
+                pos = e
+            elseif "$" == ch then
+                local tag = string.match(query, "^%$[%a_][%w_]*%$", pos)
+                if not tag and "$$" == string.sub(query, pos, pos + 1) then
+                    tag = "$$"
+                end
+                if tag then
+                    local e = string.find(query, tag, pos + #tag, true)
+                    local stop = e and e + #tag or len + 1
+                    push(string.sub(query, pos, stop - 1))
+                    pos = stop
+                else
+                    push(ch)
+                    pos = pos + 1
+                end
+            elseif "!" == ch then
+                local mode = string.match(query, "^!([a-z%?])", pos)
+                if mode then
+                    i = i + 1
+                    local s, err = encode(mode, args[i])
+                    if s then
+                        push(s)
+                    elseif not bad then
+                        bad = tostring(err) .. " at position " .. i
+                    end
+                    pos = pos + 2
+                else
+                    push(ch)
+                    pos = pos + 1
+                end
+            else
+                push(ch)
+                pos = pos + 1
             end
-            i = i + 1
-            local s, err = encode(mode, args[i])
-            if s then
-                return s
-            end
-            ngx.log(ngx.ERR, err .. " at position ", i)
-        end), i
+        end
+        return table.concat(buf), i, bad
     end
     local is_error = function(err)
         return err ~= nil and not tonumber(err)
     end
     local log_error = function(q, err)
-        ngx.log(ngx.ERR, q)
         ngx.log(ngx.ERR, err)
-        ngx.log(ngx.ERR, debug.traceback("", 3))
+        if dbg then
+            ngx.log(ngx.ERR, q)
+            ngx.log(ngx.ERR, debug.traceback("", 3))
+        end
     end
     local exec = function(q)
         if dbg then
@@ -127,9 +215,15 @@ return function(database, user, password, host, port, pool, dbg)
     end
     local run = function(str, ...)
         local n = select("#", ...)
-        local q, i = interpolate(str, ...)
+        local q, i, bad = interpolate(str, ...)
+        if bad then
+            ngx.log(ngx.ERR, bad)
+            return nil, bad
+        end
         if n ~= i then
-            ngx.log(ngx.ERR, "trying to match ", i, " placeholders to ", n, " arguments for query `", str, "`")
+            local msg = "trying to match " .. i .. " placeholders to " .. n .. " arguments for query `" .. str .. "`"
+            ngx.log(ngx.ERR, msg)
+            return nil, msg
         end
         return exec(q)
     end
@@ -138,6 +232,9 @@ return function(database, user, password, host, port, pool, dbg)
     end
     local K = sql(db, run)
     K.encode = encode
+    K.raw = function(fragment)
+        return setmetatable({fragment}, RAW)
+    end
     K.hstore = function()
         db:setup_hstore()
     end

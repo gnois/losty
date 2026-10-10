@@ -112,8 +112,10 @@ return \db ->
 					scripts[n] = table.concat(lines, "\n")
 				file.close(@)
 			else
-				var file = string.gsub(to.trim(fname), '.lua$', '')
+				var file = string.gsub(to.trim(fname), '%.lua$', '')
 				scripts = require(file)
+				if 'table' ~= type(scripts)
+					error(c.red .. fname .. " did not return a table of sql scripts" .. c.reset)
 
 			if #scripts > 0
 				if not migrate(db, scripts)
@@ -167,7 +169,7 @@ var migrate = \db, migrations ->
 			print("Migrating ", index)
 			var ok, err = db.run(sql)
 			if ok
-				db.insert("migrations (index) VALUES (:?)", index)
+				db.insert("migrations (index) VALUES (!?)", index)
 			else
 				print(err)
 				break

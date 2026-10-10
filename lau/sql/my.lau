@@ -2,25 +2,108 @@ var mysql = require('resty.mysql')
 var sql = require('losty.sql.base')
 
 return \database, user, password, host, port, pool ->
-	
+
 	var db = mysql.new()
-  
+
+	-- mode must be a char; only `?` (auto literal) is defined
+	var encode = \mode, v ->
+		if v == nil
+			return "NULL"
+		if '?' == mode
+			var ty = type(v)
+			if 'boolean' == ty
+				return v and "1" or "0"
+			if 'string' == ty or 'number' == ty
+				return ngx.quote_sql_str(v)
+		return nil, "invalid placeholder `!" .. mode .. "` for a " .. type(v)
+
+	-- position just past a quoted string/identifier (pos is the opening quote)
+	var skip_quote = \query, pos, q, bs ->
+		var i, len = pos + 1, #query
+		while i <= len
+			var ch = string.sub(query, i, i)
+			if bs and '\\' == ch
+				i = i + 2
+			else if q == ch
+				if q == string.sub(query, i + 1, i + 1)
+					i = i + 2
+				else
+					return i + 1
+			else
+				i = i + 1
+		return len + 1
+
+	-- SQL-aware scan: '...' / "..." strings (backslash + doubled escapes),
+	-- `...` identifiers and -- / # / /* */ comments are copied verbatim, so a
+	-- `!?` inside a literal is not a placeholder
 	var interpolate = \query, ... ->
 		var args = {...}
 		var i = 0
-		return (string.gsub(query, "%?", ->
-			i = i + 1
-			if args[i] == nil
-				return "NULL"
-			return ngx.quote_sql_str(args[i])
-		))
+		var bad
+		var buf, n = {}, 0
+		var pos, len = 1, #query
+		var push = \s ->
+			n = n + 1
+			buf[n] = s
+
+		while pos <= len
+			var ch = string.sub(query, pos, pos)
+			var ch2 = string.sub(query, pos + 1, pos + 1)
+
+			if "'" == ch or '"' == ch
+				var stop = skip_quote(query, pos, ch, true)
+				push(string.sub(query, pos, stop - 1))
+				pos = stop
+
+			else if '`' == ch
+				var stop = skip_quote(query, pos, ch, false)
+				push(string.sub(query, pos, stop - 1))
+				pos = stop
+
+			else if ('-' == ch and '-' == ch2) or '#' == ch
+				var e = string.find(query, "\n", pos, true) or (len + 1)
+				push(string.sub(query, pos, e - 1))
+				pos = e
+
+			else if '/' == ch and '*' == ch2
+				var e = string.find(query, "*/", pos + 2, true)
+				e = e and (e + 2) or (len + 1)
+				push(string.sub(query, pos, e - 1))
+				pos = e
+
+			else if '!' == ch
+				var mode = string.match(query, "^!([a-z%?])", pos)
+				if mode
+					i = i + 1
+					var s, err = encode(mode, args[i])
+					if s
+						push(s)
+					else if not bad
+						bad = tostring(err) .. " at position " .. i
+					pos = pos + 2
+				else
+					push(ch)
+					pos = pos + 1
+
+			else
+				push(ch)
+				pos = pos + 1
+
+		return table.concat(buf), i, bad
 
 	var run = \str, ... ->
-		-- nil arguments are valid
-		if select("#", ...) > 0
-			str = interpolate(str, ...)
-		var res, err, errcode, sqlstate = db.query(@, str)
-		--print(str)	-- comment in production
+		var n = select("#", ...)
+		var q, i, bad = interpolate(str, ...)
+		if bad
+			ngx.log(ngx.ERR, bad)
+			return nil, bad
+		if n ~= i
+			-- do not run: a missing argument would silently bind as NULL
+			var msg = "trying to match " .. i .. " placeholders to " .. n .. " arguments for query `" .. str .. "`"
+			ngx.log(ngx.ERR, msg)
+			return nil, msg
+		var res, err, errcode, sqlstate = db.query(@, q)
+		--print(q)	-- comment in production
 		-- result is true on success if no query result, nil if failed
 		-- err can be count
 		if res == nil and err
@@ -29,23 +112,32 @@ return \database, user, password, host, port, pool ->
 
 	var keepalive = \timeout ->
 		db.set_keepalive(@, timeout)
-	
+
 	var K = sql(db, run, keepalive)
-	
+
 	K.connect = ->
-		assert(db.connect(@, {database = database, user = user, password = password, host = host, port = port, pool = pool}))
+		var ok, err = db.connect(@, {database = database, user = user, password = password, host = host, port = port, pool = pool})
+		if not ok
+			-- assert() alone would drop the reason, eg: connection refused
+			ngx.log(ngx.ERR, tostring(err))
+			error(tostring(err), 2)
+		return ok
 		--db.query(@, "SET TIME ZONE 'UTC';")
 
-	-- closes the connection, vs K.disconnect() which keepalive the connection and rollback uncommitted transaction
+	-- closes the connection, vs K.disconnect() which keepalive the connection
 	K.close = ->
 		db.close(@)
 
+	-- returns the connection to the pool for reuse
+	K.disconnect = \timeout ->
+		return keepalive(timeout)
+
 	K.send = \str ->
 		return db.send_query(@, str)
-		
+
 	K.read = ->
 		return db.read_result(@)
-		
-	
+
+
 	return K
 

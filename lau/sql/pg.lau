@@ -5,6 +5,10 @@ var phstore = require('pgmoon.hstore')
 var sql = require('losty.sql.base')
 var str_gsub = string.gsub
 
+-- Only tables made by K.raw() carry this metatable, so JSON-decoded input
+-- (which cannot set a metatable) can never smuggle verbatim SQL
+var RAW = {}
+
 -- Remember to call setup_hstore()
 
 var escape = {
@@ -17,21 +21,22 @@ var escape = {
 			return tostring(val)
 		else if 'string' == ty
 			return "'" .. str_gsub(val, "'", "''") .. "'"
-		error("cannot escape literal " .. tostring(val))
+		return nil, "cannot escape literal " .. tostring(val)
 
 	, identifier = \val ->
 		if 'string' == type(val)
 			return '"' .. str_gsub(val, '"', '""') .. '"'
-		error("cannot escape identifier " .. tostring(val))
+		return nil, "cannot escape identifier " .. tostring(val)
 
-	-- strip mode char from val
-	, any = \val, mode ->
-		-- transform comments, strip semicolon
+	-- verbatim SQL, only ever produced by K.raw(): transform comments and strip
+	-- ';' so a wrapped fragment cannot smuggle a second statement
+	, raw = \val ->
+		if 'string' ~= type(val)
+			return nil, "raw SQL must be a string"
 		var s = str_gsub(val, "/%*", "/ *")
 		s = str_gsub(s, "%*/", "* /")
 		s = str_gsub(s, "%-%-", "- -")
-		s = str_gsub(s, ";", "")
-		return str_gsub(s, mode, "")
+		return str_gsub(s, ";", "")
 
 }
 
@@ -74,6 +79,10 @@ return \database, user, password, host, port, pool, dbg ->
 		if v == nil or v == ngx.null
 			return "NULL"
 
+		-- verbatim SQL: only ever produced by K.raw(), never from user data
+		if getmetatable(v) == RAW
+			return escape.raw(v[1])
+
 		var ty = type(v)
 		if 'table' == ty
 			if mode == 'r'
@@ -90,10 +99,8 @@ return \database, user, password, host, port, pool, dbg ->
 				return db.encode_bytea(@, v)
 			else if mode == '?'
 				return escape.literal(v)
-			else if mode == '!'
+			else if mode == 'i'
 				return escape.identifier(v)
-			else if mode == ')' or mode == ']'    -- this allow SQL injection and inputs like   date 'today' + interval '1 month'. Use with care!!
-				return escape.any(v, "%" .. mode)
 
 		return nil, "invalid placeholder `:" .. mode .. "` for a " .. ty
 
@@ -105,21 +112,104 @@ return \database, user, password, host, port, pool, dbg ->
 	-- \do ???
 	-- why not named parameter :var: inside query ? coz lauzy can no longer check use of undeclared variable
 	-- Only nil, boolean, number, string and table acceptable as arguments for placeholder
+
+	-- position just past a quoted string/identifier (pos is the opening quote);
+	-- doubled quotes ('' / "") are skipped, plus backslash escapes when bs is set
+	var skip_quote = \query, pos, q, bs ->
+		var i, len = pos + 1, #query
+		while i <= len
+			var ch = string.sub(query, i, i)
+			if bs and '\\' == ch
+				i = i + 2
+			else if q == ch
+				if q == string.sub(query, i + 1, i + 1)
+					i = i + 2
+				else
+					return i + 1
+			else
+				i = i + 1
+		return len + 1
+
+	-- SQL-aware scan: strings, quoted identifiers, dollar-quoted bodies and
+	-- comments are copied verbatim, so `!?` inside a literal like 'wow!bar' is
+	-- not a placeholder; `!`+mode is only recognized in normal context. Casts
+	-- (::type) are plain SQL and need no special case
 	var interpolate = \query, ... ->
 		var args = {...}
 		var i = 0
-		return (str_gsub(query, "(:?):([a-z!%?%)%]])", \c, mode ->
-			-- if using [^:] instead of (:?), we will miss :? at the beginning of a line
-			if c == ':'  -- return verbatim
-				return '::' .. mode
+		var bad  -- first failed placeholder, if any
+		var buf, n = {}, 0
+		var pos, len = 1, #query
+		var push = \s ->
+			n = n + 1
+			buf[n] = s
 
-			i = i + 1
-			var s, err = encode(mode, args[i])
-			if s
-				return s
-			ngx.log(ngx.ERR, err .. " at position ", i)
+		while pos <= len
+			var ch = string.sub(query, pos, pos)
+			var ch2 = string.sub(query, pos + 1, pos + 1)
 
-		)), i
+			if "'" == ch or '"' == ch
+				-- E'...' / e'...' treat backslash as an escape
+				var bs = false
+				if "'" == ch and pos > 1
+					var p = string.sub(query, pos - 1, pos - 1)
+					if 'E' == p or 'e' == p
+						bs = true
+				var stop = skip_quote(query, pos, ch, bs)
+				push(string.sub(query, pos, stop - 1))
+				pos = stop
+
+			else if '-' == ch and '-' == ch2
+				var e = string.find(query, "\n", pos, true) or (len + 1)
+				push(string.sub(query, pos, e - 1))
+				pos = e
+
+			else if '/' == ch and '*' == ch2
+				var depth, e = 1, pos + 2
+				while depth > 0 and e <= len
+					if '/*' == string.sub(query, e, e + 1)
+						depth = depth + 1
+						e = e + 2
+					else if '*/' == string.sub(query, e, e + 1)
+						depth = depth - 1
+						e = e + 2
+					else
+						e = e + 1
+				push(string.sub(query, pos, e - 1))
+				pos = e
+
+			else if '$' == ch
+				var tag = string.match(query, "^%$[%a_][%w_]*%$", pos)
+				if not tag and '$$' == string.sub(query, pos, pos + 1)
+					tag = '$$'
+				if tag
+					var e = string.find(query, tag, pos + #tag, true)
+					var stop = e and (e + #tag) or (len + 1)
+					push(string.sub(query, pos, stop - 1))
+					pos = stop
+				else
+					push(ch)
+					pos = pos + 1
+
+			else if '!' == ch
+				var mode = string.match(query, "^!([a-z%?])", pos)
+				if mode
+					i = i + 1
+					var s, err = encode(mode, args[i])
+					if s
+						push(s)
+					else if not bad
+						bad = tostring(err) .. " at position " .. i
+					pos = pos + 2
+				else
+					push(ch)
+					pos = pos + 1
+
+			else
+				push(ch)
+				pos = pos + 1
+
+		return table.concat(buf), i, bad
 
 
 	-- on success err is the number of queries run (0 when the script is only
@@ -127,11 +217,13 @@ return \database, user, password, host, port, pool, dbg ->
 	var is_error = \err ->
 		return err ~= nil and not tonumber(err)
 
-	-- log the failing statement, the reason, and the caller that dropped them
+	-- log the reason always; the query (and caller) may embed secrets/PII, so
+	-- keep them behind the verbose dbg flag to avoid leaking data and log spam
 	var log_error = \q, err ->
-		ngx.log(ngx.ERR, q)
 		ngx.log(ngx.ERR, err)
-		ngx.log(ngx.ERR, debug.traceback('', 3))
+		if dbg
+			ngx.log(ngx.ERR, q)
+			ngx.log(ngx.ERR, debug.traceback('', 3))
 
 	-- every statement goes through here, so that none escapes the logging above
 	var exec = \q ->
@@ -146,9 +238,15 @@ return \database, user, password, host, port, pool, dbg ->
 
 	var run = \str, ... ->
 		var n = select("#", ...)
-		var q, i = interpolate(str, ...)
+		var q, i, bad = interpolate(str, ...)
+		if bad
+			ngx.log(ngx.ERR, bad)
+			return nil, bad
 		if n ~= i
-			ngx.log(ngx.ERR, "trying to match ", i ," placeholders to ", n ," arguments for query `", str, "`")
+			-- do not run: a missing argument would silently bind as NULL
+			var msg = "trying to match " .. i .. " placeholders to " .. n .. " arguments for query `" .. str .. "`"
+			ngx.log(ngx.ERR, msg)
+			return nil, msg
 
 		return exec(q)
 
@@ -159,11 +257,16 @@ return \database, user, password, host, port, pool, dbg ->
 
 	K.encode = encode
 
+	-- wrap a trusted SQL fragment so it can be spliced verbatim as a placeholder:
+	--   q.s("... created_at > !?", q.raw("now() - interval '1 day'"))
+	K.raw = \fragment ->
+		return setmetatable({fragment}, RAW)
+
 	K.hstore = ->
 		db.setup_hstore(@)
 
 	-- returns variadic arguments that are interpolated
-	-- eg: variadic("?", 'a', 'b', 'c') gives a string "'a','b','c'"
+	-- eg: variadic("!?", 'a', 'b', 'c') gives a string "'a', 'b', 'c'"
 	K.variadic = \mode, ... ->
 		var n = select("#", ...)
 		if n > 0

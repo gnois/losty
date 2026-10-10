@@ -84,8 +84,11 @@ return function(db)
                 end
                 file:close()
             else
-                local file = string.gsub(to.trim(fname), ".lua$", "")
+                local file = string.gsub(to.trim(fname), "%.lua$", "")
                 scripts = require(file)
+                if "table" ~= type(scripts) then
+                    error(c.red .. fname .. " did not return a table of sql scripts" .. c.reset)
+                end
             end
             if #scripts > 0 then
                 if not migrate(db, scripts) then

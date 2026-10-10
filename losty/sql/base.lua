@@ -18,7 +18,7 @@ return function(db, run)
     for k, v in pairs(map) do
         K[k] = function(sql, ...)
             local res, err, partial, count = run(v .. sql, ...)
-            if res and res == true then
+            if res == true then
                 res = {}
             end
             return res, err, partial, count

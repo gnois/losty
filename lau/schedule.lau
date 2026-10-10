@@ -68,7 +68,7 @@ var fn = \... ->
 		var db = sql()
 		db.connect()
 		-- keyset pagination
-		var list = db.select("id, ... FROM tb WHERE id > :? ORDER BY id ASC LIMIT " .. Batch, previd)
+		var list = db.select("id, ... FROM tb WHERE id > !? ORDER BY id ASC LIMIT " .. Batch, previd)
 		for _, v in ipairs(list)
 			...
 			previd = v.id

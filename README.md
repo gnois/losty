@@ -336,7 +336,7 @@ end)
 -- payload tail: names the values earlier middleware passed down
 w.post('/path', form, database, function(q, r, nxt, body, db)
    -- use body and db
-   db.insert("users(name) values (:?)", body.name)
+   db.insert("users(name) values (!?)", body.name)
    r.status = 201
    return {ok = true}    -- dict table is auto-encoded to JSON
 end)
@@ -592,6 +592,71 @@ more segments, so `OPTIONS /api` (bare, no trailing segment) does not match it �
 preflights always target a concrete resource path.
 
 
+### Secure headers
+
+The `losty.security` middleware sets the hardening response headers. Build one
+handler per group with `security.new()` and attach it to the routes:
+
+```
+local s = require('losty.security')
+local sec = s.new()                -- all defaults
+w.get('/page', sec, handler)
+```
+
+It sets (unless the response already carries the header):
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
+`X-Frame-Options: SAMEORIGIN`, `Permissions-Policy: geolocation=(), microphone=(), camera=()`,
+`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy: same-site`,
+`Origin-Agent-Cluster: ?1`, `X-DNS-Prefetch-Control: off`, `X-Download-Options: noopen`,
+`X-Permitted-Cross-Domain-Policies: none` and `X-XSS-Protection: 0`. It also sets
+`Strict-Transport-Security` over https, and removes `X-Powered-By`. Pass `false`
+for an option to disable its header, or a string to override the default:
+
+```
+s.new({ x_frame_options = false, cross_origin_embedder_policy = "require-corp" })
+```
+
+#### Content-Security-Policy
+
+`content_security_policy` is either a ready-made string or a policy built with
+`s.csp{...}`, whose keys are directive names — snake_case or camelCase, both
+accepted (`default_src`/`defaultSrc` -> `default-src`) — and whose values are a
+string, an array of strings, or `true` for a valueless directive. Directives are
+emitted sorted by name, so the header is stable:
+
+```
+local sec = s.new({
+   content_security_policy = s.csp({
+      default_src = "'self'"
+      , script_src = { "'self'", s.nonce }
+      , style_src = { "'self'", s.nonce }
+      , img_src = { "'self'", "data:" }
+      , upgrade_insecure_requests = true
+   })
+})
+```
+
+Put the `s.nonce` sentinel in a directive and the middleware generates a fresh
+nonce for each request, writes it into the header as `'nonce-<random>'` and
+exposes the raw value as `q.state.nonce`, so the handler can pass it to the view
+that renders the matching tags:
+
+```
+w.get('/page', sec, function(q, r)
+   r.headers['Content-Type'] = 'text/html'
+   return '<!DOCTYPE html>' .. view(tmpl, { nonce = q.state.nonce })
+end)
+
+-- in the template:
+script({ nonce = args.nonce, src = '/app.js' }, '')
+```
+
+Reporting is supported too: `reporting_endpoints = { { name = "csp", url = ... } }`
+renders `Reporting-Endpoints`, and
+`report_to = { { group = "csp", max_age = 10886400, endpoints = { { url = ... } } } }`
+renders `Report-To`.
+
+
 ### SQL Operations
 
 Losty provides wrappers for MySQL and PostgreSQL drivers and a basic migration utility. There is no ORM layer. (It's much more worthwhile to just learn SQL)
@@ -640,7 +705,7 @@ local db = require("losty.sql.pg")("dbname", "user", "password")
 
 function insert(name, email)
    db.connect()
-   local r, err = db.insert("user (name, email) VALUES (:?, :?) RETURNING id", name, email)
+   local r, err = db.insert("user (name, email) VALUES (!?, !?) RETURNING id", name, email)
    db.disconnect()
    return r and r.id, err
 end
@@ -649,19 +714,21 @@ end
 Note that db.connect() must be called inside a function (not at top level), else the error `cannot yield across C-call boundary` will occur.
 db.disconnect() calls keepalive() under the hood, which puts the connection back to the connection pool and is considered a better practice than calling close().
 
-The `:?` are placeholders, where `?` is a default modifier that converts Lua table and string to PostgreSQL JSON and quoted string respectively. The values in `name` and `email` will be interpolated into the placeholders, before sending to the database.
+The `!?` are placeholders, where `?` is a default modifier that converts Lua table and string to PostgreSQL JSON and quoted string respectively. The values in `name` and `email` will be interpolated into the placeholders, before sending to the database. Placeholders are only recognized in SQL code, never inside string literals or comments (so a value like `'wow!bar'` is left alone), and `::type` casts are plain SQL.
 
 Other placeholder modifiers exist to customize the conversion from Lua to PostgreSQL data types:
 For Lua table
-* `:r`  [row constant type](https://www.postgresql.org/docs/11/rowtypes.html)
-* `:a`  [arrays](https://www.postgresql.org/docs/11/arrays.html)
-* `:h`  [hstore](https://www.postgresql.org/docs/11/hstore.html)
-* `:?`  JSON
+* `!r`  [row constant type](https://www.postgresql.org/docs/11/rowtypes.html)
+* `!a`  [arrays](https://www.postgresql.org/docs/11/arrays.html)
+* `!h`  [hstore](https://www.postgresql.org/docs/11/hstore.html)
+* `!?`  JSON
 
 For Lua scalar value
-* `:b`  bytea
-* `:?`  escaped literal
-* `:)` or `:]`  verbatim, only comments transformed, and semicolon and either `)` or `]` closing char stripped
+* `!b`  bytea
+* `!?`  escaped literal
+* `!i`  quoted identifier
+
+To splice a verbatim SQL fragment (eg. an expression), wrap it with `db.raw()` and pass it as a `!?` placeholder, eg. `db.select("... WHERE created_at > !?", db.raw("now() - interval '1 day'"))`. Only tables produced by `db.raw()` are accepted, so untrusted input can never reach the raw path; comments are transformed and `;` is stripped.
 
 
 Please refer to [pgmoon](https://github.com/leafo/pgmoon) or [lua-resty-mysql](https://github.com/openresty/lua-resty-mysql) documentation on interpreting query return values.
@@ -795,7 +862,7 @@ setup(sql, function(test, a, p, q)
    end, true) -- true means commit a savepoint to database, until end of parent scope, which then decide whether to commit or rollback the whole setup
 
    test("can match user", function()
-      local i = q.s1([[* from find_user(:?, :?)]], "belly@email.com", 'Passw0rd')
+      local i = q.s1([[* from find_user(!?, !?)]], "belly@email.com", 'Passw0rd')
       a(i and i.user_id == uid, i)
    end)
 

@@ -33,7 +33,7 @@ return \db, run ->
 	for k, v in pairs(map)
 		K[k] = \sql, ... ->
 			var res, err, partial, count = run(v .. sql, ...)
-			if res and res == true
+			if res == true
 				res = {}
 			return res, err, partial, count
 
