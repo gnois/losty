@@ -47,9 +47,32 @@ var html = \req, res, nxt ->
 	return out
 
 
--- sets Content-Type: application/json and continues.
--- The body is encoded by web.lau prepare_body()
-var json = mime(JSON)
+-- sets Content-Type: application/json and continues. The body is encoded by
+-- web.lau prepare_body(). When the client asks (?pretty, any value incl. none),
+-- a table body is re-indented (JSON strings are sent untouched)
+var json = \req, res, nxt ->
+	res.headers["Content-Type"] = JSON
+	if req.args.pretty ~= nil
+		res.pretty = true
+	return nxt()
+
+
+-- opt-in Server-Timing. records the total response time (and, if configured,
+-- Timing-Allow-Origin); handlers add their own metrics with r.metric /
+-- r.start / r.stop. run() emits the header
+var timing = \opts ->
+	var total = not opts or opts.total ~= false
+	var desc = opts and opts.total_desc or 'Total Response Time'
+	var origin = opts and opts.cross_origin
+	return \_, res, nxt ->
+		if origin
+			res.headers['Timing-Allow-Origin'] = origin == true and '*' or origin
+		if total
+			res.start('total', desc)
+		var out = nxt()
+		if total
+			res.stop('total')
+		return out
 
 
 -- Once a route respond differently based on HTTP Accept header, shd set Vary: Accept for all responses
@@ -128,6 +151,7 @@ return {
 	, form_limit = form_limit
 	, reject = reject
 	, mime = mime
+	, timing = timing
 	, text = \kind ->
 		return mime(kind or 'text/plain')
 	, html = html

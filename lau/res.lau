@@ -3,6 +3,9 @@
 var cjson = require('cjson')
 var hdr = require('losty.header')
 
+-- a metric name must be an RFC 9110 token (tchar+)
+var TOKEN = "^[%w!#$%%&'*+.^_`|~-]+$"
+
 
 --`` unused, ngx lua will do this
 -- capitalize word, t.foo_bar becomes t['Foo-Bar']
@@ -179,6 +182,64 @@ return ->
 			if not ok
 				ngx.log(ngx.ERR, err)
 
+	-- Server-Timing. opt-in: nothing is measured unless a middleware or handler
+	-- calls r.metric / r.start / r.stop; run() then emits the header
+	var metrics, m = {}, 0
+	var timers = {}
+
+	var now = ->
+		-- ngx.now() is cached for the event-loop iteration, so refresh it or a
+		-- short span measured without a yield would round to zero
+		ngx.update_time()
+		return ngx.now()
+
+	var check_metric = \name ->
+		if 'string' ~= type(name) or not string.match(name, TOKEN)
+			error("Server-Timing metric name must be a token (RFC 9110)", 3)
+
+	var check_desc = \desc ->
+		if 'string' ~= type(desc) or string.find(desc, '"', 1, true) or string.find(desc, '\\', 1, true) or string.match(desc, "[%z\1-\31\127]")
+			error("Server-Timing description must not contain a quote, backslash or control characters", 3)
+
+	-- record `name` with an optional duration (in ms) and description
+	var metric = \name, dur, desc ->
+		check_metric(name)
+		var s = name
+		if dur ~= nil
+			if 'number' ~= type(dur)
+				error("Server-Timing duration must be a number", 3)
+			s = s .. ";dur=" .. string.format('%.1f', dur)
+		if desc ~= nil
+			check_desc(desc)
+			s = s .. ';desc="' .. desc .. '"'
+		m = m + 1
+		metrics[m] = s
+
+	var start = \name, desc ->
+		check_metric(name)
+		if desc ~= nil
+			check_desc(desc)
+		timers[name] = { t = now(), desc = desc }
+
+	var stop = \name ->
+		var tm = timers[name]
+		if tm
+			timers[name] = nil
+			metric(name, (now() - tm.t) * 1000, tm.desc)
+
+	-- join the metrics in call order, ending any timer left open. nil when
+	-- nothing was recorded, so run() sends no header
+	var server_timing = ->
+		var open, i = {}, 0
+		for k in pairs(timers)
+			i = i + 1
+			open[i] = k
+		for _, k in ipairs(open)
+			stop(k)
+		if m == 0
+			return nil
+		return table.concat(metrics, ', ')
+
 	var cookies = setmetatable({}, {
 		__index = jar
 		, __newindex = ->
@@ -195,6 +256,10 @@ return ->
 		, redirect = hdr.redirect
 		, defer = defer
 		, run_defers = run_defers
+		, metric = metric
+		, start = start
+		, stop = stop
+		, server_timing = server_timing
 		, send = send
 
 	}, MT)

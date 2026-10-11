@@ -37,7 +37,31 @@ local html = function(req, res, nxt)
     end
     return out
 end
-local json = mime(JSON)
+local json = function(req, res, nxt)
+    res.headers["Content-Type"] = JSON
+    if req.args.pretty ~= nil then
+        res.pretty = true
+    end
+    return nxt()
+end
+local timing = function(opts)
+    local total = not opts or opts.total ~= false
+    local desc = opts and opts.total_desc or "Total Response Time"
+    local origin = opts and opts.cross_origin
+    return function(_, res, nxt)
+        if origin then
+            res.headers["Timing-Allow-Origin"] = origin == true and "*" or origin
+        end
+        if total then
+            res.start("total", desc)
+        end
+        local out = nxt()
+        if total then
+            res.stop("total")
+        end
+        return out
+    end
+end
 local dual = function(...)
     local inner = {...}
     return function(req, res, nxt, ...)
@@ -100,6 +124,7 @@ return {
     , form_limit = form_limit
     , reject = reject
     , mime = mime
+    , timing = timing
     , text = function(kind)
         return mime(kind or "text/plain")
     end

@@ -3,6 +3,7 @@
 --
 local cjson = require("cjson")
 local hdr = require("losty.header")
+local TOKEN = "^[%w!#$%%&'*+.^_`|~-]+$"
 local MT = {__metatable = false, __index = function(_, k)
     if "status" == k then
         return ngx.status
@@ -144,6 +145,66 @@ return function()
             end
         end
     end
+    local metrics, m = {}, 0
+    local timers = {}
+    local now = function()
+        ngx.update_time()
+        return ngx.now()
+    end
+    local check_metric = function(name)
+        if "string" ~= type(name) or not string.match(name, TOKEN) then
+            error("Server-Timing metric name must be a token (RFC 9110)", 3)
+        end
+    end
+    local check_desc = function(desc)
+        if "string" ~= type(desc) or string.find(desc, "\"", 1, true) or string.find(desc, "\\", 1, true) or string.match(desc, "[%z\1-\31\127]") then
+            error("Server-Timing description must not contain a quote, backslash or control characters", 3)
+        end
+    end
+    local metric = function(name, dur, desc)
+        check_metric(name)
+        local s = name
+        if dur ~= nil then
+            if "number" ~= type(dur) then
+                error("Server-Timing duration must be a number", 3)
+            end
+            s = s .. ";dur=" .. string.format("%.1f", dur)
+        end
+        if desc ~= nil then
+            check_desc(desc)
+            s = s .. ";desc=\"" .. desc .. "\""
+        end
+        m = m + 1
+        metrics[m] = s
+    end
+    local start = function(name, desc)
+        check_metric(name)
+        if desc ~= nil then
+            check_desc(desc)
+        end
+        timers[name] = {t = now(), desc = desc}
+    end
+    local stop = function(name)
+        local tm = timers[name]
+        if tm then
+            timers[name] = nil
+            metric(name, (now() - tm.t) * 1000, tm.desc)
+        end
+    end
+    local server_timing = function()
+        local open, i = {}, 0
+        for k in pairs(timers) do
+            i = i + 1
+            open[i] = k
+        end
+        for _, k in ipairs(open) do
+            stop(k)
+        end
+        if m == 0 then
+            return nil
+        end
+        return table.concat(metrics, ", ")
+    end
     local cookies = setmetatable({}, {__index = jar, __newindex = function()
         error("use response.cookie() to update response cookies", 2)
     end})
@@ -157,6 +218,10 @@ return function()
         , redirect = hdr.redirect
         , defer = defer
         , run_defers = run_defers
+        , metric = metric
+        , start = start
+        , stop = stop
+        , server_timing = server_timing
         , send = send
     }, MT)
 end

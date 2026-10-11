@@ -7,6 +7,7 @@ local statuses = require("losty.status")
 local req = require("losty.req")
 local res = require("losty.res")
 local etag = require("losty.etag")
+local json = require("losty.json")
 local cjson = require("cjson.safe")
 local METHODS = {
     "GET"
@@ -40,8 +41,13 @@ local prepare_body = function(r, body)
         if not encoded then
             error("response body is not JSON-encodable: " .. tostring(err), 2)
         end
-        if r.headers["Content-Type"] == nil then
-            r.headers["Content-Type"] = "application/json"
+        local ctype = r.headers["Content-Type"]
+        if ctype == nil then
+            ctype = "application/json"
+            r.headers["Content-Type"] = ctype
+        end
+        if r.pretty and json.is_json(ctype) then
+            encoded = json.pretty(encoded, 2)
         end
         return encoded
     end
@@ -103,6 +109,10 @@ local run = function(rt, name, error_page, check)
         end
     end
     r.run_defers()
+    local timing = r.server_timing()
+    if timing then
+        r.headers["Server-Timing"] = timing
+    end
     body = prepare_body(r, body)
     body = etag.check(q, r, body)
     local code = r.status
