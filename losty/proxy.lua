@@ -73,16 +73,136 @@ local ipv4_u32 = function(ip)
     end
     return bit.bor(bit.lshift(a, 24), bit.lshift(b, 16), bit.lshift(c, 8), d)
 end
+local hex16 = function(s)
+    if #s < 1 or #s > 4 or string.find(s, "[^0-9a-fA-F]") then
+        return nil
+    end
+    return tonumber(s, 16)
+end
+local v6_part = function(txt)
+    local out = {}
+    if txt == "" then
+        return out
+    end
+    local groups = {}
+    for g in string.gmatch(txt, "[^:]+") do
+        groups[#groups + 1] = g
+    end
+    if table.concat(groups, ":") ~= txt then
+        return nil
+    end
+    for i = 1, #groups do
+        local g = groups[i]
+        if string.find(g, ".", 1, true) then
+            if i ~= #groups then
+                return nil
+            end
+            local n = ipv4_u32(g)
+            if not n then
+                return nil
+            end
+            out[#out + 1] = bit.rshift(n, 16)
+            out[#out + 1] = bit.band(n, 0xffff)
+        else
+            local w = hex16(g)
+            if w == nil then
+                return nil
+            end
+            out[#out + 1] = w
+        end
+    end
+    return out
+end
+local ipv6_words = function(ip)
+    local s = ip
+    if not s then
+        return nil
+    end
+    if string.sub(s, 1, 1) == "[" then
+        s = string.match(s, "^%[([^%]]+)%]") or s
+    end
+    if not string.find(s, ":", 1, true) or string.find(s, "[^0-9a-fA-F:%.]") then
+        return nil
+    end
+    local at = string.find(s, "::", 1, true)
+    local left, right = s, nil
+    if at then
+        left = string.sub(s, 1, at - 1)
+        right = string.sub(s, at + 2)
+        if string.find(right, "::", 1, true) then
+            return nil
+        end
+    end
+    local words = v6_part(left)
+    if not words then
+        return nil
+    end
+    if right then
+        local tail = v6_part(right)
+        if not tail then
+            return nil
+        end
+        local fill = 8 - #words - #tail
+        if fill < 1 then
+            return nil
+        end
+        for _ = 1, fill do
+            words[#words + 1] = 0
+        end
+        for _, w in ipairs(tail) do
+            words[#words + 1] = w
+        end
+    end
+    if #words ~= 8 then
+        return nil
+    end
+    return words
+end
+local v6_match = function(words, rule)
+    for i = 1, 8 do
+        local bits = rule.p - (i - 1) * 16
+        if bits > 0 then
+            local m
+            if bits >= 16 then
+                m = 0xffff
+            else
+                m = bit.band(0xffff, bit.lshift(0xffff, 16 - bits))
+            end
+            if bit.band(words[i], m) ~= rule.base[i] then
+                return false
+            end
+        end
+    end
+    return true
+end
 local cidr_rule = function(txt)
     local ip, p = string.match(txt or "", "^([^/]+)/(%d+)$")
     if not ip then
         return nil
     end
-    local base = ipv4_u32(ip)
-    if not base then
+    p = tonumber(p)
+    if string.find(ip, ":", 1, true) then
+        local words = ipv6_words(ip)
+        if not words or p < 0 or p > 128 then
+            return nil
+        end
+        local v6base = {}
+        for i = 1, 8 do
+            local bits = p - (i - 1) * 16
+            if bits <= 0 then
+                v6base[i] = 0
+            elseif bits >= 16 then
+                v6base[i] = words[i]
+            else
+                v6base[i] = bit.band(words[i], bit.band(0xffff, bit.lshift(0xffff, 16 - bits)))
+            end
+        end
+        return {v6 = true, base = v6base, p = p}
+    end
+    local v4base = ipv4_u32(ip)
+    if not v4base then
         return nil
     end
-    p = tonumber(p)
     if p < 0 or p > 32 then
         return nil
     end
@@ -92,7 +212,7 @@ local cidr_rule = function(txt)
     else
         mask = bit.tobit(bit.lshift(0xffffffff, 32 - p))
     end
-    return {base = bit.band(base, mask), mask = mask}
+    return {base = bit.band(v4base, mask), mask = mask}
 end
 local trustfn = function(trusted)
     if not trusted then
@@ -105,13 +225,16 @@ local trustfn = function(trusted)
         error("trusted must be function or array of IP/CIDR strings", 2)
     end
     local exact = {}
-    local cidrs = {}
+    local rules = {}
     for _, v in ipairs(trusted) do
         if v then
             v = to.trim(v)
-            local c = cidr_rule(v)
-            if c then
-                cidrs[#cidrs + 1] = c
+            local rule = cidr_rule(v)
+            if not rule and string.find(v, ":", 1, true) then
+                rule = cidr_rule(v .. "/128")
+            end
+            if rule then
+                rules[#rules + 1] = rule
             else
                 exact[lower(v)] = true
             end
@@ -121,11 +244,22 @@ local trustfn = function(trusted)
         if ip and exact[lower(ip)] then
             return true
         end
-        local n = ipv4_u32(ip)
-        if n then
-            for _, c in ipairs(cidrs) do
-                if bit.band(n, c.mask) == c.base then
-                    return true
+        if ip then
+            local v4 = ipv4_u32(ip)
+            if v4 then
+                for _, rule in ipairs(rules) do
+                    if not rule.v6 and bit.band(v4, rule.mask) == rule.base then
+                        return true
+                    end
+                end
+            elseif string.find(ip, ":", 1, true) then
+                local words = ipv6_words(ip)
+                if words then
+                    for _, rule in ipairs(rules) do
+                        if rule.v6 and v6_match(words, rule) then
+                            return true
+                        end
+                    end
                 end
             end
         end

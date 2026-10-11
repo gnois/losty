@@ -62,14 +62,111 @@ var ipv4_u32 = \ip ->
 		return nil
 	return bit.bor(bit.lshift(a, 24), bit.lshift(b, 16), bit.lshift(c, 8), d)
 
+-- IPv6 address -> eight 16-bit words, or nil when malformed. Handles '::'
+-- compression and an embedded IPv4 tail (e.g. ::ffff:192.0.2.1).
+var hex16 = \s ->
+	if #s < 1 or #s > 4 or string.find(s, '[^0-9a-fA-F]')
+		return nil
+	return tonumber(s, 16)
+
+-- one side of a '::' split: a colon-separated run of hex groups whose last
+-- group may be a dotted quad. rejects empty, doubled or stray colons.
+var v6_part = \txt ->
+	var out = {}
+	if txt == ''
+		return out
+	var groups = {}
+	for g in string.gmatch(txt, '[^:]+')
+		groups[#groups + 1] = g
+	-- a well-formed run is exactly its groups rejoined with single colons
+	if table.concat(groups, ':') ~= txt
+		return nil
+	for i = 1, #groups
+		var g = groups[i]
+		if string.find(g, '.', 1, true)
+			if i ~= #groups  -- a dotted quad is only valid as the final group
+				return nil
+			var n = ipv4_u32(g)
+			if not n
+				return nil
+			out[#out + 1] = bit.rshift(n, 16)
+			out[#out + 1] = bit.band(n, 0xffff)
+		else
+			var w = hex16(g)
+			if w == nil
+				return nil
+			out[#out + 1] = w
+	return out
+
+var ipv6_words = \ip ->
+	var s = ip
+	if not s
+		return nil
+	if string.sub(s, 1, 1) == '['
+		s = string.match(s, '^%[([^%]]+)%]') or s
+	if not string.find(s, ':', 1, true) or string.find(s, '[^0-9a-fA-F:%.]')
+		return nil
+	var at = string.find(s, '::', 1, true)
+	var left, right = s, nil
+	if at
+		left = string.sub(s, 1, at - 1)
+		right = string.sub(s, at + 2)
+		if string.find(right, '::', 1, true)
+			return nil
+	var words = v6_part(left)
+	if not words
+		return nil
+	if right
+		var tail = v6_part(right)
+		if not tail
+			return nil
+		var fill = 8 - #words - #tail
+		if fill < 1  -- '::' stands for at least one group of zeroes
+			return nil
+		for _ = 1, fill
+			words[#words + 1] = 0
+		for _, w in ipairs(tail)
+			words[#words + 1] = w
+	if #words ~= 8
+		return nil
+	return words
+
+-- does an 8-word IPv6 address fall inside a parsed IPv6 rule?
+var v6_match = \words, rule ->
+	for i = 1, 8
+		var bits = rule.p - (i - 1) * 16
+		if bits > 0
+			var m
+			if bits >= 16
+				m = 0xffff
+			else
+				m = bit.band(0xffff, bit.lshift(0xffff, 16 - bits))
+			if bit.band(words[i], m) ~= rule.base[i]
+				return false
+	return true
+
 var cidr_rule = \txt ->
 	var ip, p = string.match(txt or '', '^([^/]+)/(%d+)$')
 	if not ip
 		return nil
-	var base = ipv4_u32(ip)
-	if not base
-		return nil
 	p = tonumber(p)
+	if string.find(ip, ':', 1, true)
+		var words = ipv6_words(ip)
+		if not words or p < 0 or p > 128
+			return nil
+		var v6base = {}
+		for i = 1, 8
+			var bits = p - (i - 1) * 16
+			if bits <= 0
+				v6base[i] = 0
+			else if bits >= 16
+				v6base[i] = words[i]
+			else
+				v6base[i] = bit.band(words[i], bit.band(0xffff, bit.lshift(0xffff, 16 - bits)))
+		return {v6 = true, base = v6base, p = p}
+	var v4base = ipv4_u32(ip)
+	if not v4base
+		return nil
 	if p < 0 or p > 32
 		return nil
 	var mask
@@ -77,7 +174,7 @@ var cidr_rule = \txt ->
 		mask = 0
 	else
 		mask = bit.tobit(bit.lshift(0xffffffff, 32 - p))
-	return {base = bit.band(base, mask), mask = mask}
+	return {base = bit.band(v4base, mask), mask = mask}
 
 var trustfn = \trusted ->
 	if not trusted
@@ -88,24 +185,35 @@ var trustfn = \trusted ->
 		error('trusted must be function or array of IP/CIDR strings', 2)
 
 	var exact = {}
-	var cidrs = {}
+	var rules = {}
 	for _, v in ipairs(trusted)
 		if v
 			v = to.trim(v)
-			var c = cidr_rule(v)
-			if c
-				cidrs[#cidrs + 1] = c
+			var rule = cidr_rule(v)
+			if not rule and string.find(v, ':', 1, true)
+				-- a bare IPv6 literal is a /128, so every legal spelling of the
+				-- same address compares equal instead of by raw string
+				rule = cidr_rule(v .. '/128')
+			if rule
+				rules[#rules + 1] = rule
 			else
 				exact[lower(v)] = true
 
 	return \ip ->
 		if ip and exact[lower(ip)]
 			return true
-		var n = ipv4_u32(ip)
-		if n
-			for _, c in ipairs(cidrs)
-				if bit.band(n, c.mask) == c.base
-					return true
+		if ip
+			var v4 = ipv4_u32(ip)
+			if v4
+				for _, rule in ipairs(rules)
+					if not rule.v6 and bit.band(v4, rule.mask) == rule.base
+						return true
+			else if string.find(ip, ':', 1, true)
+				var words = ipv6_words(ip)
+				if words
+					for _, rule in ipairs(rules)
+						if rule.v6 and v6_match(words, rule)
+							return true
 		return false
 
 var is_ipv6_literal = \txt ->
