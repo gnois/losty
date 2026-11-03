@@ -11,7 +11,8 @@
 @echo off
 setlocal enableextensions
 
-if not exist logs mkdir logs
+if not exist var\log  mkdir var\log
+if not exist var\temp mkdir var\temp
 
 set "RUN=nginx -p . -c conf\nginx.conf"
 

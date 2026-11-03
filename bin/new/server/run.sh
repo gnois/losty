@@ -10,7 +10,7 @@
 #   ./run.sh -s quit       graceful stop
 
 set -e
-mkdir -p logs
+mkdir -p var/log var/temp
 
 RUN="openresty -p . -c conf/nginx.conf"
 

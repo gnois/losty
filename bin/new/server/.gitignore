@@ -1,0 +1,5 @@
+/var/
+# generated files
+/conf/nginx.conf
+/conf/www.conf
+/config.lua

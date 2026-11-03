@@ -7,7 +7,7 @@ pcre_jit on;
 worker_processes auto;
 worker_rlimit_nofile 13635;  # worker_processes * worker_connections,  default to max in freebsd (13635)
 
-pid logs/nginx.pid;
+pid var/nginx.pid;
 error_log {error_log};
 
 events {
@@ -61,6 +61,13 @@ http {
    lua_socket_connect_timeout 10s;
    lua_socket_read_timeout 10s;
    lua_socket_send_timeout 10s;
+
+   # keep nginx scratch files out of the source tree
+   client_body_temp_path var/temp;
+   proxy_temp_path       var/temp;
+   fastcgi_temp_path     var/temp;
+   uwsgi_temp_path       var/temp;
+   scgi_temp_path        var/temp;
 
    # SSE will not work if off
    lua_code_cache {code_cache};

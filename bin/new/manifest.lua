@@ -4,15 +4,16 @@
 return {
     -- Files shared by both Lua and lauzy scaffolds.
     common = {
-        'gen.lua'               -- generate _tmpl/* files (dev|prod)
-        , '_tmpl/nginx.conf_'   -- nginx.conf template; edit this, re-run gen.lua to apply
-		  , '_tmpl/www.conf_'     -- nginx server block template; edit this, re-run gen.lua to apply
-		  , '_tmpl/config.lua_'   -- user config template; edit this, re-run gen.lua to apply
+        'tmpl/nginx.conf_'   -- nginx.conf template; edit this, re-run gen.lua to apply
+        , 'tmpl/www.conf_'     -- nginx server block template; edit this, re-run gen.lua to apply
+        , 'tmpl/config.lua_'   -- user config template; edit this, re-run gen.lua to apply
+        , 'gen.lua'               -- generate _tmpl/* files (dev|prod)
         , 'run.sh'              -- *nix: generate + start/stop/reload nginx
         , 'run.bat'             -- Windows equivalent
-		  , 'conf/mime.conf'
-		  , 'conf/ssl.conf'
-		  , 'conf/certs/.gitkeep' -- nginx certs placeholder; add your .cer/.key files here
+        , .gitignore            -- ignore generated files
+        , 'conf/mime.conf'
+        , 'conf/ssl.conf'
+        , 'conf/certs/.gitkeep' -- nginx certs placeholder; add your .cer/.key files here
         , 'static/style.css'    -- shared stylesheet, served under /public/<digits>/style.css
         , 'logs/.gitkeep'       -- nginx log and pid files go here
         , 'lualib/resty/.gitkeep'  -- resty libraries go here
@@ -22,15 +23,15 @@ return {
     , lau = {
         'app.lau'
         , 'views/home.lau'
-		  , 'views/auth.lau'
-		  , 'views/protected.lau'
+        , 'views/auth.lau'
+        , 'views/protected.lau'
     }
 
     -- Plain Lua flavour  (-lua switch)
     , lua = {
         'app.lua'
         , 'views/home.lua'
-		  , 'views/auth.lua'
-		  , 'views/protected.lua'
+        , 'views/auth.lua'
+        , 'views/protected.lua'
     }
 }

@@ -12,7 +12,7 @@ assert(env == 'dev' or env == 'prod', 'Usage: luajit gen.lua dev|prod')
 local settings = {
    dev = {
       daemon     = 'off'
-      , error_log = 'logs/error.log notice'
+      , error_log = 'var/log/error.log notice'
       , code_cache = 'off'
       , listen     = '8080'
 		, certs = ''
@@ -20,7 +20,7 @@ local settings = {
    }
    , prod = {
       daemon     = 'on'
-      , error_log = 'logs/error.log warn'
+      , error_log = 'var/log/error.log warn'
       , code_cache = 'on'
       , listen = '443 ssl default_server reuseport' -- same ip:port cannot serve http1.1/http2 simultaneously
       , certs = [[
@@ -65,9 +65,9 @@ local function interpolate(from, to)
    io.write('Generated ' .. to .. ' [' .. env .. ']\n')
 end
 
-interpolate('_tmpl/nginx.conf_', 'conf/nginx.conf')
-interpolate('_tmpl/www.conf_', 'conf/www.conf')
-interpolate('_tmpl/config.lua_', 'config.lua')
+interpolate('tmpl/nginx.conf_', 'conf/nginx.conf')
+interpolate('tmpl/www.conf_', 'conf/www.conf')
+interpolate('tmpl/config.lua_', 'config.lua')
 
 local port = cfg.listen:match('^(%d+)')
 io.write('Visit http://localhost:' .. port .. '\n')
