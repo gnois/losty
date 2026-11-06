@@ -10,12 +10,11 @@ return {
         , 'gen.lua'               -- generate _tmpl/* files (dev|prod)
         , 'run.sh'              -- *nix: generate + start/stop/reload nginx
         , 'run.bat'             -- Windows equivalent
-        , .gitignore            -- ignore generated files
+        , '.gitignore'            -- ignore generated files
         , 'conf/mime.conf'
         , 'conf/ssl.conf'
         , 'conf/certs/.gitkeep' -- nginx certs placeholder; add your .cer/.key files here
         , 'static/style.css'    -- shared stylesheet, served under /public/<digits>/style.css
-        , 'logs/.gitkeep'       -- nginx log and pid files go here
         , 'lualib/resty/.gitkeep'  -- resty libraries go here
     }
 

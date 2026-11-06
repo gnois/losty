@@ -1,4 +1,5 @@
 /var/
+/lualib/
 # generated files
 /conf/nginx.conf
 /conf/www.conf
