@@ -14,7 +14,8 @@ setlocal enableextensions
 if not exist var\log  mkdir var\log
 if not exist var\temp mkdir var\temp
 
-set "RUN=nginx -p . -c conf\nginx.conf"
+:: -e sends the pre-config error log to var\log instead of the missing default logs\error.log
+set "RUN=nginx -p . -e var\log\error.log -c conf\nginx.conf"
 
 if "%1"=="-s"     ( %RUN% -s %2       & goto :eof )
 if "%1"=="reload" ( %RUN% -s reload   & goto :eof )

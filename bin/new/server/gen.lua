@@ -37,6 +37,11 @@ local cfg = settings[env]
 cfg.env = env
 cfg.domain = '@@DOMAIN@@'  -- baked in by `losty`
 
+-- nginx for Windows ignores (and warns about) the "user" directive
+cfg.user = package.config:sub(1, 1) == '\\'
+   and '# user www;   # not supported on Windows'
+   or  'user www;   # www-data;'
+
 
 local function read(path)
     local f = assert(io.open(path, 'rb'), 'Cannot open ' .. path)

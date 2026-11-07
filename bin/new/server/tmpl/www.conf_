@@ -29,8 +29,7 @@ server {
       userid_path /;
       userid_mark W;
       userid_expires max;
-      # disable to improve I/O perf
-      # access_log logs/access.log custom;
+      access_log var/log/access.log custom buffer=16k flush=8s;
 
       content_by_lua_block {
          require("app").run()
